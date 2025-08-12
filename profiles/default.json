@@ -1,0 +1,52 @@
+{
+  "name": "default",
+  "description": "Default profile with basic SSH operations",
+  "commandAliases": {
+    "check-memory": "free -h",
+    "check-disk": "df -h",
+    "check-processes": "ps aux | head -20",
+    "check-ports": "netstat -tlnp 2>/dev/null || ss -tlnp",
+    "system-info": "uname -a && lsb_release -a 2>/dev/null || cat /etc/os-release",
+    "tail-logs": "tail -f -n 100",
+    "disk-usage": "du -sh * | sort -rh | head -20",
+    "find-large-files": "find . -type f -size +100M -exec ls -lh {} \\;",
+    "backup-folder": "tar -czf backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+  },
+  "hooks": {
+    "pre-deploy": {
+      "enabled": false,
+      "description": "Run before any deployment",
+      "actions": [
+        {
+          "type": "validation",
+          "name": "check-disk-space",
+          "remoteCommand": "df -h | grep -E \"/$\" | awk '{print $5}' | sed 's/%//' | awk '{if($1 > 90) exit 1}'",
+          "server": "{server}",
+          "errorMessage": "Insufficient disk space (>90% used)"
+        }
+      ]
+    },
+    "post-deploy": {
+      "enabled": false,
+      "description": "Run after successful deployment",
+      "actions": [
+        {
+          "type": "notification",
+          "name": "log-deployment",
+          "command": "echo \"[$(date)] Deployment completed to {server}\" >> deployments.log"
+        }
+      ]
+    },
+    "on-error": {
+      "enabled": true,
+      "description": "Run when an error occurs",
+      "actions": [
+        {
+          "type": "notification",
+          "name": "log-error",
+          "command": "echo \"[$(date)] Error on {server}: {error}\" >> errors.log"
+        }
+      ]
+    }
+  }
+}

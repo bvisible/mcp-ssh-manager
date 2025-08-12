@@ -120,7 +120,41 @@ Manage server aliases for easier access.
 - Parameters: `action` (add/remove/list), `alias`, `server`
 - Example: Create alias "prod" for "production" server
 
+#### `ssh_command_alias` 📝
+Manage command aliases for frequently used commands.
+- Parameters: `action` (add/remove/list/suggest), `alias`, `command`
+- Aliases loaded from active profile
+- Example: Custom aliases for your project
+
+#### `ssh_hooks` 🎣
+Manage automation hooks for SSH operations.
+- Parameters: `action` (list/enable/disable/status), `hook`
+- Hooks loaded from active profile
+- Example: Project-specific validation and automation
+
+#### `ssh_profile` 📚
+Manage configuration profiles for different project types.
+- Parameters: `action` (list/switch/current), `profile`
+- Available profiles: default, frappe, docker, nodejs
+- Example: Switch between different project configurations
+
 ## 🔧 Configuration
+
+### Profiles
+
+SSH Manager uses profiles to configure aliases and hooks for different project types:
+
+1. **Set active profile**: 
+   - Environment variable: `export SSH_MANAGER_PROFILE=frappe`
+   - Configuration file: Create `.ssh-manager-profile` with profile name
+   - Default: Uses `default` profile if not specified
+
+2. **Available profiles**:
+   - `default` - Basic SSH operations
+   - `frappe` - Frappe/ERPNext specific
+   - `docker` - Docker container management
+   - `nodejs` - Node.js applications
+   - Create custom profiles in `profiles/` directory
 
 ### Environment Variables
 
@@ -204,11 +238,10 @@ claude mcp list
 
 ## 📚 Advanced Usage
 
-See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for:
-- Automated deployment workflows
-- Permission handling strategies  
-- Security best practices
-- Real-world examples
+### Documentation
+- [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Deployment strategies and permission handling
+- [ALIASES_AND_HOOKS.md](docs/ALIASES_AND_HOOKS.md) - Command aliases and automation hooks
+- Real-world examples and best practices
 
 ## 🐛 Troubleshooting
 

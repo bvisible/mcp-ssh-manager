@@ -52,4 +52,58 @@ jobs:
         echo "SSH_SERVER_TEST_PORT=22" >> .env
     
     - name: Test server manager
-      run: python tools/server-manager.py list
+      run: python tools/server_manager.py list
+    
+    - name: Run JavaScript tests
+      run: npm test
+      
+    - name: Run validation script
+      run: ./scripts/validate.sh
+      
+    - name: Validate profile JSON files
+      run: |
+        for file in profiles/*.json; do
+          python -m json.tool "$file" > /dev/null
+        done
+      
+    - name: Test profile system
+      run: node tests/test-profiles.js
+      
+    - name: Test command aliases
+      run: node tests/test-command-aliases.js
+      
+    - name: Test hooks system  
+      run: node tests/test-hooks.js
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        npm ci
+        pip install black flake8
+    
+    - name: Check Python formatting
+      run: black --check tools/
+      
+    - name: Run flake8
+      run: flake8 tools/ --max-line-length=100
+      
+    - name: Check for secrets
+      run: |
+        # Basic check for common secret patterns
+        ! grep -r "password\|secret\|token\|api_key" .env 2>/dev/null || true
+        ! git ls-files | xargs grep -E "(password|secret|token|api_key)\s*=\s*['\"]" 2>/dev/null || true

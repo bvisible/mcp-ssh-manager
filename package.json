@@ -1,14 +1,22 @@
 {
   "name": "mcp-ssh-manager",
-  "version": "1.2.0",
-  "description": "MCP server with advanced SSH deployment features for Claude Code",
+  "version": "1.3.0",
+  "description": "MCP server with advanced SSH deployment features and profile-based configuration",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
     "setup": "npm install && pip install -r tools/requirements.txt",
     "configure": "python tools/server-manager.py",
-    "test-connection": "python tools/test-connection.py"
+    "test-connection": "python tools/test-connection.py",
+    "test": "npm run test:profiles && npm run test:aliases && npm run test:hooks",
+    "test:profiles": "node tests/test-profiles.js",
+    "test:aliases": "node tests/test-command-aliases.js",
+    "test:hooks": "node tests/test-hooks.js",
+    "test:all": "npm test && ./scripts/validate.sh",
+    "validate": "./scripts/validate.sh",
+    "lint": "eslint src/*.js",
+    "format": "prettier --write 'src/**/*.js' 'tests/**/*.js'"
   },
   "keywords": [
     "mcp",
@@ -19,7 +27,10 @@
     "ssh-manager",
     "deployment",
     "devops",
-    "automation"
+    "automation",
+    "profiles",
+    "hooks",
+    "aliases"
   ],
   "author": "MCP SSH Manager Contributors",
   "license": "MIT",
@@ -36,6 +47,10 @@
     "dotenv": "^16.4.5",
     "node-ssh": "^13.2.0",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4"
   },
   "engines": {
     "node": ">=16.0.0"

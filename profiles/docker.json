@@ -1,0 +1,62 @@
+{
+  "name": "docker",
+  "description": "Docker container management profile",
+  "commandAliases": {
+    "docker-ps": "docker ps -a",
+    "docker-logs": "docker-compose logs -f --tail=100",
+    "docker-restart": "docker-compose restart",
+    "docker-up": "docker-compose up -d",
+    "docker-down": "docker-compose down",
+    "docker-build": "docker-compose build --no-cache",
+    "docker-pull": "docker-compose pull",
+    "docker-exec": "docker-compose exec",
+    "docker-clean": "docker system prune -af",
+    "docker-stats": "docker stats --no-stream",
+    "docker-volumes": "docker volume ls",
+    "docker-networks": "docker network ls",
+    "docker-images": "docker images",
+    "check-containers": "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'",
+    "container-health": "docker ps --filter health=unhealthy"
+  },
+  "hooks": {
+    "pre-deploy": {
+      "enabled": true,
+      "description": "Run before Docker deployment",
+      "actions": [
+        {
+          "type": "validation",
+          "name": "check-docker",
+          "remoteCommand": "docker version > /dev/null 2>&1",
+          "server": "{server}",
+          "errorMessage": "Docker is not running or not installed"
+        },
+        {
+          "type": "backup",
+          "name": "backup-volumes",
+          "remoteCommand": "docker run --rm -v $(pwd):/backup alpine tar czf /backup/volumes-backup-$(date +%Y%m%d).tar.gz /var/lib/docker/volumes",
+          "server": "{server}",
+          "optional": true
+        }
+      ]
+    },
+    "post-deploy": {
+      "enabled": true,
+      "description": "Run after Docker deployment",
+      "actions": [
+        {
+          "type": "verification",
+          "name": "check-containers",
+          "remoteCommand": "docker-compose ps",
+          "server": "{server}"
+        },
+        {
+          "type": "notification",
+          "name": "restart-containers",
+          "remoteCommand": "docker-compose restart",
+          "server": "{server}",
+          "optional": true
+        }
+      ]
+    }
+  }
+}

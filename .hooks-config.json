@@ -1,0 +1,131 @@
+{
+  "pre-deploy": {
+    "enabled": true,
+    "description": "Run before any deployment",
+    "actions": [
+      {
+        "type": "validation",
+        "name": "check-git-status",
+        "command": "git status --porcelain",
+        "expectEmpty": true,
+        "errorMessage": "Uncommitted changes detected. Please commit or stash changes before deployment."
+      },
+      {
+        "type": "validation",
+        "name": "run-tests",
+        "command": "npm test 2>/dev/null || echo \"No tests configured\"",
+        "optional": true
+      }
+    ]
+  },
+  "post-deploy": {
+    "enabled": true,
+    "description": "Run after successful deployment",
+    "actions": [
+      {
+        "type": "notification",
+        "name": "log-deployment",
+        "command": "echo \"[$(date)] Deployment completed to {server}\" >> deployments.log"
+      },
+      {
+        "type": "notification",
+        "name": "notify-slack",
+        "command": "curl -X POST -H \"Content-Type: application/json\" -d \"{{\\\"text\\\":\\\"Deployment to {server} completed\\\"}}\" $SLACK_WEBHOOK_URL 2>/dev/null || true",
+        "optional": true,
+        "requiresEnv": [
+          "SLACK_WEBHOOK_URL"
+        ]
+      }
+    ]
+  },
+  "on-error": {
+    "enabled": true,
+    "description": "Run when an error occurs",
+    "actions": [
+      {
+        "type": "notification",
+        "name": "log-error",
+        "command": "echo \"[$(date)] Error on {server}: {error}\" >> errors.log"
+      },
+      {
+        "type": "recovery",
+        "name": "attempt-recovery",
+        "remoteCommand": "bench restart && bench clear-cache",
+        "server": "{server}",
+        "optional": true
+      }
+    ]
+  },
+  "pre-bench-update": {
+    "enabled": true,
+    "description": "Run before bench update",
+    "actions": [
+      {
+        "type": "backup",
+        "name": "backup-database",
+        "remoteCommand": "bench --site all backup --with-files",
+        "server": "{server}"
+      },
+      {
+        "type": "validation",
+        "name": "check-disk-space",
+        "remoteCommand": "df -h | grep -E \"/$|/home\" | awk '{print $5}' | sed 's/%//' | awk '{if($1 > 80) exit 1}'",
+        "server": "{server}",
+        "errorMessage": "Insufficient disk space (>80% used)"
+      }
+    ]
+  },
+  "post-bench-update": {
+    "enabled": true,
+    "description": "Run after bench update",
+    "actions": [
+      {
+        "type": "verification",
+        "name": "check-services",
+        "remoteCommand": "supervisorctl status | grep -E \"RUNNING|STOPPED\"",
+        "server": "{server}"
+      },
+      {
+        "type": "verification",
+        "name": "check-site-status",
+        "remoteCommand": "bench --site all doctor",
+        "server": "{server}"
+      }
+    ]
+  },
+  "pre-connect": {
+    "enabled": false,
+    "description": "Run before connecting to a server",
+    "actions": [
+      {
+        "type": "validation",
+        "name": "check-vpn",
+        "command": "ping -c 1 -W 2 10.0.0.1 > /dev/null 2>&1",
+        "errorMessage": "VPN not connected",
+        "optional": true
+      }
+    ]
+  },
+  "post-connect": {
+    "enabled": false,
+    "description": "Run after successful connection",
+    "actions": [
+      {
+        "type": "notification",
+        "name": "log-connection",
+        "command": "echo \"[$(date)] Connected to {server}\" >> connections.log"
+      }
+    ]
+  },
+  "context-test": {
+    "enabled": true,
+    "description": "Context replacement test",
+    "actions": [
+      {
+        "type": "notification",
+        "name": "use-context",
+        "command": "echo \"Server: {server}, Error: {error}\" > /Users/jeremy/mcp/mcp-ssh-manager/context-test.txt"
+      }
+    ]
+  }
+}

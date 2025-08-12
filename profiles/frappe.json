@@ -1,0 +1,107 @@
+{
+  "name": "frappe",
+  "description": "Frappe/ERPNext framework profile",
+  "commandAliases": {
+    "bench-update": "bench update --pull --patch --build --requirements",
+    "bench-update-fast": "bench update --pull",
+    "bench-restart": "bench restart",
+    "bench-start": "bench start",
+    "bench-stop": "bench stop",
+    "bench-logs": "bench --site all logs",
+    "bench-console": "bench console",
+    "bench-mariadb": "bench mariadb",
+    "bench-migrate": "bench --site all migrate",
+    "bench-clear-cache": "bench --site all clear-cache",
+    "bench-rebuild": "bench build --force",
+    "bench-backup": "bench --site all backup --with-files",
+    "bench-restore": "bench --site all restore",
+    "bench-enable-scheduler": "bench --site all enable-scheduler",
+    "bench-disable-scheduler": "bench --site all disable-scheduler",
+    "bench-doctor": "bench doctor",
+    "bench-watch": "bench watch",
+    "bench-git-status": "bench update --pull --no-backup --no-compile --dry-run",
+    "bench-git-pull": "cd apps/frappe && git pull && cd ../erpnext && git pull",
+    "frappe-version": "bench version",
+    "check-supervisor": "sudo supervisorctl status",
+    "restart-supervisor": "sudo supervisorctl restart all",
+    "check-redis": "redis-cli ping",
+    "check-mysql": "mysqladmin ping",
+    "check-nginx": "nginx -t"
+  },
+  "hooks": {
+    "pre-bench-update": {
+      "enabled": true,
+      "description": "Run before bench update",
+      "actions": [
+        {
+          "type": "backup",
+          "name": "backup-database",
+          "remoteCommand": "bench --site all backup --with-files",
+          "server": "{server}"
+        },
+        {
+          "type": "validation",
+          "name": "check-disk-space",
+          "remoteCommand": "df -h | grep -E \"/$|/home\" | awk '{print $5}' | sed 's/%//' | awk '{if($1 > 80) exit 1}'",
+          "server": "{server}",
+          "errorMessage": "Insufficient disk space (>80% used)"
+        }
+      ]
+    },
+    "post-bench-update": {
+      "enabled": true,
+      "description": "Run after bench update",
+      "actions": [
+        {
+          "type": "verification",
+          "name": "check-services",
+          "remoteCommand": "supervisorctl status | grep -E \"RUNNING|STOPPED\"",
+          "server": "{server}"
+        },
+        {
+          "type": "verification",
+          "name": "check-site-status",
+          "remoteCommand": "bench --site all doctor",
+          "server": "{server}"
+        },
+        {
+          "type": "notification",
+          "name": "clear-cache",
+          "remoteCommand": "bench --site all clear-cache",
+          "server": "{server}"
+        }
+      ]
+    },
+    "pre-deploy": {
+      "enabled": true,
+      "description": "Run before Frappe app deployment",
+      "actions": [
+        {
+          "type": "validation",
+          "name": "check-bench-status",
+          "remoteCommand": "bench doctor",
+          "server": "{server}",
+          "optional": true
+        }
+      ]
+    },
+    "post-deploy": {
+      "enabled": true,
+      "description": "Run after Frappe app deployment",
+      "actions": [
+        {
+          "type": "notification",
+          "name": "restart-workers",
+          "remoteCommand": "bench restart",
+          "server": "{server}"
+        },
+        {
+          "type": "notification",
+          "name": "clear-cache",
+          "remoteCommand": "bench --site all clear-cache",
+          "server": "{server}"
+        }
+      ]
+    }
+  }
+}

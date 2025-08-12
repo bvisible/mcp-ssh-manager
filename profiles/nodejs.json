@@ -1,0 +1,63 @@
+{
+  "name": "nodejs",
+  "description": "Node.js application deployment profile",
+  "commandAliases": {
+    "npm-install": "npm ci --production",
+    "npm-update": "npm update",
+    "npm-build": "npm run build",
+    "npm-start": "npm start",
+    "npm-test": "npm test",
+    "npm-logs": "npm run logs",
+    "pm2-list": "pm2 list",
+    "pm2-restart": "pm2 restart all",
+    "pm2-reload": "pm2 reload all",
+    "pm2-stop": "pm2 stop all",
+    "pm2-logs": "pm2 logs --lines 100",
+    "pm2-monit": "pm2 monit",
+    "pm2-status": "pm2 status",
+    "node-version": "node --version && npm --version",
+    "check-deps": "npm outdated",
+    "audit-fix": "npm audit fix",
+    "clear-cache": "npm cache clean --force"
+  },
+  "hooks": {
+    "pre-deploy": {
+      "enabled": true,
+      "description": "Run before Node.js deployment",
+      "actions": [
+        {
+          "type": "validation",
+          "name": "check-node",
+          "remoteCommand": "node --version",
+          "server": "{server}",
+          "errorMessage": "Node.js is not installed"
+        },
+        {
+          "type": "validation",
+          "name": "test-app",
+          "remoteCommand": "npm test",
+          "server": "{server}",
+          "optional": true
+        }
+      ]
+    },
+    "post-deploy": {
+      "enabled": true,
+      "description": "Run after Node.js deployment",
+      "actions": [
+        {
+          "type": "notification",
+          "name": "install-deps",
+          "remoteCommand": "npm ci --production",
+          "server": "{server}"
+        },
+        {
+          "type": "notification",
+          "name": "restart-app",
+          "remoteCommand": "pm2 restart all || npm restart",
+          "server": "{server}"
+        }
+      ]
+    }
+  }
+}

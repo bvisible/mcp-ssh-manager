@@ -53,15 +53,20 @@ fi
 # Test server startup (quick test)
 echo "📋 Testing MCP server startup..."
 # The server needs stdin, so we provide empty input and check if it starts
-echo "" | timeout 2 node src/index.js 2>/dev/null 1>/dev/null
-if [ $? -eq 124 ]; then
-    echo "  ✅ MCP server starts correctly (timeout as expected)"
+# Use a timeout alternative for macOS compatibility
+( echo "" | node src/index.js 2>/dev/null 1>/dev/null ) &
+PID=$!
+sleep 2
+if kill -0 $PID 2>/dev/null; then
+    kill $PID 2>/dev/null
+    echo "  ✅ MCP server starts correctly"
 else
-    # Also accept exit code 0 (server might exit cleanly on empty input)
-    if [ $? -eq 0 ]; then
+    wait $PID
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 143 ]; then
         echo "  ✅ MCP server syntax is valid"
     else
-        echo "  ❌ MCP server failed to start"
+        echo "  ❌ MCP server failed to start (exit code: $EXIT_CODE)"
         ERRORS=$((ERRORS + 1))
     fi
 fi
