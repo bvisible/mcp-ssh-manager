@@ -1,0 +1,80 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+        python-version: ['3.8', '3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache Node modules
+      uses: actions/cache@v3
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+    
+    - name: Install Node dependencies
+      run: |
+        npm ci
+        npm install --save-dev eslint prettier
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r tools/requirements.txt
+        pip install black flake8 isort
+    
+    - name: Run JavaScript syntax check
+      run: node --check src/index.js
+    
+    - name: Run Python syntax check
+      run: |
+        python -m py_compile tools/server_manager.py
+        python -m py_compile tools/test-connection.py
+    
+    - name: Run ESLint
+      run: npx eslint src/
+      continue-on-error: true
+    
+    - name: Run Flake8
+      run: flake8 tools/
+      continue-on-error: true
+    
+    - name: Check Python formatting with Black
+      run: black --check tools/
+      continue-on-error: true
+    
+    - name: Run validation script
+      run: |
+        chmod +x scripts/validate.sh
+        ./scripts/validate.sh
+    
+    - name: Check for secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD

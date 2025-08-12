@@ -1,0 +1,67 @@
+repos:
+  # JavaScript/Node.js checks
+  - repo: local
+    hooks:
+      - id: check-js-syntax
+        name: Check JavaScript syntax
+        entry: node --check
+        language: system
+        files: '\.js$'
+        
+      - id: eslint
+        name: ESLint
+        entry: npx eslint --fix
+        language: system
+        files: '\.js$'
+        require_serial: false
+        
+      - id: prettier-js
+        name: Prettier JavaScript
+        entry: npx prettier --write
+        language: system
+        files: '\.(js|json)$'
+        exclude: 'package-lock\.json'
+
+  # Python checks
+  - repo: local
+    hooks:
+      - id: check-python-syntax
+        name: Check Python syntax
+        entry: python -m py_compile
+        language: system
+        files: '\.py$'
+        
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3
+        files: '\.py$'
+        
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        files: '\.py$'
+        
+  # General checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        exclude: 'package-lock\.json'
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+      
+  # Security check for secrets
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package-lock\.json

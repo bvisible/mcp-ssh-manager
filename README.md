@@ -204,11 +204,30 @@ claude mcp list
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
+### Development Setup
+
 1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+2. Clone and install dependencies
+3. **Setup pre-commit hooks** for code quality:
+   ```bash
+   ./scripts/setup-hooks.sh
+   ```
+4. Create your feature branch
+5. Make your changes (hooks will validate on commit)
+6. Push to your branch
+7. Open a Pull Request
+
+### Code Quality
+
+This project uses automated quality checks:
+- **ESLint** for JavaScript linting
+- **Black** for Python formatting
+- **Flake8** for Python linting
+- **Prettier** for code formatting
+- **Pre-commit hooks** for automated validation
+- **Secret detection** to prevent credential leaks
+
+Run validation manually: `./scripts/validate.sh`
 
 ## 📄 License
 
