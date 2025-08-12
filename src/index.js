@@ -95,7 +95,7 @@ server.registerTool(
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
       command: z.string().describe('Command to execute'),
-      cwd: z.string().optional().describe('Working directory (optional, uses default if configured)'))
+      cwd: z.string().optional().describe('Working directory (optional, uses default if configured)')
     }
   },
   async ({ server: serverName, command, cwd }) => {
