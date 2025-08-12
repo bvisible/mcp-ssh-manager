@@ -1,0 +1,40 @@
+{
+  "name": "mcp-ssh-manager",
+  "version": "1.0.0",
+  "description": "MCP server for managing multiple SSH connections in Claude Code",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "setup": "npm install && pip install -r tools/requirements.txt",
+    "configure": "python tools/server-manager.py",
+    "test-connection": "python tools/test-connection.py"
+  },
+  "keywords": [
+    "mcp",
+    "ssh",
+    "claude-code",
+    "model-context-protocol",
+    "remote-server",
+    "ssh-manager"
+  ],
+  "author": "MCP SSH Manager Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/mcp-ssh-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/mcp-ssh-manager/issues"
+  },
+  "homepage": "https://github.com/yourusername/mcp-ssh-manager#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.2",
+    "dotenv": "^16.4.5",
+    "node-ssh": "^13.2.0",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "apiKey": "your-anthropic-api-key-here",
+  "mcpServers": {
+    "ssh-manager": {
+      "command": "node",
+      "args": ["/path/to/mcp-ssh-manager/src/index.js"]
+    },
+    "example-other-server": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    }
+  }
+}

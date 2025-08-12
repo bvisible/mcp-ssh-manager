@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x, 20.x]
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install Node dependencies
+      run: npm ci
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r tools/requirements.txt
+    
+    - name: Check Node syntax
+      run: node --check src/index.js
+    
+    - name: Check Python syntax
+      run: |
+        python -m py_compile tools/server-manager.py
+        python -m py_compile tools/test-connection.py
+    
+    - name: Create test .env file
+      run: |
+        echo "SSH_SERVER_TEST_HOST=localhost" > .env
+        echo "SSH_SERVER_TEST_USER=test" >> .env
+        echo "SSH_SERVER_TEST_PASSWORD=test" >> .env
+        echo "SSH_SERVER_TEST_PORT=22" >> .env
+    
+    - name: Test server manager
+      run: python tools/server-manager.py list
