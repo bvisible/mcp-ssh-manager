@@ -152,7 +152,7 @@ class SSHServerManager:
         print(f"{Fore.CYAN}╚══════════════════════════════════════════╝{Style.RESET_ALL}\n")
         
         # Server name
-        print(f"{Fore.YELLOW}📝 Step 1/5 - Server Name{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}📝 Step 1/6 - Server Name{Style.RESET_ALL}")
         print("   Choose a short, simple name (e.g., production, staging, dev)")
         while True:
             server_name = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Name: ").strip().lower()
@@ -169,13 +169,13 @@ class SSHServerManager:
         
         # Basic configuration
         config = {}
-        print(f"\n{Fore.YELLOW}🌐 Step 2/5 - Server Address{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}🌐 Step 2/6 - Server Address{Style.RESET_ALL}")
         config['host'] = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Host/IP (e.g., example.com): ").strip()
         if not config['host']:
             print(f"{Fore.RED}   ✗ Address cannot be empty{Style.RESET_ALL}")
             return
             
-        print(f"\n{Fore.YELLOW}👤 Step 3/5 - Connection Information{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}👤 Step 3/6 - Connection Information{Style.RESET_ALL}")
         config['user'] = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Username: ").strip()
         if not config['user']:
             print(f"{Fore.RED}   ✗ Username cannot be empty{Style.RESET_ALL}")
@@ -185,7 +185,7 @@ class SSHServerManager:
         config['port'] = port_input if port_input else "22"
         
         # Authentication method
-        print(f"\n{Fore.YELLOW}🔐 Step 4/5 - Authentication Method{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}🔐 Step 4/6 - Authentication Method{Style.RESET_ALL}")
         print("   1) Password (simpler)")
         print("   2) SSH Key (more secure)")
         auth_choice = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Your choice [1]: ").strip() or "1"
@@ -209,8 +209,16 @@ class SSHServerManager:
             config['keypath'] = key_path
             print(f"   {Fore.GREEN}✓ SSH key configured{Style.RESET_ALL}")
         
+        # Default directory
+        print(f"\n{Fore.YELLOW}📁 Step 5/6 - Default Working Directory (optional){Style.RESET_ALL}")
+        print("   Leave empty to use home directory")
+        default_dir = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Default directory (e.g., /var/www): ").strip()
+        if default_dir:
+            config['default_dir'] = default_dir
+            print(f"   {Fore.GREEN}✓ Default directory set to: {default_dir}{Style.RESET_ALL}")
+        
         # Optional description
-        print(f"\n{Fore.YELLOW}📋 Step 5/5 - Description (optional){Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}📋 Step 6/6 - Description (optional){Style.RESET_ALL}")
         description = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Description: ").strip()
         if description:
             config['description'] = description
@@ -244,16 +252,21 @@ class SSHServerManager:
             if len(description) > 30:
                 description = description[:27] + '...'
             
+            default_dir = config.get('default_dir', '')
+            if len(default_dir) > 20:
+                default_dir = '...' + default_dir[-17:]
+            
             table_data.append([
                 name,
                 config.get('host', ''),
                 config.get('user', ''),
                 config.get('port', '22'),
                 auth_type,
+                default_dir,
                 description
             ])
         
-        headers = ['Name', 'Host', 'User', 'Port', 'Auth', 'Description']
+        headers = ['Name', 'Host', 'User', 'Port', 'Auth', 'Default Dir', 'Description']
         print(tabulate(table_data, headers=headers, tablefmt='grid'))
     
     def remove_server(self):

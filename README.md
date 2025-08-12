@@ -8,6 +8,7 @@ A powerful Model Context Protocol (MCP) server that enables Claude Code to manag
 - **🔐 Secure Authentication** - Support for both password and SSH key authentication
 - **📁 File Operations** - Upload and download files between local and remote systems
 - **⚡ Command Execution** - Run commands on remote servers with working directory support
+- **📂 Default Directories** - Set default working directories per server for convenience
 - **🎯 Easy Configuration** - Simple `.env` file setup with guided configuration tool
 - **🔧 Connection Testing** - Built-in tools to verify server connectivity
 
@@ -68,11 +69,16 @@ In Claude Code, you can now:
 
 ```
 "List all my SSH servers"
-"Execute 'ls -la' on production server"
+"Execute 'ls -la' on production server"  # Uses default directory if set
 "Run 'docker ps' on staging"
 "Upload config.json to production:/etc/app/config.json"
 "Download logs from staging:/var/log/app.log"
 ```
+
+**With Default Directories:**
+If you set `/var/www/html` as default for production, these commands are equivalent:
+- `"Run 'ls' on production"` → executes in `/var/www/html`
+- `"Run 'ls' on production in /tmp"` → executes in `/tmp` (overrides default)
 
 ## 🛠️ Available MCP Tools
 
@@ -82,6 +88,7 @@ Lists all configured SSH servers with their details.
 ### `ssh_execute`
 Execute commands on remote servers.
 - Parameters: `server` (name), `command`, `cwd` (optional working directory)
+- **Note**: If no `cwd` is provided, uses the server's default directory if configured
 
 ### `ssh_upload`
 Upload files to remote servers.
@@ -104,6 +111,7 @@ SSH_SERVER_[NAME]_USER=username
 SSH_SERVER_[NAME]_PASSWORD=password  # For password auth
 SSH_SERVER_[NAME]_KEYPATH=~/.ssh/key  # For SSH key auth
 SSH_SERVER_[NAME]_PORT=22  # Optional, defaults to 22
+SSH_SERVER_[NAME]_DEFAULT_DIR=/path/to/dir  # Optional, default working directory
 SSH_SERVER_[NAME]_DESCRIPTION=Description  # Optional
 
 # Example
@@ -111,6 +119,7 @@ SSH_SERVER_PRODUCTION_HOST=prod.example.com
 SSH_SERVER_PRODUCTION_USER=admin
 SSH_SERVER_PRODUCTION_PASSWORD=secure_password
 SSH_SERVER_PRODUCTION_PORT=22
+SSH_SERVER_PRODUCTION_DEFAULT_DIR=/var/www/html
 SSH_SERVER_PRODUCTION_DESCRIPTION=Production Server
 ```
 

@@ -95,13 +95,19 @@ server.registerTool(
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
       command: z.string().describe('Command to execute'),
-      cwd: z.string().optional().describe('Working directory (optional)')
+      cwd: z.string().optional().describe('Working directory (optional, uses default if configured)'))
     }
   },
   async ({ server: serverName, command, cwd }) => {
     try {
       const ssh = await getConnection(serverName);
-      const fullCommand = cwd ? `cd ${cwd} && ${command}` : command;
+      
+      // Use provided cwd, or default_dir from config, or no cwd
+      const servers = loadServerConfig();
+      const serverConfig = servers[serverName.toLowerCase()];
+      const workingDir = cwd || serverConfig?.default_dir;
+      const fullCommand = workingDir ? `cd ${workingDir} && ${command}` : command;
+      
       const result = await ssh.execCommand(fullCommand);
       
       return {
@@ -218,6 +224,7 @@ server.registerTool(
       user: config.user,
       port: config.port || '22',
       auth: config.password ? 'password' : 'key',
+      defaultDir: config.default_dir || '',
       description: config.description || ''
     }));
     
