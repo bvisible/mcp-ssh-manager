@@ -8,6 +8,18 @@ import * as dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { 
+  getTempFilename, 
+  buildDeploymentStrategy, 
+  detectDeploymentNeeds,
+  createBatchDeployScript 
+} from './deploy-helper.js';
+import { 
+  resolveServerName, 
+  loadAliases, 
+  addAlias,
+  listAliases 
+} from './server-aliases.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,18 +52,25 @@ function loadServerConfig() {
 
 // Get or create SSH connection
 async function getConnection(serverName) {
-  const normalizedName = serverName.toLowerCase();
+  const servers = loadServerConfig();
+  
+  // Try to resolve through aliases first
+  const resolvedName = resolveServerName(serverName, servers);
+  
+  if (!resolvedName) {
+    const availableServers = Object.keys(servers);
+    const aliases = listAliases();
+    const aliasInfo = aliases.length > 0 ? 
+      ` Aliases: ${aliases.map(a => `${a.alias}->${a.target}`).join(', ')}` : '';
+    throw new Error(
+      `Server "${serverName}" not found. Available servers: ${availableServers.join(', ') || 'none'}.${aliasInfo}`
+    );
+  }
+  
+  const normalizedName = resolvedName;
   
   if (!connections.has(normalizedName)) {
-    const servers = loadServerConfig();
     const serverConfig = servers[normalizedName];
-    
-    if (!serverConfig) {
-      const availableServers = Object.keys(servers);
-      throw new Error(
-        `Server "${serverName}" not found. Available servers: ${availableServers.join(', ') || 'none'}`
-      );
-    }
 
     const ssh = new NodeSSH();
     
@@ -84,7 +103,7 @@ async function getConnection(serverName) {
 // Create MCP server
 const server = new McpServer({
   name: 'mcp-ssh-manager',
-  version: '1.0.0',
+  version: '1.2.0',
 });
 
 // Register available tools
@@ -236,6 +255,252 @@ server.registerTool(
         },
       ],
     };
+  }
+);
+
+// New deploy tool for automated deployment
+server.registerTool(
+  'ssh_deploy',
+  {
+    description: 'Deploy files to remote server with automatic permission handling',
+    inputSchema: {
+      server: z.string().describe('Server name or alias'),
+      files: z.array(z.object({
+        local: z.string().describe('Local file path'),
+        remote: z.string().describe('Remote file path')
+      })).describe('Array of files to deploy'),
+      options: z.object({
+        owner: z.string().optional().describe('Set file owner (e.g., "user:group")'),
+        permissions: z.string().optional().describe('Set file permissions (e.g., "644")'),
+        backup: z.boolean().optional().default(true).describe('Backup existing files'),
+        restart: z.string().optional().describe('Service to restart after deployment'),
+        sudoPassword: z.string().optional().describe('Sudo password if needed (use with caution)')
+      }).optional().describe('Deployment options')
+    }
+  },
+  async ({ server, files, options = {} }) => {
+    try {
+      const ssh = await getConnection(server);
+      const deployments = [];
+      const results = [];
+      
+      // Prepare deployment for each file
+      for (const file of files) {
+        const tempFile = getTempFilename(path.basename(file.local));
+        const needs = detectDeploymentNeeds(file.remote);
+        
+        // Merge detected needs with user options
+        const deployOptions = {
+          ...options,
+          owner: options.owner || needs.suggestedOwner,
+          permissions: options.permissions || needs.suggestedPerms
+        };
+        
+        const strategy = buildDeploymentStrategy(file.remote, deployOptions);
+        
+        // Upload file to temp location first
+        await ssh.putFile(file.local, tempFile);
+        results.push(`✅ Uploaded ${path.basename(file.local)} to temp location`);
+        
+        // Execute deployment strategy
+        for (const step of strategy.steps) {
+          const command = step.command.replace('{{tempFile}}', tempFile);
+          
+          // Mask sudo password in output
+          const displayCommand = command.replace(/echo "[^"]+" \| sudo -S/, 'sudo');
+          
+          const result = await ssh.execCommand(command);
+          
+          if (result.code !== 0 && step.type !== 'backup') {
+            throw new Error(`${step.type} failed: ${result.stderr}`);
+          }
+          
+          if (step.type !== 'cleanup') {
+            results.push(`✅ ${step.type}: ${file.remote}`);
+          }
+        }
+        
+        deployments.push({
+          local: file.local,
+          remote: file.remote,
+          tempFile,
+          strategy
+        });
+      }
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `🚀 Deployment successful!\n\n${results.join('\n')}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ Deployment failed: ${error.message}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Execute command with sudo support
+server.registerTool(
+  'ssh_execute_sudo',
+  {
+    description: 'Execute command with sudo on remote server',
+    inputSchema: {
+      server: z.string().describe('Server name or alias'),
+      command: z.string().describe('Command to execute with sudo'),
+      password: z.string().optional().describe('Sudo password (will be masked in output)'),
+      cwd: z.string().optional().describe('Working directory')
+    }
+  },
+  async ({ server, command, password, cwd }) => {
+    try {
+      const ssh = await getConnection(server);
+      const servers = loadServerConfig();
+      const resolvedName = resolveServerName(server, servers);
+      const serverConfig = servers[resolvedName];
+      
+      // Build the full command
+      let fullCommand = command;
+      
+      // Add sudo if not already present
+      if (!fullCommand.startsWith('sudo ')) {
+        fullCommand = `sudo ${fullCommand}`;
+      }
+      
+      // Add password if provided
+      if (password) {
+        fullCommand = `echo "${password}" | sudo -S ${command.replace(/^sudo /, '')}`;
+      } else if (serverConfig?.sudo_password) {
+        // Use configured sudo password if available
+        fullCommand = `echo "${serverConfig.sudo_password}" | sudo -S ${command.replace(/^sudo /, '')}`;
+      }
+      
+      // Add working directory if specified
+      if (cwd) {
+        fullCommand = `cd ${cwd} && ${fullCommand}`;
+      } else if (serverConfig?.default_dir) {
+        fullCommand = `cd ${serverConfig.default_dir} && ${fullCommand}`;
+      }
+      
+      const result = await ssh.execCommand(fullCommand);
+      
+      // Mask password in output for security
+      const maskedCommand = fullCommand.replace(/echo "[^"]+" \| sudo -S/, 'sudo');
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `🔐 Sudo command executed\nServer: ${server}\nCommand: ${maskedCommand}\nExit code: ${result.code}\n\nOutput:\n${result.stdout || result.stderr}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ Sudo execution failed: ${error.message}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Manage server aliases
+server.registerTool(
+  'ssh_alias',
+  {
+    description: 'Manage server aliases for easier access',
+    inputSchema: {
+      action: z.enum(['add', 'remove', 'list']).describe('Action to perform'),
+      alias: z.string().optional().describe('Alias name (for add/remove)'),
+      server: z.string().optional().describe('Server name (for add)')
+    }
+  },
+  async ({ action, alias, server }) => {
+    try {
+      switch (action) {
+        case 'add': {
+          if (!alias || !server) {
+            throw new Error('Both alias and server are required for add action');
+          }
+          
+          const servers = loadServerConfig();
+          const resolvedName = resolveServerName(server, servers);
+          
+          if (!resolvedName) {
+            throw new Error(`Server "${server}" not found`);
+          }
+          
+          addAlias(alias, resolvedName);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ Alias created: ${alias} -> ${resolvedName}`,
+              },
+            ],
+          };
+        }
+        
+        case 'remove': {
+          if (!alias) {
+            throw new Error('Alias is required for remove action');
+          }
+          
+          removeAlias(alias);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ Alias removed: ${alias}`,
+              },
+            ],
+          };
+        }
+        
+        case 'list': {
+          const aliases = listAliases();
+          const servers = loadServerConfig();
+          
+          const aliasInfo = aliases.map(({ alias, target }) => {
+            const server = servers[target];
+            return `  ${alias} -> ${target} (${server?.host || 'unknown'})`;
+          }).join('\n');
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: aliases.length > 0 ? 
+                  `📝 Server aliases:\n${aliasInfo}` :
+                  '📝 No aliases configured',
+              },
+            ],
+          };
+        }
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ Alias operation failed: ${error.message}`,
+          },
+        ],
+      };
+    }
   }
 );
 

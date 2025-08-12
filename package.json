@@ -1,7 +1,7 @@
 {
   "name": "mcp-ssh-manager",
-  "version": "1.0.0",
-  "description": "MCP server for managing multiple SSH connections in Claude Code",
+  "version": "1.2.0",
+  "description": "MCP server with advanced SSH deployment features for Claude Code",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -16,7 +16,10 @@
     "claude-code",
     "model-context-protocol",
     "remote-server",
-    "ssh-manager"
+    "ssh-manager",
+    "deployment",
+    "devops",
+    "automation"
   ],
   "author": "MCP SSH Manager Contributors",
   "license": "MIT",

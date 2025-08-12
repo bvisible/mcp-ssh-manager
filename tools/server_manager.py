@@ -29,7 +29,9 @@ class SSHServerManager:
     def __init__(self):
         self.script_dir = Path(__file__).parent.parent
         self.env_file = self.script_dir / '.env'
+        self.aliases_file = self.script_dir / '.server-aliases.json'
         self.servers = self.load_servers()
+        self.aliases = self.load_aliases()
         
     def load_servers(self) -> Dict:
         """Load servers from .env file"""
@@ -56,6 +58,27 @@ class SSHServerManager:
                         servers[server_name][field] = value.strip('"\'')
                         
         return servers
+    
+    def load_aliases(self) -> Dict:
+        """Load server aliases from .server-aliases.json"""
+        if not self.aliases_file.exists():
+            return {}
+        
+        try:
+            with open(self.aliases_file, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    
+    def save_aliases(self):
+        """Save aliases to .server-aliases.json"""
+        with open(self.aliases_file, 'w') as f:
+            json.dump(self.aliases, f, indent=2)
+    
+    def create_alias(self, alias: str, server_name: str):
+        """Create or update an alias"""
+        self.aliases[alias] = server_name
+        self.save_aliases()
     
     def save_servers(self):
         """Save servers to .env file"""
@@ -210,15 +233,36 @@ class SSHServerManager:
             print(f"   {Fore.GREEN}✓ SSH key configured{Style.RESET_ALL}")
         
         # Default directory
-        print(f"\n{Fore.YELLOW}📁 Step 5/6 - Default Working Directory (optional){Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}📁 Step 5/8 - Default Working Directory (optional){Style.RESET_ALL}")
         print("   Leave empty to use home directory")
         default_dir = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Default directory (e.g., /var/www): ").strip()
         if default_dir:
             config['default_dir'] = default_dir
             print(f"   {Fore.GREEN}✓ Default directory set to: {default_dir}{Style.RESET_ALL}")
         
+        # Sudo password (optional)
+        print(f"\n{Fore.YELLOW}🔐 Step 6/8 - Sudo Password (optional){Style.RESET_ALL}")
+        print("   Configure sudo password for automated deployments")
+        print(f"   {Fore.YELLOW}⚠️  Warning: This will be stored in .env file{Style.RESET_ALL}")
+        configure_sudo = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Configure sudo password? (y/n): ").strip()
+        if configure_sudo.lower() == 'y':
+            sudo_pass = getpass(f"   {Fore.GREEN}➜{Style.RESET_ALL} Sudo password: ")
+            config['sudo_password'] = sudo_pass
+            print(f"   {Fore.GREEN}✓ Sudo password configured{Style.RESET_ALL}")
+        
+        # Server alias (optional)
+        print(f"\n{Fore.YELLOW}🏷️ Step 7/8 - Server Alias (optional){Style.RESET_ALL}")
+        print("   Create a short alias for this server (e.g., 'prod' for 'production')")
+        alias = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Alias (leave empty to skip): ").strip()
+        if alias:
+            # Store alias in server config for reference
+            config['alias'] = alias
+            # Create aliases file if needed
+            self.create_alias(alias, server_name)
+            print(f"   {Fore.GREEN}✓ Alias '{alias}' -> '{server_name}' created{Style.RESET_ALL}")
+        
         # Optional description
-        print(f"\n{Fore.YELLOW}📋 Step 6/6 - Description (optional){Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}📋 Step 8/8 - Description (optional){Style.RESET_ALL}")
         description = input(f"   {Fore.GREEN}➜{Style.RESET_ALL} Description: ").strip()
         if description:
             config['description'] = description

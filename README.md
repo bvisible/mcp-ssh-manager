@@ -11,6 +11,9 @@ A powerful Model Context Protocol (MCP) server that enables Claude Code to manag
 - **📂 Default Directories** - Set default working directories per server for convenience
 - **🎯 Easy Configuration** - Simple `.env` file setup with guided configuration tool
 - **🔧 Connection Testing** - Built-in tools to verify server connectivity
+- **🚀 Smart Deployment** - NEW! Automated file deployment with permission handling
+- **🔑 Sudo Support** - NEW! Execute commands with sudo privileges securely
+- **🏷️ Server Aliases** - NEW! Use short aliases instead of full server names
 
 ## 📋 Prerequisites
 
@@ -82,21 +85,40 @@ If you set `/var/www/html` as default for production, these commands are equival
 
 ## 🛠️ Available MCP Tools
 
-### `ssh_list_servers`
+### Core Tools
+
+#### `ssh_list_servers`
 Lists all configured SSH servers with their details.
 
-### `ssh_execute`
+#### `ssh_execute`
 Execute commands on remote servers.
 - Parameters: `server` (name), `command`, `cwd` (optional working directory)
 - **Note**: If no `cwd` is provided, uses the server's default directory if configured
 
-### `ssh_upload`
+#### `ssh_upload`
 Upload files to remote servers.
 - Parameters: `server`, `local_path`, `remote_path`
 
-### `ssh_download`
+#### `ssh_download`
 Download files from remote servers.
 - Parameters: `server`, `remote_path`, `local_path`
+
+### Advanced Tools (v1.2+)
+
+#### `ssh_deploy` 🚀
+Deploy files with automatic permission and backup handling.
+- Parameters: `server`, `files` (array), `options` (owner, permissions, backup, restart)
+- Automatically handles permission issues and creates backups
+
+#### `ssh_execute_sudo` 🔐
+Execute commands with sudo privileges.
+- Parameters: `server`, `command`, `password` (optional), `cwd` (optional)
+- Securely handles sudo password without exposing in logs
+
+#### `ssh_alias` 🏷️
+Manage server aliases for easier access.
+- Parameters: `action` (add/remove/list), `alias`, `server`
+- Example: Create alias "prod" for "production" server
 
 ## 🔧 Configuration
 
@@ -121,6 +143,7 @@ SSH_SERVER_PRODUCTION_PASSWORD=secure_password
 SSH_SERVER_PRODUCTION_PORT=22
 SSH_SERVER_PRODUCTION_DEFAULT_DIR=/var/www/html
 SSH_SERVER_PRODUCTION_DESCRIPTION=Production Server
+SSH_SERVER_PRODUCTION_SUDO_PASSWORD=secure_sudo_pass  # Optional, for automated deployments
 ```
 
 ### Server Management Tool
@@ -178,6 +201,14 @@ claude mcp list
 2. **Use SSH keys when possible** - More secure than passwords
 3. **Limit server access** - Use minimal required permissions
 4. **Rotate credentials** - Update passwords and keys regularly
+
+## 📚 Advanced Usage
+
+See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for:
+- Automated deployment workflows
+- Permission handling strategies  
+- Security best practices
+- Real-world examples
 
 ## 🐛 Troubleshooting
 
