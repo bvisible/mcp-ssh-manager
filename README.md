@@ -2,6 +2,10 @@
 
 A powerful Model Context Protocol (MCP) server that enables Claude Code to manage multiple SSH connections seamlessly. Control remote servers, execute commands, and transfer files directly from Claude Code.
 
+<a href="https://glama.ai/mcp/servers/@bvisible/mcp-ssh-manager">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bvisible/mcp-ssh-manager/badge" alt="SSH Manager MCP server" />
+</a>
+
 ## 🌟 Features
 
 - **🔗 Multiple SSH Connections** - Manage unlimited SSH servers from a single interface
