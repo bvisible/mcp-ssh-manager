@@ -38,6 +38,7 @@ import {
   setActiveProfile,
   getActiveProfileName
 } from './profile-loader.js';
+import { logger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,8 +46,16 @@ const __dirname = path.dirname(__filename);
 // Load environment variables
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
+// Initialize logger
+logger.info('MCP SSH Manager starting', { 
+  logLevel: process.env.SSH_LOG_LEVEL || 'INFO',
+  verbose: process.env.SSH_VERBOSE === 'true'
+});
+
 // Initialize hooks system
-initializeHooks().catch(console.error);
+initializeHooks().catch(error => {
+  logger.error('Failed to initialize hooks', { error: error.message });
+});
 
 // Map to store active connections
 const connections = new Map();
@@ -107,6 +116,7 @@ async function isConnectionValid(ssh) {
     const result = await ssh.execCommand('echo "ping"', { timeout: 5000 });
     return result.stdout.trim() === 'ping';
   } catch (error) {
+    logger.debug('Connection validation failed', { error: error.message });
     return false;
   }
 }
@@ -123,14 +133,15 @@ function setupKeepalive(serverName, ssh) {
     try {
       const isValid = await isConnectionValid(ssh);
       if (!isValid) {
-        console.error(`⚠️  Connection to ${serverName} lost, will reconnect on next use`);
+        logger.warn(`Connection to ${serverName} lost, will reconnect on next use`);
         closeConnection(serverName);
       } else {
         // Update timestamp on successful keepalive
         connectionTimestamps.set(serverName, Date.now());
+        logger.debug('Keepalive successful', { server: serverName });
       }
     } catch (error) {
-      console.error(`⚠️  Keepalive failed for ${serverName}: ${error.message}`);
+      logger.error(`Keepalive failed for ${serverName}`, { error: error.message });
     }
   }, KEEPALIVE_INTERVAL);
 
@@ -157,7 +168,7 @@ function closeConnection(serverName) {
   // Remove timestamp
   connectionTimestamps.delete(normalizedName);
 
-  console.error(`🔌 Disconnected from ${serverName}`);
+  logger.logConnection(serverName, 'closed');
 }
 
 // Clean up old connections
@@ -165,7 +176,7 @@ function cleanupOldConnections() {
   const now = Date.now();
   for (const [serverName, timestamp] of connectionTimestamps.entries()) {
     if (now - timestamp > CONNECTION_TIMEOUT) {
-      console.error(`⏱️  Connection to ${serverName} timed out, closing...`);
+      logger.info(`Connection to ${serverName} timed out, closing`, { timeout: CONNECTION_TIMEOUT });
       closeConnection(serverName);
     }
   }
@@ -206,7 +217,7 @@ async function getConnection(serverName) {
       return existingSSH;
     } else {
       // Connection is dead, remove it
-      console.error(`♻️  Connection to ${serverName} lost, reconnecting...`);
+      logger.info(`Connection to ${serverName} lost, reconnecting`);
       closeConnection(normalizedName);
     }
   }
@@ -240,11 +251,16 @@ async function getConnection(serverName) {
     // Setup keepalive
     setupKeepalive(normalizedName, ssh);
 
-    console.error(`✅ Connected to ${serverName}`);
+    logger.logConnection(serverName, 'established', {
+      host: serverConfig.host,
+      port: connectionConfig.port,
+      method: serverConfig.password ? 'password' : 'key'
+    });
 
     // Execute post-connect hook
     await executeHook('post-connect', { server: serverName });
   } catch (error) {
+    logger.logConnection(serverName, 'failed', { error: error.message });
     // Execute error hook
     await executeHook('on-error', { server: serverName, error: error.message });
     throw new Error(`Failed to connect to ${serverName}: ${error.message}`);
@@ -258,6 +274,8 @@ const server = new McpServer({
   name: 'mcp-ssh-manager',
   version: '1.2.0',
 });
+
+logger.info('MCP Server initialized', { version: '1.2.0' });
 
 // Register available tools
 server.registerTool(
@@ -292,7 +310,13 @@ server.registerTool(
       const workingDir = cwd || serverConfig?.default_dir;
       const fullCommand = workingDir ? `cd ${workingDir} && ${expandedCommand}` : expandedCommand;
 
+      // Log command execution
+      const startTime = logger.logCommand(serverName, fullCommand, workingDir);
+
       const result = await ssh.execCommand(fullCommand);
+      
+      // Log command result
+      logger.logCommandResult(serverName, fullCommand, startTime, result);
 
       // Execute post-hooks for bench commands
       if (expandedCommand.includes('bench update') && result.code === 0) {
@@ -344,7 +368,18 @@ server.registerTool(
   async ({ server: serverName, localPath, remotePath }) => {
     try {
       const ssh = await getConnection(serverName);
+      
+      logger.logTransfer('upload', serverName, localPath, remotePath);
+      const startTime = Date.now();
+      
       await ssh.putFile(localPath, remotePath);
+      
+      const fileStats = fs.statSync(localPath);
+      logger.logTransfer('upload', serverName, localPath, remotePath, {
+        success: true,
+        size: fileStats.size,
+        duration: `${Date.now() - startTime}ms`
+      });
 
       return {
         content: [
@@ -355,6 +390,10 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      logger.logTransfer('upload', serverName, localPath, remotePath, {
+        success: false,
+        error: error.message
+      });
       return {
         content: [
           {
@@ -380,7 +419,18 @@ server.registerTool(
   async ({ server: serverName, remotePath, localPath }) => {
     try {
       const ssh = await getConnection(serverName);
+      
+      logger.logTransfer('download', serverName, remotePath, localPath);
+      const startTime = Date.now();
+      
       await ssh.getFile(localPath, remotePath);
+      
+      const fileStats = fs.statSync(localPath);
+      logger.logTransfer('download', serverName, remotePath, localPath, {
+        success: true,
+        size: fileStats.size,
+        duration: `${Date.now() - startTime}ms`
+      });
 
       return {
         content: [
@@ -391,6 +441,10 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      logger.logTransfer('download', serverName, remotePath, localPath, {
+        success: false,
+        error: error.message
+      });
       return {
         content: [
           {
@@ -398,6 +452,219 @@ server.registerTool(
             text: `❌ Download error: ${error.message}`,
           },
         ],
+      };
+    }
+  }
+);
+
+server.registerTool(
+  'ssh_sync',
+  {
+    description: 'Synchronize files/folders between local and remote via rsync',
+    inputSchema: {
+      server: z.string().describe('Server name from configuration'),
+      source: z.string().describe('Source path (use "local:" or "remote:" prefix)'),
+      destination: z.string().describe('Destination path (use "local:" or "remote:" prefix)'),
+      exclude: z.array(z.string()).optional().describe('Patterns to exclude from sync'),
+      dryRun: z.boolean().optional().describe('Perform dry run without actual changes'),
+      delete: z.boolean().optional().describe('Delete files in destination not in source'),
+      compress: z.boolean().optional().describe('Compress during transfer'),
+      verbose: z.boolean().optional().describe('Show detailed progress'),
+      checksum: z.boolean().optional().describe('Use checksum instead of timestamp for comparison')
+    }
+  },
+  async ({ server: serverName, source, destination, exclude = [], dryRun = false, delete: deleteFiles = false, compress = true, verbose = false, checksum = false }) => {
+    try {
+      const ssh = await getConnection(serverName);
+      const servers = loadServerConfig();
+      const serverConfig = servers[serverName.toLowerCase()];
+      
+      // Determine sync direction based on source/destination prefixes
+      const isLocalSource = source.startsWith('local:');
+      const isRemoteSource = source.startsWith('remote:');
+      const isLocalDest = destination.startsWith('local:');
+      const isRemoteDest = destination.startsWith('remote:');
+      
+      // Clean paths
+      const cleanSource = source.replace(/^(local:|remote:)/, '');
+      const cleanDest = destination.replace(/^(local:|remote:)/, '');
+      
+      // Validate direction
+      if ((isLocalSource && isLocalDest) || (isRemoteSource && isRemoteDest)) {
+        throw new Error('Source and destination must be different (one local, one remote). Use prefixes: local: or remote:');
+      }
+      
+      // If no prefixes, assume old format (local source to remote dest)
+      const direction = (isLocalSource || (!isLocalSource && !isRemoteSource)) ? 'push' : 'pull';
+      
+      // Build rsync command
+      let rsyncOptions = ['-avz'];
+      
+      if (!compress) {
+        rsyncOptions = ['-av'];
+      }
+      
+      if (checksum) {
+        rsyncOptions.push('--checksum');
+      }
+      
+      if (deleteFiles) {
+        rsyncOptions.push('--delete');
+      }
+      
+      if (dryRun) {
+        rsyncOptions.push('--dry-run');
+      }
+      
+      if (verbose || logger.verbose) {
+        rsyncOptions.push('--progress', '--stats');
+      }
+      
+      // Add exclude patterns
+      exclude.forEach(pattern => {
+        rsyncOptions.push('--exclude', pattern);
+      });
+      
+      let command;
+      let localPath;
+      let remotePath;
+      
+      if (direction === 'push') {
+        localPath = cleanSource;
+        remotePath = cleanDest;
+        
+        // Check if local path exists
+        if (!fs.existsSync(localPath)) {
+          throw new Error(`Local path does not exist: ${localPath}`);
+        }
+        
+        // Build rsync command for push
+        command = `rsync ${rsyncOptions.join(' ')} "${localPath}" "${serverConfig.user}@${serverConfig.host}:${remotePath}"`;
+      } else {
+        localPath = cleanDest;
+        remotePath = cleanSource;
+        
+        // Build rsync command for pull
+        command = `rsync ${rsyncOptions.join(' ')} "${serverConfig.user}@${serverConfig.host}:${remotePath}" "${localPath}"`;
+      }
+      
+      // Add SSH options if using non-standard port or key
+      const sshOptions = [];
+      if (serverConfig.port && serverConfig.port !== '22') {
+        sshOptions.push(`-p ${serverConfig.port}`);
+      }
+      if (serverConfig.keypath) {
+        const keyPath = serverConfig.keypath.replace('~', process.env.HOME);
+        sshOptions.push(`-i ${keyPath}`);
+      }
+      
+      if (sshOptions.length > 0) {
+        command = command.replace('rsync ', `rsync -e "ssh ${sshOptions.join(' ')}" `);
+      }
+      
+      logger.info(`Starting rsync ${direction}`, {
+        server: serverName,
+        source: direction === 'push' ? localPath : remotePath,
+        destination: direction === 'push' ? remotePath : localPath,
+        dryRun,
+        deleteFiles
+      });
+      
+      const startTime = Date.now();
+      
+      // Execute rsync via local shell (not SSH)
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+      
+      try {
+        const { stdout, stderr } = await execAsync(command, {
+          maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+        });
+        
+        const duration = Date.now() - startTime;
+        
+        // Parse rsync output for statistics
+        let stats = {
+          filesTransferred: 0,
+          totalSize: 0,
+          totalTime: duration
+        };
+        
+        // Extract statistics from rsync output
+        const filesMatch = stdout.match(/Number of files transferred: (\d+)/);
+        const sizeMatch = stdout.match(/Total transferred file size: ([\d,]+) bytes/);
+        const speedMatch = stdout.match(/([\d.]+) bytes\/sec/);
+        
+        if (filesMatch) stats.filesTransferred = parseInt(filesMatch[1]);
+        if (sizeMatch) stats.totalSize = parseInt(sizeMatch[1].replace(/,/g, ''));
+        if (speedMatch) stats.speed = parseFloat(speedMatch[1]);
+        
+        logger.info(`Rsync ${direction} completed`, {
+          server: serverName,
+          direction,
+          duration: `${duration}ms`,
+          filesTransferred: stats.filesTransferred,
+          totalSize: stats.totalSize,
+          dryRun
+        });
+        
+        // Format output
+        let resultText = dryRun ? '🔍 Dry run completed\n' : '✅ Sync completed successfully\n';
+        resultText += `Direction: ${direction === 'push' ? 'Local → Remote' : 'Remote → Local'}\n`;
+        resultText += `Server: ${serverName}\n`;
+        resultText += `Source: ${direction === 'push' ? localPath : remotePath}\n`;
+        resultText += `Destination: ${direction === 'push' ? remotePath : localPath}\n`;
+        
+        if (stats.filesTransferred > 0) {
+          resultText += `Files transferred: ${stats.filesTransferred}\n`;
+          if (stats.totalSize > 0) {
+            const sizeKB = (stats.totalSize / 1024).toFixed(2);
+            resultText += `Total size: ${sizeKB} KB\n`;
+          }
+          if (stats.speed) {
+            const speedKB = (stats.speed / 1024).toFixed(2);
+            resultText += `Average speed: ${speedKB} KB/s\n`;
+          }
+        } else {
+          resultText += 'No files needed to be transferred\n';
+        }
+        
+        resultText += `Time: ${(duration / 1000).toFixed(2)} seconds\n`;
+        
+        if (verbose || dryRun) {
+          resultText += '\n📋 Detailed output:\n' + stdout;
+          if (stderr && stderr.trim()) {
+            resultText += '\n⚠️ Warnings:\n' + stderr;
+          }
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: resultText
+            }
+          ]
+        };
+      } catch (execError) {
+        logger.error(`Rsync ${direction} failed`, {
+          server: serverName,
+          error: execError.message,
+          stdout: execError.stdout,
+          stderr: execError.stderr
+        });
+        
+        throw new Error(`Rsync failed: ${execError.stderr || execError.message}`);
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ Sync error: ${error.message}`
+          }
+        ]
       };
     }
   }
