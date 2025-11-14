@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import { isHostKnown, getCurrentHostKey, addHostKey, updateHostKey } from './ssh-key-manager.js';
 import { configLoader } from './config-loader.js';
+import { logger } from './logger.js';
 
 class SSHManager {
   constructor(config) {
@@ -48,7 +49,7 @@ class SSHManager {
         },
         debug: (info) => {
           if (info.includes('Handshake') || info.includes('error')) {
-            console.log('SSH2 Debug:', info);
+            logger.debug('SSH2 Debug', { info });
           }
         }
       };
@@ -63,23 +64,27 @@ class SSHManager {
           if (isHostKnown(host, port)) {
             // For now, accept all known hosts
             // TODO: Implement proper fingerprint comparison once we understand SSH2's hash format
-            console.log(`✅ Host ${host}:${port} is known, accepting connection`);
+            logger.info('Host key verified', { host, port });
             return true;
           }
 
           // Host is not known
-          console.log(`🔑 New host detected: ${host}:${port}`);
+          logger.info('New host detected', { host, port });
 
           // If autoAcceptHostKey is enabled, accept and add the key
           if (this.autoAcceptHostKey) {
-            console.log(`Auto-accepting and adding host key for ${host}:${port}`);
+            logger.info('Auto-accept host key', { host, port });
             // Schedule key addition after connection
             setImmediate(async () => {
               try {
                 await addHostKey(host, port);
-                console.log(`✅ Host key added for ${host}:${port}`);
+                logger.info('Host key added', { host, port });
               } catch (err) {
-                console.warn(`Failed to add host key: ${err.message}`);
+                logger.warn('Failed to add host key', {
+                  host,
+                  port,
+                  error: err.message
+                });
               }
             });
             return true;
@@ -87,7 +92,7 @@ class SSHManager {
 
           // For backward compatibility, accept new hosts by default
           // In production, you might want to prompt the user or check a whitelist
-          console.log(`Auto-accepting new host ${host}:${port} (set autoAcceptHostKey:false to reject)`);
+          logger.warn('Auto-accepting new host', { host, port });
           return true;
         };
       }
@@ -233,6 +238,22 @@ class SSHManager {
         });
 
         stream.on('error', reject);
+      });
+    });
+  }
+
+  async requestShell(options = {}) {
+    if (!this.connected) {
+      throw new Error('Not connected to SSH server');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.client.shell(options, (err, stream) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(stream);
       });
     });
   }

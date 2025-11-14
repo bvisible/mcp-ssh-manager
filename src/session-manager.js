@@ -82,10 +82,11 @@ class SSHSession {
       // Wait for shell prompt
       await this.waitForPrompt();
       
+      // Allow context queries through standard execute flow
+      this.state = SESSION_STATES.READY;
+      
       // Get initial working directory
       await this.updateContext();
-      
-      this.state = SESSION_STATES.READY;
       
       logger.info(`Session ${this.id} initialized`, {
         server: this.serverName,
