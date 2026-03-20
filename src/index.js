@@ -164,51 +164,75 @@ import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables (for backward compatibility)
-const envFilePath = path.join(__dirname, '..', '.env');
+// Resolve .env file path with fallback chain:
+// 1. SSH_ENV_PATH env var (explicit override)
+// 2. process.cwd()/.env (standard working directory)
+// 3. ~/.env (home directory, where ssh-manager server add writes)
+// 4. __dirname/../.env (backward compat for local installs)
+function resolveEnvFilePath() {
+  if (process.env.SSH_ENV_PATH) {
+    return process.env.SSH_ENV_PATH;
+  }
+  const candidates = [
+    path.join(process.cwd(), '.env'),
+    path.join(os.homedir(), '.env'),
+    path.join(__dirname, '..', '.env'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  // Default to cwd (consistent with config-loader.js)
+  return path.join(process.cwd(), '.env');
+}
+
+const envFilePath = resolveEnvFilePath();
 dotenv.config({ path: envFilePath });
 
 // Initialize logger
 logger.info('MCP SSH Manager starting', {
   logLevel: process.env.SSH_LOG_LEVEL || 'INFO',
-  verbose: process.env.SSH_VERBOSE === 'true'
+  verbose: process.env.SSH_VERBOSE === 'true',
+  envFilePath
 });
 
 // Load SSH server configuration
 let servers = {};
-configLoader.load({
-  envPath: envFilePath,
-  tomlPath: process.env.SSH_CONFIG_PATH,
-  preferToml: process.env.PREFER_TOML_CONFIG === 'true'
-}).then(loadedServers => {
-  // Convert Map to object for backward compatibility
-  servers = {};
+try {
+  const loadedServers = await configLoader.load({
+    envPath: envFilePath,
+    tomlPath: process.env.SSH_CONFIG_PATH,
+    preferToml: process.env.PREFER_TOML_CONFIG === 'true'
+  });
   for (const [name, config] of loadedServers) {
     servers[name] = config;
   }
   logger.info(`Loaded ${loadedServers.size} SSH server configurations from ${configLoader.configSource}`);
-}).catch(error => {
+} catch (error) {
   logger.error('Failed to load server configuration', { error: error.message });
-});
+}
 
 // Initialize hooks system
-initializeHooks().catch(error => {
+try {
+  await initializeHooks();
+} catch (error) {
   logger.error('Failed to initialize hooks', { error: error.message });
-});
+}
 
 // Load tool configuration
 let toolConfig = null;
-loadToolConfig().then(config => {
-  toolConfig = config;
-  const summary = config.getSummary();
+try {
+  toolConfig = await loadToolConfig();
+  const summary = toolConfig.getSummary();
   logger.info(`Tool configuration loaded: ${summary.mode} mode, ${summary.enabledCount}/${summary.totalTools} tools enabled`);
   if (summary.mode === 'all') {
     logger.info('💡 Tip: Run "ssh-manager tools configure" to reduce context usage in Claude Code');
   }
-}).catch(error => {
+} catch (error) {
   logger.error('Failed to load tool configuration', { error: error.message });
   logger.info('Using default configuration (all tools enabled)');
-});
+}
 
 // Map to store active connections
 const connections = new Map();
