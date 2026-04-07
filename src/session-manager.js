@@ -19,7 +19,7 @@ export const SESSION_STATES = {
 };
 
 class SSHSession {
-  constructor(id, serverName, ssh) {
+  constructor(id, serverName, ssh, options = {}) {
     this.id = id;
     this.serverName = serverName;
     this.ssh = ssh;
@@ -35,6 +35,44 @@ class SSHSession {
     this.shell = null;
     this.outputBuffer = '';
     this.errorBuffer = '';
+
+    // Custom prompt pattern (configurable per server)
+    this.promptPattern = this._compilePromptPattern(options.promptPattern);
+
+    // Auto-replies for login prompts (e.g., "START GLOBUS Y/N" → "N")
+    this.autoReplies = (options.autoReplies || []).map(r => ({
+      pattern: new RegExp(this._escapeForRegex(r.pattern)),
+      response: r.response,
+      timeout: r.timeout || 5000,
+      matched: false
+    }));
+  }
+
+  /**
+   * Compile a prompt pattern string into a RegExp.
+   * If not provided, falls back to the default [$#>] pattern.
+   */
+  _compilePromptPattern(pattern) {
+    if (!pattern) return /[$#>]\s*$/;
+    try {
+      // If the pattern looks like a regex (contains special chars), use as-is
+      // Otherwise, escape it and add end-of-line anchor
+      if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+        const lastSlash = pattern.lastIndexOf('/');
+        return new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1));
+      }
+      return new RegExp(this._escapeForRegex(pattern) + '\\s*$');
+    } catch (e) {
+      logger.warn(`Invalid prompt pattern "${pattern}", using default`, { error: e.message });
+      return /[$#>]\s*$/;
+    }
+  }
+
+  /**
+   * Escape a string for use in a RegExp (literal matching).
+   */
+  _escapeForRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
@@ -79,8 +117,8 @@ class SSHSession {
         });
       });
 
-      // Wait for shell prompt
-      await this.waitForPrompt();
+      // Wait for shell prompt, handling auto-replies during login
+      await this._initializeShell();
 
       // Allow context queries through standard execute flow
       this.state = SESSION_STATES.READY;
@@ -103,18 +141,62 @@ class SSHSession {
   }
 
   /**
+   * Handle shell initialization with auto-replies.
+   * Loops until the shell prompt is detected, sending auto-replies as needed.
+   */
+  async _initializeShell() {
+    if (this.autoReplies.length === 0) {
+      // No auto-replies configured — simple wait
+      await this.waitForPrompt(15000);
+      return;
+    }
+
+    const startTime = Date.now();
+    const totalTimeout = this.autoReplies.reduce((sum, r) => sum + r.timeout, 0) + 15000;
+    let lastBufferLength = 0;
+
+    logger.info(`Session ${this.id}: waiting for shell with ${this.autoReplies.length} auto-reply rule(s)`);
+
+    while (Date.now() - startTime < totalTimeout) {
+      // Check if shell prompt is ready
+      if (this.outputBuffer.match(this.promptPattern)) {
+        logger.info(`Session ${this.id}: shell prompt detected`);
+        return;
+      }
+
+      // Check auto-reply patterns (only when new data arrived)
+      if (this.outputBuffer.length > lastBufferLength) {
+        lastBufferLength = this.outputBuffer.length;
+
+        for (const reply of this.autoReplies) {
+          if (reply.matched) continue;
+          if (reply.pattern.test(this.outputBuffer)) {
+            logger.info(`Session ${this.id}: auto-reply matched pattern "${reply.pattern}"`);
+            this.shell.write(reply.response + '\n');
+            reply.matched = true;
+            // Clear buffer after sending reply to avoid re-matching
+            await new Promise(resolve => setTimeout(resolve, 200));
+            break;
+          }
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    throw new Error(`Timeout waiting for shell prompt after ${Math.floor(totalTimeout / 1000)}s (auto-replies: ${this.autoReplies.filter(r => r.matched).length}/${this.autoReplies.length} matched)`);
+  }
+
+  /**
    * Wait for shell prompt
    */
   async waitForPrompt(timeout = 5000) {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
-      // Check if we have a prompt (ends with $ or # typically)
-      if (this.outputBuffer.match(/[$#>]\s*$/)) {
+      if (this.outputBuffer.match(this.promptPattern)) {
         return true;
       }
-
-      // Wait a bit
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
@@ -192,7 +274,7 @@ class SSHSession {
 
       // Remove the prompt (last line)
       const lastLine = lines[lines.length - 1];
-      if (lastLine.match(/[$#>]\s*$/)) {
+      if (lastLine && lastLine.match(this.promptPattern)) {
         lines.pop();
       }
 
@@ -287,10 +369,10 @@ class SSHSession {
 /**
  * Create a new SSH session
  */
-export async function createSession(serverName, ssh) {
+export async function createSession(serverName, ssh, options = {}) {
   const sessionId = `ssh_${Date.now()}_${uuidv4().substring(0, 8)}`;
 
-  const session = new SSHSession(sessionId, serverName, ssh);
+  const session = new SSHSession(sessionId, serverName, ssh, options);
   sessions.set(sessionId, session);
 
   try {

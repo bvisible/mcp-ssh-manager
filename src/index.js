@@ -1448,7 +1448,11 @@ registerToolConditional(
   async ({ server: serverName, name }) => {
     try {
       const ssh = await getConnection(serverName);
-      const session = await createSession(serverName, ssh);
+      const serverConfig = servers[serverName.toLowerCase()] || {};
+      const session = await createSession(serverName, ssh, {
+        promptPattern: serverConfig.promptPattern,
+        autoReplies: serverConfig.autoReplies
+      });
 
       const sessionName = name || `Session on ${serverName}`;
 

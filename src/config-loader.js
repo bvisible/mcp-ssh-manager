@@ -5,6 +5,30 @@ import path from 'path';
 import os from 'os';
 import { logger } from './logger.js';
 
+/**
+ * Parse auto-reply config from env vars:
+ * SSH_SERVER_FOO_AUTO_REPLY_COUNT=2
+ * SSH_SERVER_FOO_AUTO_REPLY_1_PATTERN="START GLOBUS Y/N"
+ * SSH_SERVER_FOO_AUTO_REPLY_1_RESPONSE="N"
+ * SSH_SERVER_FOO_AUTO_REPLY_2_PATTERN="Enter password"
+ * SSH_SERVER_FOO_AUTO_REPLY_2_RESPONSE="secret"
+ */
+function parseAutoReplies(env, serverKey) {
+  const count = parseInt(env[`SSH_SERVER_${serverKey}_AUTO_REPLY_COUNT`] || '0');
+  if (count === 0) return undefined;
+
+  const replies = [];
+  for (let i = 1; i <= count; i++) {
+    const pattern = env[`SSH_SERVER_${serverKey}_AUTO_REPLY_${i}_PATTERN`];
+    const response = env[`SSH_SERVER_${serverKey}_AUTO_REPLY_${i}_RESPONSE`];
+    if (pattern && response !== undefined) {
+      const timeout = parseInt(env[`SSH_SERVER_${serverKey}_AUTO_REPLY_${i}_TIMEOUT`] || '5000');
+      replies.push({ pattern, response, timeout });
+    }
+  }
+  return replies.length > 0 ? replies : undefined;
+}
+
 export class ConfigLoader {
   constructor() {
     this.servers = new Map();
@@ -94,6 +118,8 @@ export class ConfigLoader {
           description: serverConfig.description,
           platform: serverConfig.platform ? serverConfig.platform.toLowerCase() : undefined,
           proxyJump: serverConfig.proxy_jump,
+          promptPattern: serverConfig.prompt_pattern,
+          autoReplies: serverConfig.auto_reply ? (Array.isArray(serverConfig.auto_reply) ? serverConfig.auto_reply : [serverConfig.auto_reply]) : undefined,
           source: 'toml'
         });
       }
@@ -143,6 +169,8 @@ export class ConfigLoader {
           description: env[`SSH_SERVER_${match[1]}_DESCRIPTION`],
           platform: (env[`SSH_SERVER_${match[1]}_PLATFORM`] || '').toLowerCase() || undefined,
           proxyJump: env[`SSH_SERVER_${match[1]}_PROXYJUMP`],
+          promptPattern: env[`SSH_SERVER_${match[1]}_PROMPT_PATTERN`],
+          autoReplies: parseAutoReplies(env, match[1]),
           source: 'env'
         };
 
@@ -196,6 +224,8 @@ export class ConfigLoader {
       if (server.description) serverConfig.description = server.description;
       if (server.platform) serverConfig.platform = server.platform;
       if (server.proxyJump) serverConfig.proxy_jump = server.proxyJump;
+      if (server.promptPattern) serverConfig.prompt_pattern = server.promptPattern;
+      if (server.autoReplies) serverConfig.auto_reply = server.autoReplies;
 
       config.ssh_servers[name] = serverConfig;
     }
@@ -225,6 +255,15 @@ export class ConfigLoader {
       if (server.description) lines.push(`SSH_SERVER_${upperName}_DESCRIPTION="${server.description}"`);
       if (server.platform) lines.push(`SSH_SERVER_${upperName}_PLATFORM=${server.platform}`);
       if (server.proxyJump) lines.push(`SSH_SERVER_${upperName}_PROXYJUMP=${server.proxyJump}`);
+      if (server.promptPattern) lines.push(`SSH_SERVER_${upperName}_PROMPT_PATTERN=${server.promptPattern}`);
+      if (server.autoReplies) {
+        lines.push(`SSH_SERVER_${upperName}_AUTO_REPLY_COUNT=${server.autoReplies.length}`);
+        server.autoReplies.forEach((reply, i) => {
+          lines.push(`SSH_SERVER_${upperName}_AUTO_REPLY_${i + 1}_PATTERN="${reply.pattern}"`);
+          lines.push(`SSH_SERVER_${upperName}_AUTO_REPLY_${i + 1}_RESPONSE="${reply.response}"`);
+          if (reply.timeout) lines.push(`SSH_SERVER_${upperName}_AUTO_REPLY_${i + 1}_TIMEOUT=${reply.timeout}`);
+        });
+      }
       lines.push('');
     }
 
