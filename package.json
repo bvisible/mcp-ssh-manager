@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "bin": {
     "mcp-ssh-manager": "src/index.js",
-    "ssh-manager": "cli/ssh-manager"
+    "ssh-manager": "cli/ssh-manager.js"
   },
   "type": "module",
   "scripts": {
