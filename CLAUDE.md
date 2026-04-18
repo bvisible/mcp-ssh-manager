@@ -213,4 +213,4 @@ To install in Claude Code:
 claude mcp add ssh-manager node /absolute/path/to/mcp-ssh-manager/src/index.js
 ```
 
-Configuration is stored in `~/.config/claude-code/claude_code_config.json`
+Configuration is stored in `~/.config/claude-code/claude_code_config.json`
