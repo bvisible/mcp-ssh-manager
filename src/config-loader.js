@@ -94,6 +94,7 @@ export class ConfigLoader {
           description: serverConfig.description,
           platform: serverConfig.platform ? serverConfig.platform.toLowerCase() : undefined,
           proxyJump: serverConfig.proxy_jump,
+          proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
           source: 'toml'
         });
       }
@@ -143,6 +144,7 @@ export class ConfigLoader {
           description: env[`SSH_SERVER_${match[1]}_DESCRIPTION`],
           platform: (env[`SSH_SERVER_${match[1]}_PLATFORM`] || '').toLowerCase() || undefined,
           proxyJump: env[`SSH_SERVER_${match[1]}_PROXYJUMP`],
+          proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
           source: 'env'
         };
 
@@ -196,6 +198,7 @@ export class ConfigLoader {
       if (server.description) serverConfig.description = server.description;
       if (server.platform) serverConfig.platform = server.platform;
       if (server.proxyJump) serverConfig.proxy_jump = server.proxyJump;
+      if (server.proxyCommand) serverConfig.proxy_command = server.proxyCommand;
 
       config.ssh_servers[name] = serverConfig;
     }
@@ -225,6 +228,7 @@ export class ConfigLoader {
       if (server.description) lines.push(`SSH_SERVER_${upperName}_DESCRIPTION="${server.description}"`);
       if (server.platform) lines.push(`SSH_SERVER_${upperName}_PLATFORM=${server.platform}`);
       if (server.proxyJump) lines.push(`SSH_SERVER_${upperName}_PROXYJUMP=${server.proxyJump}`);
+      if (server.proxyCommand) lines.push(`SSH_SERVER_${upperName}_PROXYCOMMAND=${server.proxyCommand}`);
       lines.push('');
     }
 

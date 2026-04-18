@@ -156,6 +156,7 @@ SSH_SERVER_[NAME]_DEFAULT_DIR=/path        # Optional default working directory
 SSH_SERVER_[NAME]_SUDO_PASSWORD=pass       # Optional for automated sudo
 SSH_SERVER_[NAME]_PLATFORM=windows         # Optional: "linux" (default) or "windows"
 SSH_SERVER_[NAME]_PROXYJUMP=bastion        # Optional: name of another server to use as jump host
+SSH_SERVER_[NAME]_PROXYCOMMAND=command      # Optional: custom proxy command (ncat, ssh -W, etc.)
 ```
 
 ### TOML Format
@@ -171,6 +172,7 @@ default_dir = "/path"                      # Optional default working directory
 sudo_password = "pass"                     # Optional for automated sudo
 platform = "windows"                       # Optional: "linux" (default) or "windows"
 proxy_jump = "bastion"                     # Optional: name of another server to use as jump host
+proxy_command = "command"                   # Optional: custom proxy command (ncat, ssh -W, etc.)
 ```
 
 ## Key Implementation Details
@@ -184,6 +186,8 @@ proxy_jump = "bastion"                     # Optional: name of another server to
 4. **Deployment Strategy**: The deploy helper detects permission issues and automatically creates scripts for sudo execution when needed
 
 5. **Environment Loading**: Uses dotenv to load configuration from `.env` file in project root
+
+6. **Proxy Command Support**: Custom proxy commands (SOCKS5, ssh -W, etc.) are executed locally to establish connections, with proper error handling and timeout management (src/index.js:389-432)
 
 ## Security Considerations
 
@@ -209,4 +213,4 @@ To install in Claude Code:
 claude mcp add ssh-manager node /absolute/path/to/mcp-ssh-manager/src/index.js
 ```
 
-Configuration is stored in `~/.config/claude-code/claude_code_config.json`
+Configuration is stored in `~/.config/claude-code/claude_code_config.json`

@@ -1,6 +1,6 @@
 {
   "name": "mcp-ssh-manager",
-  "version": "3.2.2",
+  "version": "3.3.0",
   "description": "MCP SSH Manager: Model Context Protocol server for SSH remote server management. Control SSH connections from Claude Code and OpenAI Codex - execute commands, transfer files, database operations, backups, health monitoring, and DevOps automation. NEW: Tool activation system reduces context usage by 92%",
   "main": "src/index.js",
   "bin": {

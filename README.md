@@ -117,6 +117,7 @@ This release adds **12 new MCP tools** transforming SSH Manager into a comprehen
 - **🔗 Multiple SSH Connections** - Manage unlimited SSH servers from a single interface
 - **🔐 Secure Authentication** - Support for password, SSH key, and ssh-agent authentication (including passphrase-protected keys)
 - **🔀 ProxyJump / Bastion Host** - Connect to servers behind jump hosts with chained multi-hop support
+- **🔌 ProxyCommand / Custom Proxy** - Connect through SOCKS5 proxies or custom proxy commands (ncat, ssh -W, etc.)
 - **📁 File Operations** - Upload and download files between local and remote systems
 - **⚡ Command Execution** - Run commands on remote servers with working directory support
 - **📂 Default Directories** - Set default working directories per server for convenience
@@ -568,6 +569,7 @@ SSH_SERVER_[NAME]_DEFAULT_DIR=/path/to/dir  # Optional, default working director
 SSH_SERVER_[NAME]_DESCRIPTION=Description  # Optional
 SSH_SERVER_[NAME]_PLATFORM=windows  # Optional: "linux" (default) or "windows"
 SSH_SERVER_[NAME]_PROXYJUMP=bastion  # Optional: name of another server to use as jump host
+SSH_SERVER_[NAME]_PROXYCOMMAND=command  # Optional: custom proxy command (ncat, ssh -W, etc.)
 
 # Example: Linux server
 SSH_SERVER_PRODUCTION_HOST=prod.example.com
@@ -730,6 +732,37 @@ proxy_jump = "bastion"
 ```
 
 **Chained jumps** are supported: if `bastion` itself has a `proxy_jump`, the chain is followed recursively. Circular references are detected and rejected.
+
+### ProxyCommand / Custom Proxy
+
+Connect through SOCKS5 proxies or custom proxy commands. The proxy command executes locally and forwards traffic to the remote host.
+
+```env
+# SOCKS5 proxy via ncat
+SSH_SERVER_SOCKS_HOST=target.example.com
+SSH_SERVER_SOCKS_USER=admin
+SSH_SERVER_SOCKS_PROXYCOMMAND="ncat --proxy 127.0.0.1:1080 --proxy-type socks5 %h %p"
+
+# Windows SSH proxy command
+SSH_SERVER_WINPROXY_HOST=internal.example.com
+SSH_SERVER_WINPROXY_USER=admin
+SSH_SERVER_WINPROXY_PROXYCOMMAND="C:\Windows\System32\OpenSSH\ssh.exe -W %h:%p user@jump-host"
+```
+
+Or in TOML:
+```toml
+[ssh_servers.socks]
+host = "target.example.com"
+user = "admin"
+proxy_command = "ncat --proxy 127.0.0.1:1080 --proxy-type socks5 %h %p"
+
+[ssh_servers.winproxy]
+host = "internal.example.com"
+user = "admin"
+proxy_command = "C:\\Windows\\System32\\OpenSSH\\ssh.exe -W %h:%p user@jump-host"
+```
+
+The proxy command must be a valid command that reads from stdin and writes to stdout, accepting `%h` and `%p` placeholders for host and port.
 
 ### Documentation
 - [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Deployment strategies and permission handling

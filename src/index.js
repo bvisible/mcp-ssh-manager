@@ -385,6 +385,52 @@ function cleanupOldConnections() {
   }
 }
 
+// Create a socket from a proxy command (e.g., "ncat --proxy 127.0.0.1:1080 --proxy-type socks5 %h %p")
+async function createProxyCommandSocket(proxyCommand, host, port) {
+  const { spawn } = await import('child_process');
+  const { Duplex } = await import('stream');
+
+  // Replace placeholders
+  let cmd = proxyCommand.replace(/%h/g, host).replace(/%p/g, port.toString());
+
+  // Parse command line (simple split, doesn't handle quotes)
+  const parts = cmd.split(/\s+/);
+  const program = parts[0];
+  const args = parts.slice(1);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(program, args, {
+      stdio: ['pipe', 'pipe', 'pipe'] // stdin, stdout, stderr
+    });
+
+    // Create duplex stream from child's stdout (readable) and stdin (writable)
+    const socket = Duplex.from({
+      readable: child.stdout,
+      writable: child.stdin,
+      allowHalfOpen: false
+    });
+
+    // When socket ends, kill child process
+    socket.on('close', () => {
+      if (!child.killed) {
+        child.kill();
+      }
+    });
+
+    child.on('error', reject);
+    child.on('spawn', () => {
+      resolve(socket);
+    });
+
+    // If child exits unexpectedly, destroy socket
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        socket.destroy(new Error(`Proxy command exited with code ${code}`));
+      }
+    });
+  });
+}
+
 // Get or create SSH connection with reconnection support
 async function getConnection(serverName) {
   const servers = loadServerConfig();
@@ -465,6 +511,14 @@ async function getConnection(serverName) {
       await ssh.connect({ sock: stream });
       jumpDependencies.set(normalizedName, jumpServerName);
       ssh.jumpConnection = jumpSSH;
+    } else if (serverConfig.proxyCommand) {
+      // Create socket via proxy command (e.g., SOCKS5 proxy)
+      const socket = await createProxyCommandSocket(
+        serverConfig.proxyCommand,
+        serverConfig.host,
+        serverConfig.port || 22
+      );
+      await ssh.connect({ sock: socket });
     } else {
       await ssh.connect();
     }
@@ -479,7 +533,7 @@ async function getConnection(serverName) {
       host: serverConfig.host,
       port: serverConfig.port,
       method: serverConfig.password ? 'password' : 'key',
-      proxyJump: serverConfig.proxyJump || null
+      proxyJump: serverConfig.proxyJump || null,
     });
 
     // Execute post-connect hook
