@@ -8,7 +8,7 @@ cmd_server_add() {
     # Get server name
     local server_name
     while true; do
-        prompt_input "Server name (e.g., prod1, web-server)" "" "server_name"
+        prompt_input "Server name (e.g., prod1, web_server) — letters, digits, underscore only" "" "server_name"
         if validate_server_name "$server_name"; then
             break
         fi
@@ -81,35 +81,62 @@ cmd_server_add() {
 # List all servers
 cmd_server_list() {
     print_header "SSH Servers"
-    
+
     local servers=($(load_servers))
-    
+
     if [ ${#servers[@]} -eq 0 ]; then
         print_warning "No servers configured"
         print_info "Use 'ssh-manager server add' to add a server"
         return 0
     fi
-    
+
+    # Collect names invisible to the MCP loader (#25) so we can mark them.
+    local invalid_names=()
+    while IFS= read -r n; do
+        [ -n "$n" ] && invalid_names+=("$n")
+    done < <(list_invalid_server_names)
+
     print_table_header "NAME" "HOST" "USER"
-    
+
     for server in "${servers[@]}"; do
         local host=$(get_server_config "$server" "HOST")
         local user=$(get_server_config "$server" "USER")
         local port=$(get_server_config "$server" "PORT")
         local description=$(get_server_config "$server" "DESCRIPTION")
-        
+
         port=${port:-22}
-        
+
         local host_info="$host:$port"
         if [ -n "$description" ]; then
             host_info="$host_info ($description)"
         fi
-        
-        print_table_row "$server" "$host_info" "$user"
+
+        # Mark entries invisible to the MCP loader.
+        local display_name="$server"
+        local is_invalid=0
+        for inv in "${invalid_names[@]}"; do
+            if [ "$inv" = "$server" ]; then
+                is_invalid=1
+                break
+            fi
+        done
+        if [ "$is_invalid" = "1" ]; then
+            display_name="$server  ⚠ invalid"
+        fi
+
+        print_table_row "$display_name" "$host_info" "$user"
     done
-    
+
     echo
     print_info "Total servers: ${#servers[@]}"
+
+    if [ ${#invalid_names[@]} -gt 0 ]; then
+        echo
+        print_warning "${#invalid_names[@]} server(s) have names that are invisible to MCP clients (Claude Code, etc.)"
+        print_info "Names with characters other than letters/digits/underscore produce invalid env vars"
+        print_info "Affected: ${invalid_names[*]}"
+        print_info "Fix: 'ssh-manager server remove <name>' then re-add with a valid name (e.g. replace '-' with '_')"
+    fi
 }
 
 # Test server connection

@@ -339,28 +339,67 @@ test_ssh_connection() {
 }
 
 # Validate server name
+#
+# Server names are baked into POSIX environment variable names of the form
+# SSH_SERVER_<NAME>_HOST. POSIX env-var names are restricted to letters,
+# digits and underscore — hyphens are NOT valid (issue #25). Allowing them
+# silently produced keys like SSH_SERVER_WEB-SERVER_HOST that the Bash CLI
+# happily wrote and re-read, but the MCP Node loader (which uses a strict
+# /^SSH_SERVER_([A-Z0-9_]+)_HOST$/ regex) silently dropped — so the server
+# appeared in `ssh-manager server list` but Claude Code saw zero servers.
+#
+# We now reject hyphens at the source. If a user pasted in a name with a
+# hyphen, we suggest the underscore equivalent in the error message so the
+# fix is one keystroke away.
 validate_server_name() {
     local name="$1"
-    
+
     # Check if name is empty
     if [ -z "$name" ]; then
         print_error "Server name cannot be empty"
         return 1
     fi
-    
-    # Check for invalid characters
-    if ! [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        print_error "Server name can only contain letters, numbers, underscore and hyphen"
+
+    # Reject hyphens with a targeted message and a copy-paste suggestion.
+    if [[ "$name" == *-* ]]; then
+        local suggested="${name//-/_}"
+        print_error "Server name cannot contain '-' (POSIX env var names allow only letters, digits, underscore)"
+        print_info "Try '$suggested' instead"
         return 1
     fi
-    
+
+    # Catch any other invalid characters
+    if ! [[ "$name" =~ ^[a-zA-Z0-9_]+$ ]]; then
+        print_error "Server name can only contain letters, digits and underscore"
+        return 1
+    fi
+
     # Check if name starts with a letter
     if ! [[ "$name" =~ ^[a-zA-Z] ]]; then
         print_error "Server name must start with a letter"
         return 1
     fi
-    
+
     return 0
+}
+
+# Detect server entries in .env whose names contain characters that are
+# silently dropped by the MCP Node loader. Used by `server list` to flag
+# legacy entries created before the validation fix in #25.
+# Echoes one invalid name per line.
+list_invalid_server_names() {
+    if [ ! -f "$SSH_MANAGER_ENV" ]; then
+        return 0
+    fi
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^SSH_SERVER_(.+)_HOST= ]]; then
+            local raw="${BASH_REMATCH[1]}"
+            if ! [[ "$raw" =~ ^[A-Za-z0-9_]+$ ]]; then
+                # Lowercase, matching load_servers' output convention
+                printf '%s\n' "$(echo "$raw" | tr '[:upper:]' '[:lower:]')"
+            fi
+        fi
+    done < "$SSH_MANAGER_ENV" | sort -u
 }
 
 # Check dependencies

@@ -80,7 +80,8 @@ wizard_add_server() {
     # Step 1: Server name
     print_subheader "Step 1: Server Identification"
     echo "Choose a short, memorable name for this server."
-    echo "Examples: prod1, web-server, database, staging"
+    echo "Letters, digits and underscore only — no hyphens (POSIX env var rule)."
+    echo "Examples: prod1, web_server, database, staging"
     echo
     
     local server_name
