@@ -364,34 +364,59 @@ validate_server_name() {
 }
 
 # Check dependencies
+# Only `ssh` is strictly required for the CLI to start.
+# rsync is only needed by `ssh-manager sync`; on Windows + Git Bash it is not
+# bundled by default, so requiring it here would block every other command
+# (server add/list/test, exec, ssh, tunnel...). It is checked lazily by
+# `cmd_sync` instead.
 check_dependencies() {
     local missing=()
-    
+
     # Check for required commands
-    for cmd in ssh rsync; do
+    for cmd in ssh; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             missing+=("$cmd")
         fi
     done
-    
+
     # Check for optional but recommended commands
     local optional=()
-    for cmd in jq sshpass; do
+    for cmd in rsync jq sshpass; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             optional+=("$cmd")
         fi
     done
-    
+
     if [ ${#missing[@]} -gt 0 ]; then
         print_error "Missing required dependencies: ${missing[*]}"
         print_info "Please install them and try again"
         return 1
     fi
-    
+
     if [ ${#optional[@]} -gt 0 ]; then
         print_warning "Missing optional dependencies: ${optional[*]}"
-        print_info "Some features may not work without them"
+        print_info "Some features may not work without them (rsync is needed for 'ssh-manager sync')"
     fi
-    
+
+    return 0
+}
+
+# Ensure a specific command is available; print an actionable error if not.
+# Used by commands with feature-specific dependencies (e.g. cmd_sync needs rsync).
+require_command() {
+    local cmd="$1"
+    local feature="${2:-this command}"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        print_error "'$cmd' is required for $feature but was not found on PATH"
+        case "$cmd" in
+            rsync)
+                print_info "Install rsync:"
+                print_info "  • macOS:   brew install rsync"
+                print_info "  • Debian:  sudo apt-get install rsync"
+                print_info "  • Windows: install via MSYS2/Cygwin, or use WSL"
+                ;;
+        esac
+        return 1
+    fi
     return 0
 }

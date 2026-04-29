@@ -22,7 +22,7 @@ echo
 echo -e "${YELLOW}Checking dependencies...${NC}"
 missing=()
 
-for cmd in ssh rsync; do
+for cmd in ssh; do
     if command -v "$cmd" >/dev/null 2>&1; then
         echo -e "  ${GREEN}✓${NC} $cmd"
     else
@@ -31,7 +31,9 @@ for cmd in ssh rsync; do
     fi
 done
 
-for cmd in jq sshpass; do
+# rsync is only used by `ssh-manager sync`; not bundled with Git Bash on Windows.
+# Treat as optional so the CLI is usable without it.
+for cmd in rsync jq sshpass; do
     if command -v "$cmd" >/dev/null 2>&1; then
         echo -e "  ${GREEN}✓${NC} $cmd"
     else

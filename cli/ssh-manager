@@ -159,11 +159,15 @@ cmd_sync() {
     local server="$2"
     local source="$3"
     local dest="$4"
-    
+
     if [ -z "$direction" ] || [ -z "$server" ] || [ -z "$source" ] || [ -z "$dest" ]; then
         print_error "Usage: ssh-manager sync <push|pull> <server> <source> <destination>"
         return 1
     fi
+
+    # rsync is only required at this point — fail with a clear message
+    # rather than blocking the whole CLI at startup.
+    require_command rsync "ssh-manager sync" || return 1
     
     local host=$(get_server_config "$server" "HOST")
     local user=$(get_server_config "$server" "USER")
