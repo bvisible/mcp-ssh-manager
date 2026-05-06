@@ -287,6 +287,8 @@ async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30
   }
 
   // For commands that might hang, use the system's timeout command if available
+  // Note: Windows targets already returned above via the PowerShell path, so
+  // this branch is only reached for Linux/macOS targets.
   const useSystemTimeout = timeoutMs > 0 && timeoutMs < 300000 && !rawCommand; // Max 5 minutes, not for raw commands
 
   if (useSystemTimeout) {
@@ -1827,9 +1829,20 @@ registerToolConditional(
           const servers = loadServerConfig();
           const serverConfig = servers[serverName.toLowerCase()];
           const workingDir = cwd || serverConfig?.default_dir;
-          const fullCommand = workingDir ? `cd ${workingDir} && ${command}` : command;
+          const platform = serverConfig?.platform || 'linux';
+          let fullCommand;
+          if (workingDir) {
+            if (platform === 'windows') {
+              const escapedDir = workingDir.replace(/'/g, "''");
+              fullCommand = `Set-Location '${escapedDir}'; ${command}`;
+            } else {
+              fullCommand = `cd ${workingDir} && ${command}`;
+            }
+          } else {
+            fullCommand = command;
+          }
 
-          const execResult = await execCommandWithTimeout(ssh, fullCommand, { platform: serverConfig?.platform }, 30000);
+          const execResult = await execCommandWithTimeout(ssh, fullCommand, { platform }, 30000);
 
           return {
             stdout: execResult.stdout,
@@ -2209,13 +2222,24 @@ registerToolConditional(
       }
 
       // Add working directory if specified
+      const platform = serverConfig?.platform || 'linux';
       if (cwd) {
-        fullCommand = `cd ${cwd} && ${fullCommand}`;
+        if (platform === 'windows') {
+          const escapedDir = cwd.replace(/'/g, "''");
+          fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
+        } else {
+          fullCommand = `cd ${cwd} && ${fullCommand}`;
+        }
       } else if (serverConfig?.default_dir) {
-        fullCommand = `cd ${serverConfig.default_dir} && ${fullCommand}`;
+        if (platform === 'windows') {
+          const escapedDir = serverConfig.default_dir.replace(/'/g, "''");
+          fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
+        } else {
+          fullCommand = `cd ${serverConfig.default_dir} && ${fullCommand}`;
+        }
       }
 
-      const result = await execCommandWithTimeout(ssh, fullCommand, { platform: serverConfig?.platform }, timeout);
+      const result = await execCommandWithTimeout(ssh, fullCommand, { platform }, timeout);
 
       // Mask password in output for security
       const maskedCommand = fullCommand.replace(/echo "[^"]+" \| sudo -S/, 'sudo');
