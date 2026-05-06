@@ -1825,7 +1825,9 @@ registerToolConditional(
         async (serverName) => {
           const ssh = await getConnection(serverName);
 
-          // Build full command with cwd if provided
+          // Build full command with cwd if provided.
+          // Use platform-appropriate syntax: Set-Location for Windows (cmd.exe
+          // does not support `cd && `) vs cd && for Linux/macOS.
           const servers = loadServerConfig();
           const serverConfig = servers[serverName.toLowerCase()];
           const workingDir = cwd || serverConfig?.default_dir;
@@ -1833,6 +1835,7 @@ registerToolConditional(
           let fullCommand;
           if (workingDir) {
             if (platform === 'windows') {
+              // Single-quote escaping: replace ' with '' (PowerShell convention)
               const escapedDir = workingDir.replace(/'/g, "''");
               fullCommand = `Set-Location '${escapedDir}'; ${command}`;
             } else {
