@@ -9,6 +9,10 @@ import { logger } from './logger.js';
 // Map to store active sessions
 const sessions = new Map();
 
+function generateMarker(prefix) {
+  return `${prefix}_${uuidv4().replace(/-/g, '')}`;
+}
+
 // Session states
 export const SESSION_STATES = {
   INITIALIZING: 'initializing',
@@ -50,7 +54,10 @@ class SSHSession {
       this.shell = await this.ssh.requestShell({
         term: 'xterm-256color',
         cols: 80,
-        rows: 24
+        rows: 24,
+        modes: {
+          ECHO: 0
+        }
       });
 
       // Setup event handlers
@@ -79,8 +86,11 @@ class SSHSession {
         });
       });
 
-      // Wait for shell prompt
-      await this.waitForPrompt();
+      // Wait for an explicit readiness marker instead of a shell prompt
+      const readyMarker = generateMarker('ready');
+      const readyCommand = `printf '\\n${readyMarker}\\n'`;
+      this.shell.write(`${readyCommand}\n`);
+      await this.waitForMarker(readyMarker);
 
       // Allow context queries through standard execute flow
       this.state = SESSION_STATES.READY;
@@ -103,14 +113,13 @@ class SSHSession {
   }
 
   /**
-   * Wait for shell prompt
+   * Wait for a marker in shell output
    */
-  async waitForPrompt(timeout = 5000) {
+  async waitForMarker(marker, timeout = 5000) {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
-      // Check if we have a prompt (ends with $ or # typically)
-      if (this.outputBuffer.match(/[$#>]\s*$/)) {
+      if (this.outputBuffer.includes(marker)) {
         return true;
       }
 
@@ -118,7 +127,7 @@ class SSHSession {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    throw new Error('Timeout waiting for shell prompt');
+    throw new Error(`Timeout waiting for marker: ${marker}`);
   }
 
   /**
@@ -175,31 +184,23 @@ class SSHSession {
         });
       }
 
-      // Send command
-      this.shell.write(command + '\n');
+      const endMarker = generateMarker('cmd');
 
-      // Wait for command to complete
-      await this.waitForPrompt(options.timeout || 30000);
+      // Send command wrapped in an explicit completion marker
+      this.shell.write(`set +e\n${command}\n__mcp_status=$?\nprintf '\\n${endMarker}:%s\\n' "$__mcp_status"\n`);
 
-      // Parse output (remove command echo and prompt)
-      let output = this.outputBuffer;
+      // Wait for command completion marker
+      await this.waitForMarker(endMarker, options.timeout || 30000);
 
-      // Remove the command echo (first line)
-      const lines = output.split('\n');
-      if (lines[0].includes(command)) {
-        lines.shift();
+      const markerIndex = this.outputBuffer.indexOf(endMarker);
+      if (markerIndex < 0) {
+        throw new Error(`Command marker not found: ${endMarker}`);
       }
-
-      // Remove the prompt (last line)
-      const lastLine = lines[lines.length - 1];
-      if (lastLine.match(/[$#>]\s*$/)) {
-        lines.pop();
-      }
-
-      output = lines.join('\n').trim();
-
-      // Check for command success (basic heuristic)
-      const success = !this.errorBuffer && !output.includes('command not found');
+      const markerLine = this.outputBuffer.slice(markerIndex).split(/\r?\n/, 1)[0];
+      const statusMatch = markerLine.match(/:(\d+)$/);
+      const exitCode = statusMatch ? Number.parseInt(statusMatch[1], 10) : null;
+      const output = this.outputBuffer.slice(0, markerIndex).replace(/\r?\n+$/, '');
+      const success = exitCode === 0;
 
       // Update context if command might have changed it
       if (command.startsWith('cd ') || command.startsWith('export ')) {
