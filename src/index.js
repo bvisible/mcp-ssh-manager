@@ -286,9 +286,12 @@ async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30
     return ssh.execCommand(wrappedCommand, { ...otherOptions, execOptions: { ...(otherOptions.execOptions || {}) } });
   }
 
-  // For commands that might hang, use the system's timeout command if available
-  // Note: Windows targets already returned above via the PowerShell path, so
-  // this branch is only reached for Linux/macOS targets.
+  // For commands that might hang, use the system's timeout command if available.
+  // Note: the `!isWindows` guard that existed here previously is intentionally
+  // removed. Windows targets return early above (the `if (platform === 'windows'
+  // && !rawCommand)` block), so by the time execution reaches this line it is
+  // guaranteed to be a Linux/macOS target. The behaviour is identical; the old
+  // guard was made redundant by the early-return path.
   const useSystemTimeout = timeoutMs > 0 && timeoutMs < 300000 && !rawCommand; // Max 5 minutes, not for raw commands
 
   if (useSystemTimeout) {
