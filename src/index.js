@@ -268,12 +268,26 @@ function loadServerConfig() {
 // Execute command with timeout - using child_process timeout for real kill
 async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30000) {
   // Pass through rawCommand and platform if specified
-  const { rawCommand, platform, ...otherOptions } = options;
-  const isWindows = platform === 'windows';
+  const { rawCommand, platform = 'linux', ...otherOptions } = options;
+
+  // Windows targets: encode the command as PowerShell -EncodedCommand (UTF-16
+  // LE base64). This is the standard approach (used by Ansible / Chef / Puppet)
+  // because cmd.exe's quoting rules are inconsistent across versions and break
+  // commands containing $vars, $(...) subexpressions, double-quoted strings,
+  // pipes, etc. Base64 sidesteps all escape issues entirely.
+  if (platform === 'windows' && !rawCommand) {
+    // Suppress progress (avoids CLIXML sentinels in stderr) + force UTF-8 stdout
+    const prelude = `$ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;`;
+    const fullPSCommand = `${prelude} ${command}`;
+    const utf16le = Buffer.from(fullPSCommand, 'utf16le');
+    const b64 = utf16le.toString('base64');
+    // -OutputFormat Text prevents stderr/info streams from being CLIXML-encoded
+    const wrappedCommand = `powershell -NoProfile -OutputFormat Text -EncodedCommand ${b64}`;
+    return ssh.execCommand(wrappedCommand, { ...otherOptions, execOptions: { ...(otherOptions.execOptions || {}) } });
+  }
 
   // For commands that might hang, use the system's timeout command if available
-  // Skip for Windows hosts where the Linux timeout/sh commands don't exist
-  const useSystemTimeout = timeoutMs > 0 && timeoutMs < 300000 && !rawCommand && !isWindows; // Max 5 minutes, not for raw/Windows commands
+  const useSystemTimeout = timeoutMs > 0 && timeoutMs < 300000 && !rawCommand; // Max 5 minutes, not for raw commands
 
   if (useSystemTimeout) {
     // Wrap command with timeout command (works on Linux/Mac)
@@ -617,12 +631,25 @@ registerToolConditional(
       const servers = loadServerConfig();
       const serverConfig = servers[serverName.toLowerCase()];
       const workingDir = cwd || serverConfig?.default_dir;
-      const fullCommand = workingDir ? `cd ${workingDir} && ${expandedCommand}` : expandedCommand;
+      const platform = serverConfig?.platform || 'linux';
+
+      // Build cwd-prefixed command using platform-appropriate syntax
+      let fullCommand;
+      if (workingDir) {
+        if (platform === 'windows') {
+          const escapedDir = workingDir.replace(/'/g, "''");
+          fullCommand = `Set-Location '${escapedDir}'; ${expandedCommand}`;
+        } else {
+          fullCommand = `cd ${workingDir} && ${expandedCommand}`;
+        }
+      } else {
+        fullCommand = expandedCommand;
+      }
 
       // Log command execution
       const startTime = logger.logCommand(serverName, fullCommand, workingDir);
 
-      const result = await execCommandWithTimeout(ssh, fullCommand, { platform: serverConfig?.platform }, cappedTimeout);
+      const result = await execCommandWithTimeout(ssh, fullCommand, { platform }, cappedTimeout);
 
       // Log command result
       logger.logCommandResult(serverName, fullCommand, startTime, result);
