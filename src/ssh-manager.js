@@ -42,12 +42,49 @@ class SSHManager {
         username: this.config.user,
         readyTimeout: 60000, // Increased from 20000 to 60000 for slow connections
         keepaliveInterval: 10000,
-        // Add compatibility options for problematic servers
         algorithms: {
-          kex: ['ecdh-sha2-nistp256', 'ecdh-sha2-nistp384', 'ecdh-sha2-nistp521', 'diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1'],
-          cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm', 'aes128-cbc', 'aes192-cbc', 'aes256-cbc'],
-          serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'ssh-ed25519'],
-          hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          kex: [
+            'curve25519-sha256',
+            'curve25519-sha256@libssh.org',
+            'ecdh-sha2-nistp256',
+            'ecdh-sha2-nistp384',
+            'ecdh-sha2-nistp521',
+            'diffie-hellman-group-exchange-sha256',
+            'diffie-hellman-group16-sha512',
+            'diffie-hellman-group15-sha512',
+            'diffie-hellman-group14-sha256',
+            'diffie-hellman-group-exchange-sha1',
+            'diffie-hellman-group14-sha1',
+          ],
+          cipher: [
+            'aes128-gcm@openssh.com',
+            'aes256-gcm@openssh.com',
+            'aes128-ctr',
+            'aes192-ctr',
+            'aes256-ctr',
+            'aes128-gcm',
+            'aes256-gcm',
+            'aes128-cbc',
+            'aes192-cbc',
+            'aes256-cbc',
+          ],
+          serverHostKey: [
+            'ecdsa-sha2-nistp256',
+            'ecdsa-sha2-nistp384',
+            'ecdsa-sha2-nistp521',
+            'rsa-sha2-512',
+            'rsa-sha2-256',
+            'ssh-ed25519',
+            'ssh-rsa',
+          ],
+          hmac: [
+            'hmac-sha2-256-etm@openssh.com',
+            'hmac-sha2-512-etm@openssh.com',
+            'hmac-sha1-etm@openssh.com',
+            'hmac-sha2-256',
+            'hmac-sha2-512',
+            'hmac-sha1',
+          ],
         },
         debug: (info) => {
           if (info.includes('Handshake') || info.includes('error')) {
