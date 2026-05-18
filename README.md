@@ -307,6 +307,28 @@ Edit `~/.config/claude-code/claude_code_config.json`:
 
 For full auto-approval of all SSH tools, see the complete list in [examples/claude-code-config.example.json](examples/claude-code-config.example.json).
 
+### 3.5. Security Modes (Optional, v3.5.0+)
+
+`autoApprove` is all-or-nothing per tool: once `ssh_execute` is approved, anything goes. If you want a **second layer** that filters what the MCP server actually accepts to run — useful when sharing the MCP with a third-party agent, a CI bot, or a client's server — declare a per-server **security mode**.
+
+```bash
+# In your .env — three optional fields. Omit them all to keep v3.4.x behavior exactly.
+SSH_SERVER_CLIENT_PROD_HOST=client-prod.example.com
+SSH_SERVER_CLIENT_PROD_USER=consultant
+SSH_SERVER_CLIENT_PROD_KEYPATH=~/.ssh/consultant_ed25519
+
+SSH_SERVER_CLIENT_PROD_MODE=readonly                          # unrestricted | readonly | restricted
+SSH_SERVER_CLIENT_PROD_AUDIT_LOG=~/.ssh-manager/audit.jsonl   # opt-in JSONL audit trail
+# For mode=restricted, provide an allowlist of regex (DENY wins over ALLOW):
+# SSH_SERVER_CI_ALLOW_PATTERNS="^docker (ps|logs);^kubectl get "
+```
+
+- **`unrestricted`** (default, no field needed) — identical to pre-v3.5.0 behavior. Zero overhead.
+- **`readonly`** — blocks `ssh_upload`, `ssh_deploy`, `ssh_sync`, `ssh_execute_sudo`, backup/db write tools, and built-in destructive commands (`rm`, `mv`, `sudo`, `systemctl restart`, redirects outside `/tmp`, `curl | sh`, …).
+- **`restricted`** — every `ssh_execute` command must match at least one `ALLOW_PATTERNS` regex AND no `DENY_PATTERNS` regex.
+
+Existing configs are unaffected — no field is mandatory, no behavior changes unless you opt in. See **[docs/SECURITY_MODES.md](docs/SECURITY_MODES.md)** for the full reference, recipes, and limitations.
+
 ### 4. Start Using!
 
 In Claude Code, you can now:

@@ -4,6 +4,33 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { logger } from './logger.js';
+import { VALID_MODES } from './policy.js';
+
+// Parse a `;`-separated list of regex pattern strings. Empty entries are dropped.
+// We do NOT compile here — that happens lazily in policy.js so config-loader stays
+// free of regex error handling.
+function parsePatternList(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+// Normalize a mode string. Returns 'unrestricted' for any falsy/unknown input,
+// after logging a warning when the input is set but invalid. This keeps existing
+// configs (no MODE field) on the fast path.
+function normalizeMode(raw, serverName) {
+  if (raw === undefined || raw === null || raw === '') return 'unrestricted';
+  const normalized = String(raw).toLowerCase().trim();
+  if (!VALID_MODES.has(normalized)) {
+    logger.warn(
+      `Unknown security mode "${raw}" for server "${serverName}" — falling back to "unrestricted". Valid: ${[...VALID_MODES].join(', ')}.`
+    );
+    return 'unrestricted';
+  }
+  return normalized;
+}
 
 export class ConfigLoader {
   constructor() {
@@ -81,6 +108,22 @@ export class ConfigLoader {
     if (config.ssh_servers) {
       for (const [name, serverConfig] of Object.entries(config.ssh_servers)) {
         const normalizedName = name.toLowerCase();
+        // allow_patterns / deny_patterns may be either a TOML array of strings
+        // or a single `;`-separated string. Normalize to a string[] of regex
+        // sources — compilation happens in policy.js.
+        const tomlAllow = Array.isArray(serverConfig.allow_patterns)
+          ? serverConfig.allow_patterns
+          : parsePatternList(serverConfig.allow_patterns);
+        const tomlDeny = Array.isArray(serverConfig.deny_patterns)
+          ? serverConfig.deny_patterns
+          : parsePatternList(serverConfig.deny_patterns);
+        const mode = normalizeMode(serverConfig.mode, normalizedName);
+        if (mode === 'restricted' && tomlAllow.length === 0) {
+          logger.warn(
+            `Server "${normalizedName}" is in "restricted" mode but has no allow_patterns — every command will be refused. Set allow_patterns to enable any execution.`
+          );
+        }
+
         this.servers.set(normalizedName, {
           name: normalizedName,
           host: serverConfig.host,
@@ -95,6 +138,10 @@ export class ConfigLoader {
           platform: serverConfig.platform ? serverConfig.platform.toLowerCase() : undefined,
           proxyJump: serverConfig.proxy_jump,
           proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
+          mode,
+          allowPatterns: tomlAllow,
+          denyPatterns: tomlDeny,
+          auditLog: serverConfig.audit_log,
           source: 'toml'
         });
       }
@@ -131,6 +178,15 @@ export class ConfigLoader {
         // Skip if already processed from a higher priority source
         if (processedServers.has(serverName)) continue;
 
+        const envAllow = parsePatternList(env[`SSH_SERVER_${match[1]}_ALLOW_PATTERNS`]);
+        const envDeny = parsePatternList(env[`SSH_SERVER_${match[1]}_DENY_PATTERNS`]);
+        const mode = normalizeMode(env[`SSH_SERVER_${match[1]}_MODE`], serverName);
+        if (mode === 'restricted' && envAllow.length === 0) {
+          logger.warn(
+            `Server "${serverName}" is in "restricted" mode but has no SSH_SERVER_${match[1]}_ALLOW_PATTERNS — every command will be refused. Set ALLOW_PATTERNS to enable any execution.`
+          );
+        }
+
         const server = {
           name: serverName,
           host: value,
@@ -145,6 +201,10 @@ export class ConfigLoader {
           platform: (env[`SSH_SERVER_${match[1]}_PLATFORM`] || '').toLowerCase() || undefined,
           proxyJump: env[`SSH_SERVER_${match[1]}_PROXYJUMP`],
           proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
+          mode,
+          allowPatterns: envAllow,
+          denyPatterns: envDeny,
+          auditLog: env[`SSH_SERVER_${match[1]}_AUDIT_LOG`],
           source: 'env'
         };
 
@@ -199,6 +259,16 @@ export class ConfigLoader {
       if (server.platform) serverConfig.platform = server.platform;
       if (server.proxyJump) serverConfig.proxy_jump = server.proxyJump;
       if (server.proxyCommand) serverConfig.proxy_command = server.proxyCommand;
+      // Only emit security fields if they diverge from defaults — keeps generated
+      // TOML files clean for users who never opted in.
+      if (server.mode && server.mode !== 'unrestricted') serverConfig.mode = server.mode;
+      if (server.allowPatterns && server.allowPatterns.length > 0) {
+        serverConfig.allow_patterns = server.allowPatterns;
+      }
+      if (server.denyPatterns && server.denyPatterns.length > 0) {
+        serverConfig.deny_patterns = server.denyPatterns;
+      }
+      if (server.auditLog) serverConfig.audit_log = server.auditLog;
 
       config.ssh_servers[name] = serverConfig;
     }
@@ -229,6 +299,18 @@ export class ConfigLoader {
       if (server.platform) lines.push(`SSH_SERVER_${upperName}_PLATFORM=${server.platform}`);
       if (server.proxyJump) lines.push(`SSH_SERVER_${upperName}_PROXYJUMP=${server.proxyJump}`);
       if (server.proxyCommand) lines.push(`SSH_SERVER_${upperName}_PROXYCOMMAND=${server.proxyCommand}`);
+      // Security fields — only emit when non-default to avoid clutter in
+      // generated .env files for users who never opted in.
+      if (server.mode && server.mode !== 'unrestricted') {
+        lines.push(`SSH_SERVER_${upperName}_MODE=${server.mode}`);
+      }
+      if (server.allowPatterns && server.allowPatterns.length > 0) {
+        lines.push(`SSH_SERVER_${upperName}_ALLOW_PATTERNS="${server.allowPatterns.join(';')}"`);
+      }
+      if (server.denyPatterns && server.denyPatterns.length > 0) {
+        lines.push(`SSH_SERVER_${upperName}_DENY_PATTERNS="${server.denyPatterns.join(';')}"`);
+      }
+      if (server.auditLog) lines.push(`SSH_SERVER_${upperName}_AUDIT_LOG=${server.auditLog}`);
       lines.push('');
     }
 

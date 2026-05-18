@@ -1,6 +1,6 @@
 {
   "name": "mcp-ssh-manager",
-  "version": "3.4.1",
+  "version": "3.5.0",
   "description": "MCP SSH Manager: Model Context Protocol server for SSH remote server management. Control SSH connections from Claude Code and OpenAI Codex - execute commands, transfer files, database operations, backups, health monitoring, and DevOps automation. NEW: Tool activation system reduces context usage by 92%",
   "main": "src/index.js",
   "bin": {
@@ -13,11 +13,12 @@
     "setup": "npm install && pip install -r tools/requirements.txt",
     "configure": "python tools/server-manager.py",
     "test-connection": "python tools/test-connection.py",
-    "test": "npm run test:profiles && npm run test:aliases && npm run test:hooks && npm run test:tools",
+    "test": "npm run test:profiles && npm run test:aliases && npm run test:hooks && npm run test:tools && npm run test:policy",
     "test:profiles": "node tests/test-profiles.js",
     "test:aliases": "node tests/test-command-aliases.js",
     "test:hooks": "node tests/test-hooks.js",
     "test:tools": "node tests/test-tool-registry.js",
+    "test:policy": "node tests/test-policy.js",
     "test:all": "npm test && ./scripts/validate.sh",
     "validate": "./scripts/validate.sh",
     "lint": "eslint src/*.js",

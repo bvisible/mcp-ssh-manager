@@ -5,6 +5,27 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-05-18
+
+### Added
+
+- **Per-server security modes** — opt-in second authorization layer that filters tool invocations and commands *inside* the MCP server, complementing the existing client-side `autoApprove` mechanism. Useful when sharing the MCP with a third-party agent, a CI bot, or any context where you can't fully trust the client. See [docs/SECURITY_MODES.md](docs/SECURITY_MODES.md).
+  - New per-server fields (env: `SSH_SERVER_<N>_MODE`, `SSH_SERVER_<N>_ALLOW_PATTERNS`, `SSH_SERVER_<N>_DENY_PATTERNS`, `SSH_SERVER_<N>_AUDIT_LOG` — TOML: `mode`, `allow_patterns`, `deny_patterns`, `audit_log`).
+  - Three modes: `unrestricted` (default — identical to v3.4.x), `readonly` (blocks mutating tools + built-in destructive command denylist), `restricted` (require regex allowlist + optional denylist, DENY wins over ALLOW).
+  - Gated tools: `ssh_execute`, `ssh_execute_sudo`, `ssh_execute_group`, `ssh_session_send` (command-aware), `ssh_upload`, `ssh_sync`, `ssh_deploy`, `ssh_backup_create`, `ssh_backup_restore`, `ssh_backup_schedule`, `ssh_db_import`, `ssh_db_dump` (tool-level), plus action-gated `ssh_key_manage` (accept/remove), `ssh_alert_setup` (set), `ssh_process_manager` (kill).
+  - Command aliases (`ssh_command_alias`) are expanded **before** policy evaluation, so the denylist can't be bypassed via an alias.
+- **Audit log** — opt-in JSONL trail per server (set `SSH_SERVER_<N>_AUDIT_LOG` to a file path). Records `ts`, `server`, `tool`, sanitized `args`, `allowed`, `reason` (on denial), `exitCode`/`success`/`error` (on execution). Credentials (`password`, `passphrase`, `sudoPassword`, `token`, `secret`, `apikey`) are redacted to `***` even if a tool passes them through args. No log rotation built-in — use `logrotate`.
+- **Interactive wizard prompts** (`ssh-manager server add`) for the three new fields, each with default = skip. Pressing Enter on all three produces an `.env` block identical to v3.4.x output.
+- **New test suite** `tests/test-policy.js` — 26 tests covering the three modes, DENY > ALLOW precedence, invalid regex handling, secret redaction, fail-closed for unknown modes, backward-compat fast path.
+
+### Backward compatibility
+
+- **Zero impact on existing configs.** A v3.4.x `.env` or TOML file loads identically — no `MODE` field means `unrestricted`, and `evaluatePolicy()` early-returns `{ allowed: true }` without compiling a single regex.
+- No new field is mandatory.
+- The audit log file is never created unless `AUDIT_LOG` is explicitly set.
+- `autoApprove` on the Claude Code side keeps working unchanged — the policy intercepts after the client approves, before the SSH command runs, so the client never sees a new prompt.
+- All pre-existing tests (`test-profiles`, `test-command-aliases`, `test-hooks`, `test-tool-registry` — 13 tests) pass without modification.
+
 ## [3.4.1] - 2026-05-16
 
 ### Fixed

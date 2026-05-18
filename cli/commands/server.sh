@@ -49,7 +49,29 @@ cmd_server_add() {
     # Get optional description
     local description
     prompt_input "Description (optional)" "" "description"
-    
+
+    # ── Security mode (v3.5.0+) — fully optional, defaults preserve pre-v3.5.0 behavior ──
+    # Pressing Enter on every prompt below produces an .env entry identical to v3.4.1.
+    local mode=""
+    local allow_patterns=""
+    local audit_log=""
+    echo
+    print_info "Security mode (optional — press Enter to skip and keep current behavior)"
+    print_info "  unrestricted = no filter (default, identical to v3.4.x)"
+    print_info "  readonly     = block mutating tools + built-in destructive command denylist"
+    print_info "  restricted   = command must match SSH_SERVER_<N>_ALLOW_PATTERNS"
+    prompt_input "Mode [unrestricted|readonly|restricted]" "unrestricted" "mode"
+    # Normalize empty input to "unrestricted" (preserves pre-v3.5.0 .env output).
+    if [ -z "$mode" ]; then mode="unrestricted"; fi
+
+    if [ "$mode" = "restricted" ]; then
+        print_info "Allow patterns: ';'-separated list of regex (e.g. '^docker (ps|logs);^kubectl get ')"
+        prompt_input "ALLOW_PATTERNS (required for restricted)" "" "allow_patterns"
+    fi
+
+    print_info "Audit log: absolute file path to append a JSONL audit record per tool call"
+    prompt_input "AUDIT_LOG path (optional)" "" "audit_log"
+
     # Show summary
     echo
     print_subheader "Configuration Summary"
@@ -64,10 +86,19 @@ cmd_server_add() {
     if [ -n "$description" ]; then
         print_table_row "Description:" "$description"
     fi
-    
+    if [ "$mode" != "unrestricted" ]; then
+        print_table_row "Mode:" "$mode"
+    fi
+    if [ -n "$allow_patterns" ]; then
+        print_table_row "Allow patterns:" "$allow_patterns"
+    fi
+    if [ -n "$audit_log" ]; then
+        print_table_row "Audit log:" "$audit_log"
+    fi
+
     echo
     if prompt_yes_no "Save this configuration?" "y"; then
-        add_server_to_env "$server_name" "$host" "$user" "$auth_type" "$auth_value" "$port" "$description"
+        add_server_to_env "$server_name" "$host" "$user" "$auth_type" "$auth_value" "$port" "$description" "$mode" "$allow_patterns" "$audit_log"
         
         echo
         if prompt_yes_no "Test connection now?" "y"; then

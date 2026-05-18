@@ -160,6 +160,8 @@ import {
   getConnectionInfo
 } from './database-manager.js';
 import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
+import { evaluatePolicy } from './policy.js';
+import { auditLog } from './audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -263,6 +265,52 @@ function loadServerConfig() {
   // This function is kept for backward compatibility
   // The actual loading is done by configLoader during initialization
   return servers;
+}
+
+// ── Per-server security policy plumbing (v3.5.0+) ──────────────────────────────
+//
+// Wire any handler that mutates remote state (or executes arbitrary commands)
+// through the helpers below. They are *always* safe to call: for any server
+// without a security mode configured (default `unrestricted`), evaluatePolicy()
+// early-returns { allowed: true } and auditLog() is a no-op when AUDIT_LOG is
+// absent — so pre-v3.5.0 configs see zero behavior change.
+
+function getServerConfig(serverName) {
+  if (!serverName) return null;
+  return servers[String(serverName).toLowerCase()] || null;
+}
+
+// Apply policy + audit a denial in one shot. Returns null when allowed; returns
+// an MCP error response object when denied (handler should `return` it directly).
+function applyServerPolicy(serverName, toolName, args, command) {
+  const serverConfig = getServerConfig(serverName);
+  const policy = evaluatePolicy(serverConfig, toolName, command);
+  if (!policy.allowed) {
+    auditLog(serverConfig, toolName, args, policy);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: formatJSONResponse({
+            server: serverName,
+            tool: toolName,
+            success: false,
+            error: `Policy denied: ${policy.reason}`,
+            code: -2,
+          }),
+        },
+      ],
+      isError: true,
+    };
+  }
+  return null;
+}
+
+// Convenience for the success-path audit: handlers call this after execution to
+// record the outcome. No-op when AUDIT_LOG is not configured.
+function auditOk(serverName, toolName, args, executionResult) {
+  const serverConfig = getServerConfig(serverName);
+  auditLog(serverConfig, toolName, args, { allowed: true }, executionResult);
 }
 
 // Execute command with timeout - using child_process timeout for real kill
@@ -617,11 +665,16 @@ registerToolConditional(
   async ({ server: serverName, command, cwd, timeout = TIMEOUTS.DEFAULT_COMMAND_TIMEOUT }) => {
     // Cap timeout at maximum allowed
     const cappedTimeout = Math.min(timeout, TIMEOUTS.MAX_COMMAND_TIMEOUT);
+
+    // Expand aliases BEFORE policy evaluation so the user can't bypass a DENY
+    // regex by hiding a destructive command behind an alias.
+    const expandedCommand = expandCommandAlias(command);
+
+    const denied = applyServerPolicy(serverName, 'ssh_execute', { command, cwd }, expandedCommand);
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
-
-      // Expand command aliases
-      const expandedCommand = expandCommandAlias(command);
 
       // Execute hooks for bench commands
       if (expandedCommand.includes('bench update')) {
@@ -672,6 +725,11 @@ registerToolConditional(
       const stdout = truncateOutput(result.stdout);
       const stderr = truncateOutput(result.stderr);
 
+      auditOk(serverName, 'ssh_execute', { command, cwd }, {
+        code: result.code,
+        success: result.code === 0,
+      });
+
       return {
         content: [
           {
@@ -688,6 +746,10 @@ registerToolConditional(
         ],
       };
     } catch (error) {
+      auditOk(serverName, 'ssh_execute', { command, cwd }, {
+        success: false,
+        error: error.message,
+      });
       logger.error('ssh_execute failed', {
         server: serverName,
         error: error.message
@@ -722,6 +784,9 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, localPath, remotePath }) => {
+    const denied = applyServerPolicy(serverName, 'ssh_upload', { localPath, remotePath });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
 
@@ -737,6 +802,8 @@ registerToolConditional(
         duration: `${Date.now() - startTime}ms`
       });
 
+      auditOk(serverName, 'ssh_upload', { localPath, remotePath }, { success: true });
+
       return {
         content: [
           {
@@ -746,6 +813,10 @@ registerToolConditional(
         ],
       };
     } catch (error) {
+      auditOk(serverName, 'ssh_upload', { localPath, remotePath }, {
+        success: false,
+        error: error.message,
+      });
       logger.logTransfer('upload', serverName, localPath, remotePath, {
         success: false,
         error: error.message
@@ -831,6 +902,9 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, source, destination, exclude = [], dryRun = false, delete: deleteFiles = false, compress = true, verbose = false, checksum = false, timeout = 30000 }) => {
+    const denied = applyServerPolicy(serverName, 'ssh_sync', { source, destination, dryRun, delete: deleteFiles });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
       const servers = loadServerConfig();
@@ -1596,6 +1670,10 @@ registerToolConditional(
     try {
       const session = getSession(sessionId);
 
+      // Resolve the session's underlying server to its policy.
+      const denied = applyServerPolicy(session.serverName, 'ssh_session_send', { session: sessionId, command }, command);
+      if (denied) return denied;
+
       const startTime = Date.now();
       const result = await session.execute(command, { timeout });
       const duration = Date.now() - startTime;
@@ -1826,6 +1904,15 @@ registerToolConditional(
       const result = await executeOnGroup(
         groupName,
         async (serverName) => {
+          // Per-server policy: each server in the group is evaluated independently.
+          // A server in readonly/restricted mode refuses the command; others
+          // execute normally. Refusal is surfaced as a per-server failure rather
+          // than aborting the whole group (group execution is best-effort).
+          const denied = applyServerPolicy(serverName, 'ssh_execute_group', { group: groupName, command, cwd }, command);
+          if (denied) {
+            const errorText = denied.content?.[0]?.text || 'Policy denied';
+            return { stdout: '', stderr: errorText, code: -2, success: false };
+          }
           const ssh = await getConnection(serverName);
 
           // Build full command with cwd if provided.
@@ -2109,6 +2196,12 @@ registerToolConditional(
     }
   },
   async ({ server, files, options = {} }) => {
+    const denied = applyServerPolicy(server, 'ssh_deploy', {
+      files: files.map((f) => ({ local: f.local, remote: f.remote })),
+      options,
+    });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(server);
 
@@ -2205,6 +2298,12 @@ registerToolConditional(
     }
   },
   async ({ server, command, password, cwd, timeout = 30000 }) => {
+    // ssh_execute_sudo is in READONLY_BLOCKED_TOOLS, so readonly mode blocks
+    // it at the tool level. In restricted mode the command itself is matched
+    // against ALLOW/DENY patterns.
+    const denied = applyServerPolicy(server, 'ssh_execute_sudo', { command, cwd }, command);
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(server);
       const servers = loadServerConfig();
@@ -2902,6 +3001,13 @@ registerToolConditional(
     }
   },
   async ({ action, server, autoAccept = false }) => {
+    // Mutating actions (accept, remove) are blocked in readonly mode at the
+    // tool level. Pure-read actions (verify, list, check) are allowed regardless,
+    // so we only gate when the action would modify state.
+    if (server && (action === 'accept' || action === 'remove')) {
+      const denied = applyServerPolicy(server, 'ssh_key_manage', { action, autoAccept });
+      if (denied) return denied;
+    }
     try {
       const servers = loadServerConfig();
       let resolvedName, serverConfig, host, port;
@@ -3258,6 +3364,9 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, type, name, database, dbUser, dbPassword, dbHost, dbPort, paths, exclude, backupDir, retention = 7, compress = true }) => {
+    const denied = applyServerPolicy(serverName, 'ssh_backup_create', { type, name, database, paths });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
 
@@ -3542,6 +3651,9 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, backupId, database, dbUser, dbPassword, dbHost, dbPort, targetPath, backupDir }) => {
+    const denied = applyServerPolicy(serverName, 'ssh_backup_restore', { backupId, database, targetPath });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
       const backupDirectory = backupDir || DEFAULT_BACKUP_DIR;
@@ -3658,6 +3770,9 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, schedule, type, name, database, paths, retention = 7 }) => {
+    const denied = applyServerPolicy(serverName, 'ssh_backup_schedule', { schedule, type, name, database, paths });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
 
@@ -3957,6 +4072,12 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, action, pid, signal = 'TERM', sortBy = 'cpu', limit = 20, filter }) => {
+    // Only the `kill` action mutates remote state — gate just that branch so
+    // operators on readonly servers can still `list` / `info` processes.
+    if (action === 'kill') {
+      const denied = applyServerPolicy(serverName, 'ssh_process_manager', { action, pid, signal });
+      if (denied) return denied;
+    }
     try {
       const ssh = await getConnection(serverName);
 
@@ -4104,6 +4225,11 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, action, cpuThreshold, memoryThreshold, diskThreshold, enabled = true }) => {
+    // `set` writes config on the remote; `get` and `check` are read-only.
+    if (action === 'set') {
+      const denied = applyServerPolicy(serverName, 'ssh_alert_setup', { action, cpuThreshold, memoryThreshold, diskThreshold, enabled });
+      if (denied) return denied;
+    }
     try {
       const ssh = await getConnection(serverName);
       const configPath = '/etc/ssh-manager-alerts.json';
@@ -4288,6 +4414,9 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, type, database, outputFile, dbUser, dbPassword, dbHost, dbPort, compress = true, tables }) => {
+    const denied = applyServerPolicy(serverName, 'ssh_db_dump', { type, database, outputFile, tables });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
 
@@ -4399,6 +4528,9 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, type, database, inputFile, dbUser, dbPassword, dbHost, dbPort, drop = true }) => {
+    const denied = applyServerPolicy(serverName, 'ssh_db_import', { type, database, inputFile, drop });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
 

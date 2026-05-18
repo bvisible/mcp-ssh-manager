@@ -156,6 +156,10 @@ get_server_config() {
 }
 
 # Add server to .env
+#
+# Trailing security-mode args (8-10) are optional and default to "" — when
+# omitted they are not written, preserving exact pre-v3.5.0 output for existing
+# wizard call sites.
 add_server_to_env() {
     local name="$1"
     local host="$2"
@@ -164,15 +168,18 @@ add_server_to_env() {
     local auth_value="$5"
     local port="${6:-22}"
     local description="${7:-}"
-    
+    local mode="${8:-}"
+    local allow_patterns="${9:-}"
+    local audit_log="${10:-}"
+
     local name_upper="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-    
+
     # Check if server already exists
     if grep -q "^SSH_SERVER_${name_upper}_HOST=" "$SSH_MANAGER_ENV" 2>/dev/null; then
         print_error "Server '$name' already exists"
         return 1
     fi
-    
+
     # Ensure parent directory and .env file exist
     mkdir -p "$(dirname "$SSH_MANAGER_ENV")"
     touch "$SSH_MANAGER_ENV"
@@ -187,18 +194,30 @@ add_server_to_env() {
         echo "SSH_SERVER_${name_upper}_HOST=$host"
         echo "SSH_SERVER_${name_upper}_USER=$user"
         echo "SSH_SERVER_${name_upper}_PORT=$port"
-        
+
         if [ "$auth_type" = "password" ]; then
             echo "SSH_SERVER_${name_upper}_PASSWORD=$auth_value"
         else
             echo "SSH_SERVER_${name_upper}_KEYPATH=$auth_value"
         fi
-        
+
         if [ -n "$description" ]; then
             echo "SSH_SERVER_${name_upper}_DESCRIPTION=\"$description\""
         fi
+
+        # Security mode (v3.5.0+) — only emit non-empty / non-default values to
+        # keep generated .env diff-free for users who skip these prompts.
+        if [ -n "$mode" ] && [ "$mode" != "unrestricted" ]; then
+            echo "SSH_SERVER_${name_upper}_MODE=$mode"
+        fi
+        if [ -n "$allow_patterns" ]; then
+            echo "SSH_SERVER_${name_upper}_ALLOW_PATTERNS=\"$allow_patterns\""
+        fi
+        if [ -n "$audit_log" ]; then
+            echo "SSH_SERVER_${name_upper}_AUDIT_LOG=$audit_log"
+        fi
     } >> "$SSH_MANAGER_ENV"
-    
+
     print_success "Server '$name' added successfully"
 }
 
