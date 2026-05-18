@@ -64,19 +64,19 @@ Create shortcuts for your servers.
 
 ## Common Deployment Workflows
 
-### ERPNext/Frappe Deployment
+### Application Module Deployment
 
-For the scenario from your conversation, here's the optimized workflow:
+A typical end-to-end deployment of a couple of module files into a running app:
 
 ```
 # Step 1: Create aliases for easier access
-"Create alias 'dmis' for dmis server"
+"Create alias 'myapp' for production_server"
 
 # Step 2: Deploy files using the new tool
-"Deploy payment_proposal.py and payment_proposal.js to dmis:/home/appuser/frappe-bench/apps/erpnextswiss/"
+"Deploy handler.py and handler.js to myapp:/opt/myapp/apps/myapp/module/"
 
 # Step 3: Restart the service
-"Run 'bench restart' on dmis"
+"Run './bin/restart' on myapp"
 ```
 
 The deployment tool automatically:
@@ -150,11 +150,11 @@ Always enabled by default:
 
 ### Server Not Found
 
-**Problem**: "Server 'host6.example.com' not found"
+**Problem**: "Server 'host.example.com' not found"
 
 **Solution**: Use configured name or create an alias:
 ```
-"Create alias 'host6.example.com' for dmis"
+"Create alias 'host.example.com' for myapp"
 ```
 
 ### Files Not Updating
@@ -165,7 +165,7 @@ Always enabled by default:
 ```json
 {
   "options": {
-    "restart": "bench restart"
+    "restart": "systemctl restart myapp"
   }
 }
 ```
@@ -198,7 +198,7 @@ Create a `.server-aliases.json`:
   "prod": "production",
   "dev": "development",
   "stage": "staging",
-  "dmis": "dmis_server"
+  "myapp": "production_server"
 }
 ```
 
@@ -209,29 +209,30 @@ Create a `.server-aliases.json`:
 3. **Default Directories**: Set default dirs to avoid repetition
 4. **Connection Reuse**: Connections are kept alive during session
 
-## Example: Complete ERPNext Update
+## Example: Complete Application Update
 
-Based on your real scenario, here's the optimized workflow:
+End-to-end deployment of a couple of customization files into a running app:
 
 ```bash
 # 1. Setup (one time)
-"Create alias 'dmis' for dmis server"
+"Create alias 'myapp' for production_server"
 
 # 2. Deploy both files at once
-"Deploy these files to dmis:
-- payment_proposal.py to /home/appuser/frappe-bench/apps/erpnextswiss/erpnextswiss/doctype/payment_proposal/
-- payment_proposal.js to same location"
+"Deploy these files to myapp:
+- handler.py to /opt/myapp/apps/myapp/module/handler/
+- handler.js to same location"
 
 # 3. Restart service
-"Run 'cd /home/appuser/frappe-bench && bench restart' on dmis"
+"Run 'cd /opt/myapp && ./bin/restart' on myapp"
 ```
 
-This replaces your previous multi-step process:
-- ❌ Upload to wrong location
-- ❌ Permission errors
-- ❌ Manual sudo password entry
-- ❌ Copy from /tmp
-- ✅ Single command deployment!
+The single-command flow replaces the manual process of upload-to-tmp,
+chown, chmod, mv, restart — all handled by `ssh_deploy` in one shot:
+
+- ✅ Single command deployment
+- ✅ Automatic permission/ownership handling
+- ✅ Automatic backup before overwriting
+- ✅ No sudo password typed in the terminal
 
 ## Support
 

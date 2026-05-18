@@ -68,9 +68,9 @@ Each profile provides relevant aliases:
 ### Using Command Aliases in Claude Code
 
 ```
-"Execute bench-update on production server"
-"Run bench-restart on dmis"
-"Execute check-memory on develop"
+"Execute app-update on production server"
+"Run app-restart on myapp"
+"Execute check-memory on staging"
 ```
 
 ### Managing Command Aliases

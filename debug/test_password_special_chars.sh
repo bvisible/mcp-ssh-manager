@@ -5,9 +5,9 @@
 
 set -e
 
-# Source the colors library
+# Source the colors library (resolved relative to this script — no hardcoded path)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source /Users/user/.ssh-manager-cli/lib/colors.sh
+source "$SCRIPT_DIR/../cli/lib/colors.sh"
 
 echo "Testing password prompt with special characters..."
 echo "=================================================="

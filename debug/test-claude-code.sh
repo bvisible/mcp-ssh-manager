@@ -52,7 +52,7 @@ fi
 echo ""
 echo "🎯 Configuration Summary:"
 echo "========================"
-echo "MCP Server Path: /Users/user/mcp/mcp-ssh-manager/src/index.js"
+echo "MCP Server Path: $(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src/index.js"
 echo "Servers configured: $(grep -c "SSH_SERVER_.*_HOST=" .env 2>/dev/null || echo 0)"
 echo ""
 echo "✅ Ready to use in Claude Code!"
