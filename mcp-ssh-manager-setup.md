@@ -1,13 +1,13 @@
 # MCP SSH Manager - Complete Project Setup
 
-Complete instructions for Claude Code. Create all files in `/Users/user/mcp/mcp-ssh-manager/`
+Complete instructions for Claude Code. Create all files in `/path/to/mcp-ssh-manager/`
 
 ## 📦 STEP 1: Project structure
 
 Create this folder structure:
 
 ```
-/Users/user/mcp/mcp-ssh-manager/
+/path/to/mcp-ssh-manager/
 ├── src/
 │   └── index.js
 ├── tools/
@@ -586,7 +586,7 @@ SSH_SERVER_DEVELOPMENT_DESCRIPTION=Local development server
   "mcpServers": {
     "ssh-manager": {
       "command": "node",
-      "args": ["/Users/user/mcp/mcp-ssh-manager/src/index.js"]
+      "args": ["/path/to/mcp-ssh-manager/src/index.js"]
     },
     "example-other-server": {
       "command": "npx",
@@ -1129,7 +1129,7 @@ jobs:
 
 ```bash
 # 1. Go to project directory
-cd /Users/user/mcp/mcp-ssh-manager
+cd /path/to/mcp-ssh-manager
 
 # 2. Install dependencies
 npm install
@@ -1138,13 +1138,13 @@ pip install -r tools/requirements.txt
 # 3. Launch server manager
 python tools/server-manager.py
 
-# 4. Add DMIS server (option 2)
-# Server name: dmis
-# Host: host6.example.com
-# User: neoffice
-# Password: REDACTED_PASSWORD
+# 4. Add a server (option 2)
+# Server name: myapp
+# Host: host.example.com
+# User: deploy
+# Password: <your password>
 # Port: 22
-# Description: DMIS Production Server
+# Description: My production server
 
 # 5. Test connection (option 3)
 
@@ -1160,21 +1160,21 @@ Once installed and configured, restart Claude Code and use these commands:
 Use the ssh_list_servers tool
 
 # Execute a command
-Use ssh_execute on server dmis to run "ls -la"
+Use ssh_execute on server myapp to run "ls -la"
 
-# Restart bench
-On dmis, execute "cd ~/frappe-bench && bench restart"
+# Restart the application
+On myapp, execute "cd /opt/myapp && ./bin/restart"
 
 # Upload/Download
-Upload file.txt to dmis:/home/appuser/file.txt
-Download /var/log/app.log from dmis to ./app.log
+Upload file.txt to myapp:/tmp/file.txt
+Download /var/log/app.log from myapp to ./app.log
 ```
 
 ## 🔐 STEP 5: Git Configuration (to publish on GitHub)
 
 ```bash
 # Initialize git
-cd /Users/user/mcp/mcp-ssh-manager
+cd /path/to/mcp-ssh-manager
 git init
 
 # VERIFY that .env is NOT in git
@@ -1230,7 +1230,7 @@ After installation:
         
         # Server name
         while True:
-            server_name = input("Server name (e.g., 'dmis', 'production'): ").strip().lower()
+            server_name = input("Server name (e.g., 'staging', 'production'): ").strip().lower()
             if not self.validate_server_name(server_name):
                 print(f"{Fore.RED}Invalid name. Use only letters, numbers, underscores, and hyphens.{Style.RESET_ALL}")
                 continue
@@ -2088,7 +2088,7 @@ jobs:
 
 ```bash
 # 1. Aller dans le dossier du projet
-cd /Users/user/mcp/mcp-ssh-manager
+cd /path/to/mcp-ssh-manager
 
 # 2. Installer les dépendances
 npm install
@@ -2097,13 +2097,13 @@ pip install -r tools/requirements.txt
 # 3. Lancer le gestionnaire de serveurs
 python tools/server-manager.py
 
-# 4. Ajouter le serveur DMIS (option 2)
-# Server name: dmis
-# Host: host6.example.com
-# User: neoffice
-# Password: REDACTED_PASSWORD
+# 4. Ajouter un serveur (option 2)
+# Server name: myapp
+# Host: host.example.com
+# User: deploy
+# Password: <votre mot de passe>
 # Port: 22
-# Description: DMIS Production Server
+# Description: Mon serveur de production
 
 # 5. Tester la connexion (option 3)
 
@@ -2119,21 +2119,21 @@ Une fois installé et configuré, redémarre Claude Code et utilise ces commande
 Utilise l'outil ssh_list_servers
 
 # Exécuter une commande
-Utilise ssh_execute sur le serveur dmis pour exécuter "ls -la"
+Utilise ssh_execute sur le serveur myapp pour exécuter "ls -la"
 
-# Redémarrer bench
-Sur dmis, exécute "cd ~/frappe-bench && bench restart"
+# Redémarrer l'application
+Sur myapp, exécute "cd /opt/myapp && ./bin/restart"
 
 # Upload/Download
-Upload file.txt vers dmis:/home/appuser/file.txt
-Download /var/log/app.log depuis dmis vers ./app.log
+Upload file.txt vers myapp:/tmp/file.txt
+Download /var/log/app.log depuis myapp vers ./app.log
 ```
 
 ## 🔐 ÉTAPE 5: Configuration Git (pour publier sur GitHub)
 
 ```bash
 # Initialiser git
-cd /Users/user/mcp/mcp-ssh-manager
+cd /path/to/mcp-ssh-manager
 git init
 
 # VÉRIFIER que .env n'est PAS dans git

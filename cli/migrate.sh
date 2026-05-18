@@ -147,7 +147,7 @@ echo "     ${YELLOW}SSH_MANAGER_ENV=\"$(realpath "$ENV_FILE")\" ssh-manager${NC}
 echo
 echo "  2. Direct commands:"
 echo "     ${YELLOW}SSH_MANAGER_ENV=\"$(realpath "$ENV_FILE")\" ssh-manager server list${NC}"
-echo "     ${YELLOW}SSH_MANAGER_ENV=\"$(realpath "$ENV_FILE")\" ssh-manager ssh dmis${NC}"
+echo "     ${YELLOW}SSH_MANAGER_ENV=\"$(realpath "$ENV_FILE")\" ssh-manager ssh production${NC}"
 echo
 echo "  3. Or use the wrapper:"
 echo "     ${YELLOW}$WRAPPER${NC}"

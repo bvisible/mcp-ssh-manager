@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Example deployment workflow using MCP SSH Manager
-This script demonstrates how to automate deployments similar to the ERPNext scenario
+Example deployment workflow using MCP SSH Manager.
+
+These examples show three common deployment scenarios with the ssh_deploy
+tool. All names (servers, paths, owners) are generic placeholders — adapt
+them to your own infrastructure.
 """
 
 import os
@@ -25,48 +28,45 @@ def create_deployment_config(server_name, files, options=None):
     }
     return config
 
-def deploy_erpnext_customization():
+def deploy_python_app_customization():
     """
-    Example: Deploy ERPNext customization files
-    Similar to the user's scenario with payment_proposal files
+    Example: deploy two files of a Python application into a target install.
+    Replace the local/remote paths and the server alias with your own values.
     """
-    
-    # Define the files to deploy
+
     files_to_deploy = [
         {
-            "local": "/Users/user/GitHub/erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py",
-            "remote": "/home/appuser/frappe-bench/apps/erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py"
+            "local": "./build/myapp/module/handler.py",
+            "remote": "/opt/myapp/apps/myapp/module/handler.py"
         },
         {
-            "local": "/Users/user/GitHub/erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.js",
-            "remote": "/home/appuser/frappe-bench/apps/erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.js"
+            "local": "./build/myapp/module/handler.js",
+            "remote": "/opt/myapp/apps/myapp/module/handler.js"
         }
     ]
-    
-    # Deployment options
+
     options = {
-        "owner": "neoffice:neoffice",  # Set correct ownership
-        "permissions": "644",           # Standard file permissions
-        "backup": True,                 # Always backup before overwriting
-        "restart": "cd /home/appuser/frappe-bench && bench restart"  # Restart after deployment
+        "owner": "appuser:appuser",     # Set correct ownership
+        "permissions": "644",            # Standard file permissions
+        "backup": True,                  # Always backup before overwriting
+        "restart": "cd /opt/myapp && ./bin/restart"  # Restart hook
     }
-    
-    # Create deployment configuration
-    deployment = create_deployment_config("dmis", files_to_deploy, options)
-    
+
+    deployment = create_deployment_config("production", files_to_deploy, options)
+
     print("📦 Deployment Configuration:")
     print(json.dumps(deployment, indent=2))
-    
+
     # In Claude Code, you would say:
-    # "Deploy payment_proposal files to dmis server with neoffice ownership and restart bench"
-    
+    # "Deploy handler files to production with appuser ownership and restart the app"
+
     return deployment
 
 def deploy_web_application():
     """
     Example: Deploy web application files
     """
-    
+
     files_to_deploy = [
         {
             "local": "./dist/index.html",
@@ -81,26 +81,26 @@ def deploy_web_application():
             "remote": "/var/www/html/css/styles.css"
         }
     ]
-    
+
     options = {
         "owner": "www-data:www-data",
         "permissions": "644",
         "backup": True,
         "restart": "systemctl restart nginx"
     }
-    
+
     deployment = create_deployment_config("production", files_to_deploy, options)
-    
+
     print("🌐 Web Deployment Configuration:")
     print(json.dumps(deployment, indent=2))
-    
+
     return deployment
 
 def deploy_configuration_files():
     """
     Example: Deploy configuration files with elevated privileges
     """
-    
+
     files_to_deploy = [
         {
             "local": "./config/nginx.conf",
@@ -111,65 +111,65 @@ def deploy_configuration_files():
             "remote": "/etc/myapp/app.env"
         }
     ]
-    
+
     options = {
         "owner": "root:root",
         "permissions": "600",  # Restrictive permissions for config files
         "backup": True,
         "restart": "systemctl reload nginx && systemctl restart myapp"
     }
-    
+
     deployment = create_deployment_config("production", files_to_deploy, options)
-    
+
     print("⚙️ Configuration Deployment:")
     print(json.dumps(deployment, indent=2))
-    
+
     return deployment
 
 def main():
     """
     Demonstrate various deployment scenarios
     """
-    
+
     print("🚀 MCP SSH Manager - Deployment Examples")
     print("=" * 50)
     print()
-    
+
     # Check if server configuration exists
     servers = load_env_config()
-    
+
     if not servers:
         print("⚠️ No servers configured. Run 'python tools/server_manager.py' to add servers.")
         return
-    
+
     print("📋 Available servers:", ", ".join(servers.keys()))
     print()
-    
-    # Example 1: ERPNext deployment (like the user's scenario)
-    print("Example 1: ERPNext Deployment")
+
+    # Example 1: Python application file deployment
+    print("Example 1: Python application customization deployment")
     print("-" * 30)
-    deploy_erpnext_customization()
+    deploy_python_app_customization()
     print()
-    
+
     # Example 2: Web application deployment
     print("Example 2: Web Application Deployment")
     print("-" * 30)
     deploy_web_application()
     print()
-    
+
     # Example 3: Configuration files deployment
     print("Example 3: Configuration Files Deployment")
     print("-" * 30)
     deploy_configuration_files()
     print()
-    
+
     print("💡 Tips for using in Claude Code:")
     print("-" * 30)
     print("1. Create server aliases for easier access:")
-    print('   "Create alias dmis for dmis_server"')
+    print('   "Create alias prod for production_server"')
     print()
     print("2. Deploy multiple files at once:")
-    print('   "Deploy all .py and .js files from payment_proposal to dmis"')
+    print('   "Deploy all .py and .js files from module/ to production"')
     print()
     print("3. Use sudo for system files:")
     print('   "Deploy nginx.conf to production:/etc/nginx/ with sudo"')

@@ -124,7 +124,7 @@
       {
         "type": "notification",
         "name": "use-context",
-        "command": "echo \"Server: {server}, Error: {error}\" > /Users/user/mcp/mcp-ssh-manager/context-test.txt"
+        "command": "echo \"Server: {server}, Error: {error}\" > /tmp/mcp-ssh-manager-context-test.txt"
       }
     ]
   }
