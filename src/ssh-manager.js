@@ -7,6 +7,22 @@ import { isHostKnown, getCurrentHostKey, addHostKey, updateHostKey } from './ssh
 import { configLoader } from './config-loader.js';
 import { logger } from './logger.js';
 
+// Validate liveness-probe output across shells (bash, cmd.exe, PowerShell).
+// Normalize CRLF, stray quotes/backslashes and case before matching so quoted
+// or escaped variants (e.g. `"ping"`, `\"ping\"\r\n`) still count as alive.
+// `includes` (not strict `===`) is deliberate: a liveness probe should err
+// toward "alive" — a false positive merely lets the next real command
+// reconnect, whereas a false negative needlessly tears down a healthy pooled
+// connection.
+export function isPingAlive(stdout) {
+  const normalized = (stdout || '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/["'`\\]/g, '')
+    .trim()
+    .toLowerCase();
+  return normalized.includes('ping');
+}
+
 class SSHManager {
   constructor(config) {
     this.config = config;
@@ -509,15 +525,12 @@ class SSHManager {
 
   async ping() {
     try {
-      const result = await this.execCommand('echo "ping"', { timeout: 5000 });
-      // Windows/OpenSSH may return quoted/escaped variants (e.g. "ping", \ ping\).
-      // Normalize aggressively to avoid false "dead" status on healthy sessions.
-      const normalized = (result.stdout || '')
-        .replace(/[\r\n]/g, ' ')
-        .replace(/["'`\\]/g, '')
-        .trim()
-        .toLowerCase();
-      return normalized.includes('ping');
+      // Use `echo ping` WITHOUT quotes: cmd.exe echoes surrounding quotes
+      // literally (outputs `"ping"`), which broke the strict equality check and
+      // marked healthy Windows/OpenSSH sessions as dead. Output handling lives
+      // in isPingAlive() so it can be unit-tested without a live connection.
+      const result = await this.execCommand('echo ping', { timeout: 5000 });
+      return isPingAlive(result.stdout);
     } catch (error) {
       return false;
     }
