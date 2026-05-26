@@ -510,7 +510,14 @@ class SSHManager {
   async ping() {
     try {
       const result = await this.execCommand('echo "ping"', { timeout: 5000 });
-      return result.stdout.trim() === 'ping';
+      // Windows/OpenSSH may return quoted/escaped variants (e.g. "ping", \ ping\).
+      // Normalize aggressively to avoid false "dead" status on healthy sessions.
+      const normalized = (result.stdout || '')
+        .replace(/[\r\n]/g, ' ')
+        .replace(/["'`\\]/g, '')
+        .trim()
+        .toLowerCase();
+      return normalized.includes('ping');
     } catch (error) {
       return false;
     }
