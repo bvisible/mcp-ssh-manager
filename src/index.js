@@ -419,6 +419,11 @@ function setupKeepalive(serverName, ssh) {
     }
   }, KEEPALIVE_INTERVAL);
 
+  // Don't let the keepalive timer keep the process alive on its own. As a stdio
+  // MCP server we must exit when our transport closes; an active interval would
+  // otherwise pin the event loop and leave the process orphaned.
+  if (typeof interval.unref === 'function') interval.unref();
+
   keepaliveIntervals.set(serverName, interval);
 }
 
@@ -4858,15 +4863,44 @@ registerToolConditional(
   }
 );
 
-// Clean up connections on shutdown
-process.on('SIGINT', async () => {
-  console.error('\n🔌 Closing SSH connections...');
+// Clean up connections on shutdown.
+//
+// A stdio MCP server is torn down by its host (e.g. Claude Code) closing our
+// stdin — not by SIGINT, which only arrives on an interactive Ctrl-C. Handling
+// SIGINT alone meant the process was never signalled on normal teardown and was
+// reparented to init as an orphan, leaking one node process per session. Listen
+// for SIGTERM and stdin EOF as well, and make shutdown idempotent so overlapping
+// signals can't double-dispose.
+let isShuttingDown = false;
+function shutdown(reason) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.error(`\n🔌 Closing SSH connections (${reason})...`);
   for (const [name, ssh] of connections) {
-    ssh.dispose();
-    console.error(`  Closed connection to ${name}`);
+    try {
+      ssh.dispose();
+      console.error(`  Closed connection to ${name}`);
+    } catch (error) {
+      console.error(`  Error closing ${name}: ${error.message}`);
+    }
   }
-  process.exit(0);
-});
+  // Best-effort flush of any final stdout the host may still read, but never
+  // hang if it has already stopped reading: a short unref'd timer forces exit
+  // regardless, so this can't reintroduce a stuck process.
+  const force = setTimeout(() => process.exit(0), 250);
+  if (typeof force.unref === 'function') force.unref();
+  process.stdout.write('', () => process.exit(0));
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGHUP', () => shutdown('SIGHUP'));
+// When launched as a stdio MCP server the host closes our stdin to signal
+// teardown; treat that EOF as a shutdown request. 'end' fires when the readable
+// side is fully consumed; 'close' covers the fd being torn down without a clean
+// 'end'. The idempotent guard above makes the overlap harmless.
+process.stdin.on('end', () => shutdown('stdin ended'));
+process.stdin.on('close', () => shutdown('stdin closed'));
 
 // Start the server
 async function main() {
@@ -4883,10 +4917,13 @@ async function main() {
   console.error('💡 Use server-manager.py to configure servers');
   console.error('🔄 Connection management: Auto-reconnect enabled, 30min timeout');
 
-  // Set up periodic cleanup of old connections (every 10 minutes)
-  setInterval(() => {
+  // Set up periodic cleanup of old connections (every 10 minutes).
+  // unref() so this timer alone never keeps the process alive after the
+  // stdio transport has closed.
+  const cleanupTimer = setInterval(() => {
     cleanupOldConnections();
   }, 10 * 60 * 1000);
+  if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
 }
 
 main().catch(console.error);
