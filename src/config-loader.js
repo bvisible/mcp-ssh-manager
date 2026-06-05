@@ -152,8 +152,15 @@ export class ConfigLoader {
    * Load configuration from .env file
    */
   loadEnvConfig(envPath) {
-    dotenv.config({ path: envPath });
-    this.parseEnvVariables(process.env);
+    const result = dotenv.config({ path: envPath, processEnv: {} });
+    if (result.error) {
+      throw result.error;
+    }
+
+    this.parseEnvVariables({
+      ...process.env,
+      ...(result.parsed || {})
+    });
   }
 
   /**
