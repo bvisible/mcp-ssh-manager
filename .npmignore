@@ -43,6 +43,7 @@ npm-debug.log*
 .eslintrc*
 .prettierrc*
 .husky/
+knip.json
 
 # CLI development (not needed for npm)
 cli/test/

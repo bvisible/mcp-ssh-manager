@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "cli/**/*.js",
+    "tests/*.js",
+    "debug/*.js"
+  ],
+  "project": ["src/**/*.js"],
+  "ignoreBinaries": ["wsl.exe", "pip", "python", "ssh-keyscan"]
+}
