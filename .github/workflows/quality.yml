@@ -33,7 +33,7 @@ jobs:
     - name: Install Node dependencies
       run: |
         npm install
-        npm install --save-dev eslint prettier
+        npm install --save-dev eslint prettier knip@5
     
     - name: Run JavaScript syntax check
       run: |
@@ -43,7 +43,10 @@ jobs:
     - name: Run ESLint
       run: npx eslint src/
       continue-on-error: true
-    
+
+    - name: Run knip (dead code & unused dependencies)
+      run: npx knip
+
     - name: Run validation script
       run: |
         chmod +x scripts/validate.sh
