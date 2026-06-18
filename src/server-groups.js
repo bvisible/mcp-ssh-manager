@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 const GROUPS_FILE = path.join(__dirname, '..', '.server-groups.json');
 
 // Group execution strategies
-export const EXECUTION_STRATEGIES = {
+const EXECUTION_STRATEGIES = {
   PARALLEL: 'parallel',      // Execute on all servers at once
   SEQUENTIAL: 'sequential',  // Execute one by one
   ROLLING: 'rolling'        // Execute with delay between servers
@@ -115,7 +115,7 @@ class ServerGroups {
     // This will be populated from the main server config
     const servers = [];
 
-    for (const [key, value] of Object.entries(process.env)) {
+    for (const key of Object.keys(process.env)) {
       if (key.startsWith('SSH_SERVER_') && key.endsWith('_HOST')) {
         const serverName = key.replace('SSH_SERVER_', '').replace('_HOST', '').toLowerCase();
         servers.push(serverName);
@@ -398,7 +398,6 @@ class ServerGroups {
 const serverGroups = new ServerGroups();
 
 // Export convenience functions
-export const getGroup = (name) => serverGroups.getGroup(name);
 export const createGroup = (name, servers, options) => serverGroups.createGroup(name, servers, options);
 export const updateGroup = (name, updates) => serverGroups.updateGroup(name, updates);
 export const deleteGroup = (name) => serverGroups.deleteGroup(name);

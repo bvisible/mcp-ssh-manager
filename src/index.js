@@ -29,7 +29,6 @@ import {
   suggestAliases
 } from './command-aliases.js';
 import {
-  OUTPUT_LIMITS,
   TIMEOUTS,
   truncateOutput,
   formatJSONResponse
@@ -52,27 +51,22 @@ import {
   createSession,
   getSession,
   listSessions,
-  closeSession,
-  SESSION_STATES
+  closeSession
 } from './session-manager.js';
 import {
-  getGroup,
   createGroup,
   updateGroup,
   deleteGroup,
   addServersToGroup,
   removeServersFromGroup,
   listGroups,
-  executeOnGroup,
-  EXECUTION_STRATEGIES
+  executeOnGroup
 } from './server-groups.js';
 import {
   createTunnel,
-  getTunnel,
   listTunnels,
   closeTunnel,
-  closeServerTunnels,
-  TUNNEL_TYPES
+  closeServerTunnels
 } from './tunnel-manager.js';
 import {
   getHostKeyFingerprint,
@@ -102,23 +96,10 @@ import {
   buildListBackupsCommand,
   parseBackupsList,
   buildCleanupCommand,
-  buildCronScheduleCommand,
-  parseCronJobs
+  buildCronScheduleCommand
 } from './backup-manager.js';
 import {
   HEALTH_STATUS,
-  COMMON_SERVICES,
-  buildCPUCheckCommand,
-  buildMemoryCheckCommand,
-  buildDiskCheckCommand,
-  buildNetworkCheckCommand,
-  buildLoadAverageCommand,
-  buildUptimeCommand,
-  parseCPUUsage,
-  parseMemoryUsage,
-  parseDiskUsage,
-  parseNetworkStats,
-  determineOverallHealth,
   buildServiceStatusCommand,
   parseServiceStatus,
   buildProcessListCommand,
@@ -131,12 +112,10 @@ import {
   checkAlertThresholds,
   buildComprehensiveHealthCheckCommand,
   parseComprehensiveHealthCheck,
-  getCommonServices,
   resolveServiceName
 } from './health-monitor.js';
 import {
   DB_TYPES,
-  DB_PORTS,
   buildMySQLDumpCommand as buildDBMySQLDumpCommand,
   buildPostgreSQLDumpCommand as buildDBPostgreSQLDumpCommand,
   buildMongoDBDumpCommand as buildDBMongoDBDumpCommand,
@@ -155,10 +134,8 @@ import {
   isSafeQuery,
   parseDatabaseList,
   parseTableList,
-  buildEstimateSizeCommand,
   parseSize,
-  formatBytes,
-  getConnectionInfo
+  formatBytes
 } from './database-manager.js';
 import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 import { evaluatePolicy } from './policy.js';
@@ -329,7 +306,7 @@ async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30
   // pipes, etc. Base64 sidesteps all escape issues entirely.
   if (platform === 'windows' && !rawCommand) {
     // Suppress progress (avoids CLIXML sentinels in stderr) + force UTF-8 stdout
-    const prelude = `$ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;`;
+    const prelude = '$ProgressPreference=\'SilentlyContinue\'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;';
     const fullPSCommand = `${prelude} ${command}`;
     const utf16le = Buffer.from(fullPSCommand, 'utf16le');
     const b64 = utf16le.toString('base64');
@@ -704,7 +681,7 @@ registerToolConditional(
       let fullCommand;
       if (workingDir) {
         if (platform === 'windows') {
-          const escapedDir = workingDir.replace(/'/g, "''");
+          const escapedDir = workingDir.replace(/'/g, '\'\'');
           fullCommand = `Set-Location '${escapedDir}'; ${expandedCommand}`;
         } else {
           fullCommand = `cd ${workingDir} && ${expandedCommand}`;
@@ -915,7 +892,7 @@ registerToolConditional(
     if (denied) return denied;
 
     try {
-      const ssh = await getConnection(serverName);
+      await getConnection(serverName);
       const servers = await loadServerConfig();
       const serverConfig = servers[serverName.toLowerCase()];
 
@@ -1266,7 +1243,7 @@ registerToolConditional(
         const sessionId = `tail_${Date.now()}`;
 
         // Store the SSH stream for later cleanup
-        const stream = await ssh.execCommandStream(command, {
+        await ssh.execCommandStream(command, {
           onStdout: (chunk) => {
             // In a real implementation, this would stream to the client
             console.error(`[${serverName}:${file}] ${chunk}`);
@@ -1921,7 +1898,7 @@ registerToolConditional(
           if (workingDir) {
             if (platform === 'windows') {
               // Single-quote escaping: replace ' with '' (PowerShell convention)
-              const escapedDir = workingDir.replace(/'/g, "''");
+              const escapedDir = workingDir.replace(/'/g, '\'\'');
               fullCommand = `Set-Location '${escapedDir}'; ${command}`;
             } else {
               fullCommand = `cd ${workingDir} && ${command}`;
@@ -2325,14 +2302,14 @@ registerToolConditional(
       const platform = serverConfig?.platform || 'linux';
       if (cwd) {
         if (platform === 'windows') {
-          const escapedDir = cwd.replace(/'/g, "''");
+          const escapedDir = cwd.replace(/'/g, '\'\'');
           fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
         } else {
           fullCommand = `cd ${cwd} && ${fullCommand}`;
         }
       } else if (serverConfig?.default_dir) {
         if (platform === 'windows') {
-          const escapedDir = serverConfig.default_dir.replace(/'/g, "''");
+          const escapedDir = serverConfig.default_dir.replace(/'/g, '\'\'');
           fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
         } else {
           fullCommand = `cd ${serverConfig.default_dir} && ${fullCommand}`;

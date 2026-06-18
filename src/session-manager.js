@@ -14,7 +14,7 @@ function generateMarker(prefix) {
 }
 
 // Session states
-export const SESSION_STATES = {
+const SESSION_STATES = {
   INITIALIZING: 'initializing',
   READY: 'ready',
   BUSY: 'busy',
@@ -332,7 +332,7 @@ export function getSession(sessionId) {
 export function listSessions() {
   const activeSessions = [];
 
-  for (const [id, session] of sessions.entries()) {
+  for (const [, session] of sessions.entries()) {
     if (session.state !== SESSION_STATES.CLOSED) {
       activeSessions.push(session.getInfo());
     }

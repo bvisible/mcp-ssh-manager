@@ -14,7 +14,7 @@ export const HEALTH_STATUS = {
 };
 
 // Common services to monitor
-export const COMMON_SERVICES = {
+const COMMON_SERVICES = {
   nginx: { systemd: 'nginx', sysv: 'nginx' },
   apache: { systemd: 'apache2', sysv: 'apache2' },
   mysql: { systemd: 'mysql', sysv: 'mysql' },
@@ -28,7 +28,7 @@ export const COMMON_SERVICES = {
 /**
  * Build command to check CPU usage
  */
-export function buildCPUCheckCommand() {
+function buildCPUCheckCommand() {
   // Get CPU usage using top, show idle percentage, calculate used
   return 'top -bn1 | grep "Cpu(s)" | sed "s/.*, *\\([0-9.]*\\)%* id.*/\\1/" | awk \'{print 100 - $1}\'';
 }
@@ -36,7 +36,7 @@ export function buildCPUCheckCommand() {
 /**
  * Build command to check memory usage
  */
-export function buildMemoryCheckCommand() {
+function buildMemoryCheckCommand() {
   // Returns: total, used, free, available in MB and percentage
   return 'free -m | awk \'NR==2{printf "{\\"total\\":%s,\\"used\\":%s,\\"free\\":%s,\\"percent\\":%.2f}", $2,$3,$4,$3*100/$2}\'';
 }
@@ -44,7 +44,7 @@ export function buildMemoryCheckCommand() {
 /**
  * Build command to check disk usage
  */
-export function buildDiskCheckCommand(mountPoint = '/') {
+function buildDiskCheckCommand(mountPoint = '/') {
   // Returns JSON with disk usage for specific mount point or all
   if (mountPoint === 'all') {
     return 'df -h | awk \'NR>1 {gsub(/%/,"",$5); printf "{\\"mount\\":\\"%s\\",\\"size\\":\\"%s\\",\\"used\\":\\"%s\\",\\"avail\\":\\"%s\\",\\"percent\\":%s}\\n", $6,$2,$3,$4,$5}\'';
@@ -55,7 +55,7 @@ export function buildDiskCheckCommand(mountPoint = '/') {
 /**
  * Build command to check network statistics
  */
-export function buildNetworkCheckCommand() {
+function buildNetworkCheckCommand() {
   // Get basic network stats (RX/TX bytes)
   return 'cat /proc/net/dev | awk \'NR>2 {printf "{\\"interface\\":\\"%s\\",\\"rx_bytes\\":%s,\\"tx_bytes\\":%s}\\n", $1,$2,$10}\' | grep -v "lo:"';
 }
@@ -63,21 +63,21 @@ export function buildNetworkCheckCommand() {
 /**
  * Build command to check load average
  */
-export function buildLoadAverageCommand() {
+function buildLoadAverageCommand() {
   return 'uptime | awk -F\'load average:\' \'{print $2}\' | sed \'s/^[ \\t]*//\'';
 }
 
 /**
  * Build command to check system uptime
  */
-export function buildUptimeCommand() {
+function buildUptimeCommand() {
   return 'uptime -p 2>/dev/null || uptime | awk \'{print $3,$4}\' | sed \'s/,//\'';
 }
 
 /**
  * Parse CPU usage output
  */
-export function parseCPUUsage(output) {
+function parseCPUUsage(output) {
   const usage = parseFloat(output.trim());
   return {
     usage: usage.toFixed(2),
@@ -89,7 +89,7 @@ export function parseCPUUsage(output) {
 /**
  * Parse memory usage output
  */
-export function parseMemoryUsage(output) {
+function parseMemoryUsage(output) {
   try {
     const mem = JSON.parse(output.trim());
     return {
@@ -108,7 +108,7 @@ export function parseMemoryUsage(output) {
 /**
  * Parse disk usage output
  */
-export function parseDiskUsage(output) {
+function parseDiskUsage(output) {
   const lines = output.trim().split('\n').filter(l => l);
   const disks = [];
 
@@ -128,7 +128,7 @@ export function parseDiskUsage(output) {
 /**
  * Parse network statistics
  */
-export function parseNetworkStats(output) {
+function parseNetworkStats(output) {
   const lines = output.trim().split('\n').filter(l => l);
   const interfaces = [];
 
@@ -150,7 +150,7 @@ export function parseNetworkStats(output) {
 /**
  * Determine overall health status
  */
-export function determineOverallHealth(cpu, memory, disks) {
+function determineOverallHealth(cpu, memory, disks) {
   const statuses = [cpu.status, memory.status, ...disks.map(d => d.status)];
 
   if (statuses.includes(HEALTH_STATUS.CRITICAL)) {
@@ -410,13 +410,6 @@ export function parseComprehensiveHealthCheck(output) {
   }
 
   return result;
-}
-
-/**
- * Get common service names for detection
- */
-export function getCommonServices() {
-  return Object.keys(COMMON_SERVICES);
 }
 
 /**

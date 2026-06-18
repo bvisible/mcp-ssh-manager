@@ -296,7 +296,6 @@ function buildPostgreSQLRestoreCommand(backupFile, options) {
  */
 function buildMongoDBRestoreCommand(backupFile, options) {
   const {
-    database,
     user,
     password,
     host = 'localhost',
@@ -438,32 +437,4 @@ export function buildCronScheduleCommand(schedule, backupCommand, cronComment) {
   // Add cron job with comment
   const cronLine = `${schedule} ${backupCommand} # ${cronComment}`;
   return `(crontab -l 2>/dev/null; echo '${cronLine}') | crontab -`;
-}
-
-/**
- * Parse cron list output
- */
-export function parseCronJobs(output) {
-  if (!output || !output.trim()) {
-    return [];
-  }
-
-  const jobs = [];
-  const lines = output.split('\n');
-
-  for (const line of lines) {
-    if (line.trim() && !line.startsWith('#') && line.includes('ssh-manager-backup')) {
-      const parts = line.split('#');
-      const schedule = parts[0].trim();
-      const comment = parts[1] ? parts[1].trim() : '';
-
-      jobs.push({
-        schedule,
-        comment,
-        command: schedule.split(/\s+/).slice(5).join(' ')
-      });
-    }
-  }
-
-  return jobs;
 }

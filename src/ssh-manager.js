@@ -1,10 +1,7 @@
 import { Client } from 'ssh2';
 import fs from 'fs';
 import os from 'os';
-import { promisify } from 'util';
-import crypto from 'crypto';
-import { isHostKnown, getCurrentHostKey, addHostKey, updateHostKey } from './ssh-key-manager.js';
-import { configLoader } from './config-loader.js';
+import { isHostKnown, addHostKey } from './ssh-key-manager.js';
 import { logger } from './logger.js';
 
 // Validate liveness-probe output across shells (bash, cmd.exe, PowerShell).
@@ -111,7 +108,7 @@ class SSHManager {
 
       // Add host key verification callback if enabled
       if (this.hostKeyVerification) {
-        connConfig.hostVerifier = (hashedKey) => {
+        connConfig.hostVerifier = () => {
           const port = this.config.port || 22;
           const host = this.config.host;
 
@@ -480,7 +477,7 @@ class SSHManager {
   }
 
   async putFiles(files, options = {}) {
-    const sftp = await this.getSFTP();
+    await this.getSFTP();
     const results = [];
 
     for (const file of files) {

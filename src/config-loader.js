@@ -381,6 +381,3 @@ export class ConfigLoader {
     return this.servers.size;
   }
 }
-
-// Export singleton instance
-export const configLoader = new ConfigLoader();

@@ -10,13 +10,6 @@ export const DB_TYPES = {
   MONGODB: 'mongodb'
 };
 
-// Default ports
-export const DB_PORTS = {
-  mysql: 3306,
-  postgresql: 5432,
-  mongodb: 27017
-};
-
 /**
  * Build MySQL dump command
  */
@@ -206,7 +199,6 @@ export function buildPostgreSQLImportCommand(options) {
  */
 export function buildMongoDBRestoreCommand(options) {
   const {
-    database,
     user,
     password,
     host = 'localhost',
@@ -471,53 +463,6 @@ export function parseTableList(output) {
 }
 
 /**
- * Estimate dump size command
- */
-export function buildEstimateSizeCommand(type, database, options = {}) {
-  const { user, password, host = 'localhost', port } = options;
-
-  switch (type) {
-  case DB_TYPES.MYSQL: {
-    let command = 'mysql';
-    if (user) command += ` -u${user}`;
-    if (password) command += ` -p'${password}'`;
-    if (host) command += ` -h ${host}`;
-    if (port) command += ` -P ${port}`;
-    command += ` -e "SELECT SUM(data_length + index_length) FROM information_schema.TABLES WHERE table_schema='${database}';" | tail -n 1`;
-    return command;
-  }
-
-  case DB_TYPES.POSTGRESQL: {
-    let command = '';
-    if (password) {
-      command = `PGPASSWORD='${password}' `;
-    }
-    command += 'psql';
-    if (user) command += ` -U ${user}`;
-    if (host) command += ` -h ${host}`;
-    if (port) command += ` -p ${port}`;
-    command += ` -d ${database}`;
-    command += ` -t -c "SELECT pg_database_size('${database}');" | sed 's/^[ \\t]*//'`;
-    return command;
-  }
-
-  case DB_TYPES.MONGODB: {
-    let command = 'mongo';
-    if (host) command += ` --host ${host}`;
-    if (port) command += ` --port ${port}`;
-    if (user) command += ` --username ${user}`;
-    if (password) command += ` --password '${password}'`;
-    command += ` ${database}`;
-    command += ' --quiet --eval "db.stats().dataSize"';
-    return command;
-  }
-
-  default:
-    throw new Error(`Unknown database type: ${type}`);
-  }
-}
-
-/**
  * Parse size output to bytes
  */
 export function parseSize(output) {
@@ -534,20 +479,4 @@ export function formatBytes(bytes) {
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-/**
- * Get database connection info
- */
-export function getConnectionInfo(type, options) {
-  const { host = 'localhost', port, user, database } = options;
-  const defaultPort = DB_PORTS[type];
-
-  return {
-    type,
-    host,
-    port: port || defaultPort,
-    user: user || 'default',
-    database: database || 'all'
-  };
 }

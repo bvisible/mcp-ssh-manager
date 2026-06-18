@@ -11,7 +11,7 @@ import { logger } from './logger.js';
 const tunnels = new Map();
 
 // Tunnel types
-export const TUNNEL_TYPES = {
+const TUNNEL_TYPES = {
   LOCAL: 'local',        // Local port forwarding (access remote service locally)
   REMOTE: 'remote',      // Remote port forwarding (expose local service remotely)
   DYNAMIC: 'dynamic'     // SOCKS proxy
@@ -182,7 +182,7 @@ class SSHTunnel {
     });
 
     // Handle incoming connections from remote
-    this.ssh.on('tcp connection', (info, accept, reject) => {
+    this.ssh.on('tcp connection', (info, accept) => {
       if (info.destPort !== remotePort) return;
 
       this.stats.connectionsTotal++;
@@ -479,25 +479,12 @@ export async function createTunnel(serverName, ssh, config) {
 }
 
 /**
- * Get an existing tunnel
- */
-export function getTunnel(tunnelId) {
-  const tunnel = tunnels.get(tunnelId);
-
-  if (!tunnel) {
-    throw new Error(`Tunnel ${tunnelId} not found`);
-  }
-
-  return tunnel;
-}
-
-/**
  * List all active tunnels
  */
 export function listTunnels(serverName = null) {
   const activeTunnels = [];
 
-  for (const [id, tunnel] of tunnels.entries()) {
+  for (const [, tunnel] of tunnels.entries()) {
     if (tunnel.state !== TUNNEL_STATES.CLOSED) {
       if (!serverName || tunnel.serverName === serverName) {
         activeTunnels.push(tunnel.getInfo());
@@ -528,7 +515,7 @@ export function closeTunnel(tunnelId) {
 export function closeServerTunnels(serverName) {
   let closedCount = 0;
 
-  for (const [id, tunnel] of tunnels.entries()) {
+  for (const [, tunnel] of tunnels.entries()) {
     if (tunnel.serverName === serverName) {
       tunnel.close();
       closedCount++;
