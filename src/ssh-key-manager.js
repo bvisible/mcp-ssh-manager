@@ -345,35 +345,3 @@ export function extractHostFromSSHError(stderr) {
 
   return null;
 }
-
-/**
- * Handle SSH key error automatically
- */
-export async function handleSSHKeyError(stderr, options = {}) {
-  const { autoAccept = false, interactive = true } = options;
-
-  const hostInfo = extractHostFromSSHError(stderr);
-  if (!hostInfo) {
-    throw new Error('Could not extract host information from SSH error');
-  }
-
-  logger.warn('SSH host key verification failed', hostInfo);
-
-  if (autoAccept) {
-    // Automatically update the key
-    await updateHostKey(hostInfo.host, hostInfo.port);
-    return { action: 'updated', ...hostInfo };
-  }
-
-  if (!interactive) {
-    throw new Error(`Host key verification failed for ${hostInfo.host}:${hostInfo.port}. Use ssh_key_manage tool to update the key.`);
-  }
-
-  // In interactive mode, we would prompt the user
-  // For now, just return the error info
-  return {
-    action: 'prompt_required',
-    ...hostInfo,
-    message: `Host key has changed for ${hostInfo.host}:${hostInfo.port}. Use ssh_key_manage tool to verify and update the key.`
-  };
-}

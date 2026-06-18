@@ -42,7 +42,7 @@ export const TIMEOUTS = {
 };
 
 // Response formatting
-export const RESPONSE_FORMAT = {
+const RESPONSE_FORMAT = {
   // Whether to use compact JSON (no formatting)
   COMPACT_JSON: process.env.MCP_SSH_COMPACT_JSON === 'true',
 

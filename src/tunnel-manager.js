@@ -18,7 +18,7 @@ export const TUNNEL_TYPES = {
 };
 
 // Tunnel states
-export const TUNNEL_STATES = {
+const TUNNEL_STATES = {
   CONNECTING: 'connecting',
   ACTIVE: 'active',
   RECONNECTING: 'reconnecting',
@@ -541,7 +541,7 @@ export function closeServerTunnels(serverName) {
 /**
  * Monitor tunnel health
  */
-export function monitorTunnels() {
+function monitorTunnels() {
   const now = Date.now();
   const healthTimeout = 60 * 1000; // 1 minute
 
@@ -568,13 +568,3 @@ export function monitorTunnels() {
 // a background timer.
 const tunnelMonitor = setInterval(monitorTunnels, 30 * 1000); // Every 30 seconds
 if (typeof tunnelMonitor.unref === 'function') tunnelMonitor.unref();
-
-export default {
-  createTunnel,
-  getTunnel,
-  listTunnels,
-  closeTunnel,
-  closeServerTunnels,
-  TUNNEL_TYPES,
-  TUNNEL_STATES
-};

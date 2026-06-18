@@ -46,7 +46,7 @@ export function loadCommandAliases() {
 /**
  * Save command aliases to file
  */
-export function saveCommandAliases(aliases) {
+function saveCommandAliases(aliases) {
   try {
     // Only save custom aliases (not from profile)
     const customAliases = {};

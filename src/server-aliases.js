@@ -15,7 +15,7 @@ const ALIASES_FILE = path.join(__dirname, '..', '.server-aliases.json');
 /**
  * Load server aliases from configuration file
  */
-export function loadAliases() {
+function loadAliases() {
   try {
     if (fs.existsSync(ALIASES_FILE)) {
       const content = fs.readFileSync(ALIASES_FILE, 'utf8');
@@ -30,7 +30,7 @@ export function loadAliases() {
 /**
  * Save server aliases to configuration file
  */
-export function saveAliases(aliases) {
+function saveAliases(aliases) {
   try {
     fs.writeFileSync(ALIASES_FILE, JSON.stringify(aliases, null, 2));
     return true;
@@ -86,38 +86,6 @@ export function resolveServerName(nameOrAlias, servers) {
   }
 
   return null;
-}
-
-/**
- * Create default aliases based on common patterns
- */
-export function createDefaultAliases(servers) {
-  const aliases = {};
-
-  Object.entries(servers).forEach(([name, config]) => {
-    // Create short aliases for common patterns
-    if (name.includes('production')) {
-      aliases['prod'] = name;
-    } else if (name.includes('staging')) {
-      aliases['stage'] = name;
-    } else if (name.includes('development')) {
-      aliases['dev'] = name;
-    } else if (name.includes('testing')) {
-      aliases['test'] = name;
-    }
-
-    // Create aliases from hostname patterns
-    const host = config.host;
-    if (host) {
-      // Extract subdomain as potential alias
-      const subdomain = host.split('.')[0];
-      if (subdomain && subdomain !== 'www' && !aliases[subdomain]) {
-        aliases[subdomain] = name;
-      }
-    }
-  });
-
-  return aliases;
 }
 
 /**

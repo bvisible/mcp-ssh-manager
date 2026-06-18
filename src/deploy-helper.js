@@ -144,32 +144,3 @@ export function detectDeploymentNeeds(remotePath) {
 
   return needs;
 }
-
-/**
- * Create batch deployment script for multiple files
- */
-export function createBatchDeployScript(deployments) {
-  const script = ['#!/bin/bash', 'set -e', ''];
-
-  script.push('# Batch deployment script');
-  script.push(`# Generated at ${new Date().toISOString()}`);
-  script.push('');
-
-  deployments.forEach((deploy, index) => {
-    script.push(`# File ${index + 1}: ${deploy.localPath} -> ${deploy.remotePath}`);
-    deploy.strategy.steps.forEach(step => {
-      if (step.type !== 'cleanup') {
-        script.push(step.command.replace('{{tempFile}}', deploy.tempFile));
-      }
-    });
-    script.push('');
-  });
-
-  // Cleanup all temp files at the end
-  script.push('# Cleanup temporary files');
-  deployments.forEach(deploy => {
-    script.push(`rm -f ${deploy.tempFile}`);
-  });
-
-  return script.join('\n');
-}

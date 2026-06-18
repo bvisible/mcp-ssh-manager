@@ -395,7 +395,7 @@ class ServerGroups {
 }
 
 // Export singleton instance
-export const serverGroups = new ServerGroups();
+const serverGroups = new ServerGroups();
 
 // Export convenience functions
 export const getGroup = (name) => serverGroups.getGroup(name);
@@ -406,5 +406,3 @@ export const addServersToGroup = (name, servers) => serverGroups.addServers(name
 export const removeServersFromGroup = (name, servers) => serverGroups.removeServers(name, servers);
 export const listGroups = () => serverGroups.listGroups();
 export const executeOnGroup = (name, executor, options) => serverGroups.executeOnGroup(name, executor, options);
-
-export default serverGroups;

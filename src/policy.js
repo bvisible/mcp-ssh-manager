@@ -56,7 +56,7 @@ export const COMMAND_BEARING_TOOLS = new Set([
 //
 // The user can layer their own DENY_PATTERNS on top via restricted mode for
 // finer control.
-export const READONLY_DENY_REGEX = [
+const READONLY_DENY_REGEX = [
   /(^|[\s;&|])rm(\s|$)/,
   /(^|[\s;&|])rmdir(\s|$)/,
   /(^|[\s;&|])mv(\s|$)/,

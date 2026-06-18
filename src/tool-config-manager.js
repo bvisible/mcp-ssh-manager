@@ -21,7 +21,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'tools-config.json');
 /**
  * Tool Configuration Manager Class
  */
-export class ToolConfigManager {
+class ToolConfigManager {
   constructor() {
     this.config = null;
     this.configPath = CONFIG_FILE;
@@ -423,12 +423,4 @@ export function isToolEnabled(toolName) {
     return true; // Default to enabled before config is loaded
   }
   return toolConfigInstance.isToolEnabled(toolName);
-}
-
-/**
- * Get the tool configuration manager instance
- * @returns {ToolConfigManager|null} Configuration manager or null if not loaded
- */
-export function getToolConfigManager() {
-  return toolConfigInstance;
 }

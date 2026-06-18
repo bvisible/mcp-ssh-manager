@@ -123,7 +123,7 @@ export function loadHooksConfig() {
 /**
  * Save hooks configuration
  */
-export function saveHooksConfig(config) {
+function saveHooksConfig(config) {
   try {
     fs.writeFileSync(HOOKS_CONFIG_FILE, JSON.stringify(config, null, 2));
     return true;
@@ -309,19 +309,4 @@ export function listHooks() {
     description: hook.description,
     actionCount: hook.actions ? hook.actions.length : 0
   }));
-}
-
-/**
- * Create a custom hook script
- */
-export async function createHookScript(scriptName, scriptContent) {
-  const scriptPath = path.join(HOOKS_DIR, scriptName);
-
-  try {
-    fs.writeFileSync(scriptPath, scriptContent);
-    fs.chmodSync(scriptPath, '755');
-    return scriptPath;
-  } catch (error) {
-    throw new Error(`Failed to create hook script: ${error.message}`);
-  }
 }
