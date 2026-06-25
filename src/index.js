@@ -132,6 +132,7 @@ import {
   buildPostgreSQLQueryCommand,
   buildMongoDBQueryCommand,
   isSafeQuery,
+  countQueryRows,
   parseDatabaseList,
   parseTableList,
   parseSize,
@@ -4783,12 +4784,14 @@ registerToolConditional(
 
       // Parse output (basic parsing, output depends on database type)
       const output = result.stdout.trim();
-      const lines = output.split('\n');
+      // Derive the real row count from each engine's output structure rather than the
+      // raw line count, which counts cosmetic wrapper/header lines (issue #45).
+      const rowCount = countQueryRows(output, type);
 
       logger.info('Query executed successfully', {
         server: serverName,
         database,
-        rows: lines.length
+        rows: rowCount
       });
 
       return {
@@ -4802,7 +4805,7 @@ registerToolConditional(
               database,
               collection: collection || null,
               query,
-              row_count: lines.length,
+              row_count: rowCount,
               output: output,
               timestamp: new Date().toISOString()
             }, null, 2)

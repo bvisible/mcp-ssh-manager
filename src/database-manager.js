@@ -436,6 +436,64 @@ export function isSafeQuery(query) {
 }
 
 /**
+ * Count the actual result rows in the raw output of an `ssh_db_query` command.
+ *
+ * The handler previously reported `output.split('\n').length`, which counts cosmetic
+ * lines (the leading `[` of the MySQL JSON wrapper, psql headers/separators) rather than
+ * data rows — so it was off by one for MySQL and over-counted for psql (issue #45). This
+ * derives the count from the structure each engine actually produces.
+ *
+ * @param output Raw, already-trimmed stdout of the query command.
+ * @param type One of {@link DB_TYPES} (`'mysql' | 'postgresql' | 'mongodb'`).
+ * @param format Output format used to build the command; only `'json'` MySQL is wrapped
+ *   by the `awk` JSON formatter, which is what this counts. Defaults to `'json'`.
+ * @returns The number of result rows (documents for MongoDB). `0` for empty output.
+ * @example
+ *   countQueryRows('[\n{"row":1,"data":"a"},\n{"row":2,"data":"b"}]', 'mysql') // => 2
+ *   countQueryRows(' id \n----\n  1\n(1 row)', 'postgresql')                   // => 1
+ * @see buildMySQLQueryCommand
+ */
+export function countQueryRows(output, type, format = 'json') {
+  if (!output || !output.trim()) {
+    return 0;
+  }
+  const lines = output.split('\n');
+
+  if (type === DB_TYPES.MYSQL) {
+    if (format === 'json') {
+      // The awk wrapper emits exactly one `{"row":N,...}` entry per result row, anchored
+      // at the start of its own line, bracketed by cosmetic `[` / `]` lines.
+      return lines.filter(line => /^\{"row":\d+,/.test(line)).length;
+    }
+    // Tabular `--batch` output: one row per non-empty line (column names are suppressed).
+    return lines.filter(line => line.trim() !== '').length;
+  }
+
+  if (type === DB_TYPES.POSTGRESQL) {
+    // psql prints an authoritative footer like `(13 rows)` — trust it when present.
+    const footer = output.match(/\((\d+)\s+rows?\)/);
+    if (footer) {
+      return Number(footer[1]);
+    }
+    // Otherwise fall back to the data lines, dropping the column-header line, the
+    // `---+---` separator, and any `(N rows)` footer line.
+    const dataLines = lines.filter(line => {
+      const trimmed = line.trim();
+      return trimmed !== '' && !/^[-+\s]+$/.test(trimmed) && !/^\(\d+\s+rows?\)$/.test(trimmed);
+    });
+    return Math.max(0, dataLines.length - 1); // first remaining line is the header
+  }
+
+  if (type === DB_TYPES.MONGODB) {
+    // `printjson` closes each document with a `}` at column 0 — one per document.
+    return lines.filter(line => line === '}').length;
+  }
+
+  // Unknown type: best-effort non-empty line count.
+  return lines.filter(line => line.trim() !== '').length;
+}
+
+/**
  * Parse database list output
  */
 export function parseDatabaseList(output, type) {
