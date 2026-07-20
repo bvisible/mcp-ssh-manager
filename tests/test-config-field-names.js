@@ -25,7 +25,8 @@ const EXPECTED_CAMEL_FIELDS = {
   sudoPassword: 'sudo-secret',
   proxyJump: 'bastion',
   proxyCommand: 'ncat --proxy 127.0.0.1:1080 %h %p',
-  forwardAgent: true
+  forwardAgent: true,
+  group: 'production'
 };
 
 // Stale names that must NOT exist on resolved server configs (pre-v3.0.0 shape).
@@ -66,6 +67,7 @@ async function testEnvFieldNames() {
     'SSH_SERVER_FIELDCHECK_ENV_PROXYJUMP=bastion',
     'SSH_SERVER_FIELDCHECK_ENV_PROXYCOMMAND=ncat --proxy 127.0.0.1:1080 %h %p',
     'SSH_SERVER_FIELDCHECK_ENV_FORWARD_AGENT=true',
+    'SSH_SERVER_FIELDCHECK_ENV_GROUP=production',
     ''
   ].join('\n'));
 
@@ -101,6 +103,7 @@ async function testTomlFieldNames() {
     'proxy_jump = "bastion"',
     'proxy_command = "ncat --proxy 127.0.0.1:1080 %h %p"',
     'forward_agent = true',
+    'group = "production"',
     ''
   ].join('\n'));
 

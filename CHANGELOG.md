@@ -5,6 +5,13 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Optional `group` field on server config** — a free-form label (`SSH_SERVER_<NAME>_GROUP` in `.env`, `group = "..."` in TOML) that round-trips through `exportToToml`/`exportToEnv` and is now returned by `ssh_list_servers`. Purely descriptive metadata carried on the server entry itself, distinct from the existing `.server-groups.json` / `ssh_group_manage` batch-execution groups — it exists so a server's group membership can be read straight off its config when exporting to or importing from other tools, without needing to also ship/parse `.server-groups.json`. Optional and additive; omitted entirely from generated output when unset.
+- Tests: `tests/test-config-field-names.js` gains `group` coverage across the `.env` loader, the TOML loader, and the forbidden-field guard.
+
 ## [3.7.0] - 2026-07-13
 
 ### Added

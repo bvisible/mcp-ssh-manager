@@ -2122,7 +2122,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_list_servers',
   {
-    description: 'Lists all SSH servers defined in the loaded configuration, returning for each the name, host, user, port, authentication type (password or key), default directory, and description. Read-only and local: it reads configuration only and opens no SSH connections. Deliberately omits secrets, so no passwords, key paths, passphrases, or sudo passwords are returned. Takes no parameters. Useful as a first call to discover which server names other tools accept.',
+    description: 'Lists all SSH servers defined in the loaded configuration, returning for each the name, host, user, port, authentication type (password or key), default directory, group, and description. Read-only and local: it reads configuration only and opens no SSH connections. Deliberately omits secrets, so no passwords, key paths, passphrases, or sudo passwords are returned. Takes no parameters. Useful as a first call to discover which server names other tools accept.',
     inputSchema: {}
   },
   async () => {
@@ -2134,6 +2134,7 @@ registerToolConditional(
       port: config.port || '22',
       auth: config.password ? 'password' : 'key',
       defaultDir: config.defaultDir || '',
+      group: config.group || '',
       description: config.description || ''
     }));
 

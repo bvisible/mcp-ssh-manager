@@ -145,6 +145,7 @@ export class ConfigLoader {
           defaultDir: serverConfig.default_dir || serverConfig.default_directory || serverConfig.cwd,
           sudoPassword: serverConfig.sudo_password,
           description: serverConfig.description,
+          group: serverConfig.group,
           platform: serverConfig.platform ? serverConfig.platform.toLowerCase() : undefined,
           proxyJump: serverConfig.proxy_jump,
           proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
@@ -216,6 +217,7 @@ export class ConfigLoader {
           defaultDir: env[`SSH_SERVER_${match[1]}_DEFAULT_DIR`],
           sudoPassword: env[`SSH_SERVER_${match[1]}_SUDO_PASSWORD`],
           description: env[`SSH_SERVER_${match[1]}_DESCRIPTION`],
+          group: env[`SSH_SERVER_${match[1]}_GROUP`],
           platform: (env[`SSH_SERVER_${match[1]}_PLATFORM`] || '').toLowerCase() || undefined,
           proxyJump: env[`SSH_SERVER_${match[1]}_PROXYJUMP`],
           proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
@@ -275,6 +277,7 @@ export class ConfigLoader {
       if (server.defaultDir) serverConfig.default_dir = server.defaultDir;
       if (server.sudoPassword) serverConfig.sudo_password = server.sudoPassword;
       if (server.description) serverConfig.description = server.description;
+      if (server.group) serverConfig.group = server.group;
       if (server.platform) serverConfig.platform = server.platform;
       if (server.proxyJump) serverConfig.proxy_jump = server.proxyJump;
       if (server.proxyCommand) serverConfig.proxy_command = server.proxyCommand;
@@ -317,6 +320,7 @@ export class ConfigLoader {
       if (server.defaultDir) lines.push(`SSH_SERVER_${upperName}_DEFAULT_DIR=${server.defaultDir}`);
       if (server.sudoPassword) lines.push(`SSH_SERVER_${upperName}_SUDO_PASSWORD="${server.sudoPassword}"`);
       if (server.description) lines.push(`SSH_SERVER_${upperName}_DESCRIPTION="${server.description}"`);
+      if (server.group) lines.push(`SSH_SERVER_${upperName}_GROUP=${server.group}`);
       if (server.platform) lines.push(`SSH_SERVER_${upperName}_PLATFORM=${server.platform}`);
       if (server.proxyJump) lines.push(`SSH_SERVER_${upperName}_PROXYJUMP=${server.proxyJump}`);
       if (server.proxyCommand) lines.push(`SSH_SERVER_${upperName}_PROXYCOMMAND=${server.proxyCommand}`);

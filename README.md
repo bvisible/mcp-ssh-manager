@@ -447,6 +447,7 @@ key_path = "~/.ssh/id_rsa"   # for SSH key auth (recommended)
 passphrase = "key_passphrase" # optional, for passphrase-protected keys
 port = 22
 default_dir = "/var/www"
+group = "production"          # optional, free-form label for grouping/import-export
 description = "Production server"
 
 [ssh_servers.staging]
@@ -676,6 +677,7 @@ SSH_SERVER_[NAME]_PASSPHRASE=key_passphrase  # Optional, for passphrase-protecte
 SSH_SERVER_[NAME]_PORT=22  # Optional, defaults to 22
 SSH_SERVER_[NAME]_DEFAULT_DIR=/path/to/dir  # Optional, default working directory
 SSH_SERVER_[NAME]_DESCRIPTION=Description  # Optional
+SSH_SERVER_[NAME]_GROUP=production  # Optional, free-form label for grouping/import-export
 SSH_SERVER_[NAME]_PLATFORM=windows  # Optional: "linux" (default) or "windows"
 SSH_SERVER_[NAME]_PROXYJUMP=bastion  # Optional: name of another server to use as jump host
 SSH_SERVER_[NAME]_PROXYCOMMAND=command  # Optional: custom proxy command (ncat, ssh -W, etc.)
