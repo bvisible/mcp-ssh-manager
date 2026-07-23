@@ -31,7 +31,8 @@ import {
 import {
   TIMEOUTS,
   truncateOutput,
-  formatJSONResponse
+  formatJSONResponse,
+  isHermes
 } from './config.js';
 import {
   initializeHooks,
@@ -742,6 +743,19 @@ registerToolConditional(
         error: error.message
       });
 
+      let errorMsg = error.message;
+      if (isHermes) {
+        if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+          errorMsg += `\n[Agent Hint: The command timed out. Try using a smaller dataset, tailing logs, or checking network status with 'ping'.]`;
+        } else if (error.message.includes('not found') || error.message.includes('command not found')) {
+          errorMsg += `\n[Agent Hint: Command not found. Use 'ls' or 'find' to locate the binary, or check the $PATH.]`;
+        } else if (error.message.includes('policy')) {
+          errorMsg += `\n[Agent Hint: Action blocked by security policy. You are in readonly mode. Do not attempt to modify files.]`;
+        } else {
+          errorMsg += `\n[Agent Hint: Execution failed. Please verify the command syntax and try again.]`;
+        }
+      }
+
       return {
         content: [
           {
@@ -749,7 +763,7 @@ registerToolConditional(
             text: formatJSONResponse({
               server: serverName,
               success: false,
-              error: truncateOutput(error.message, 1000),
+              error: truncateOutput(errorMsg, 1000),
               code: -1
             }),
           },
@@ -3933,11 +3947,22 @@ registerToolConditional(
         error: error.message
       });
 
+      let errorMsg = `❌ Health check failed: ${error.message}`;
+      if (isHermes) {
+        if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+          errorMsg += `\n[Agent Hint: Health check timed out. The server might be unreachable or under heavy load.]`;
+        } else if (error.message.includes('not found')) {
+          errorMsg += `\n[Agent Hint: Some required health check binaries (top, free, df) are missing on the remote host.]`;
+        } else {
+          errorMsg += `\n[Agent Hint: Health check failed. Verify SSH connectivity with 'ssh_list_servers'.]`;
+        }
+      }
+
       return {
         content: [
           {
             type: 'text',
-            text: `❌ Health check failed: ${error.message}`
+            text: errorMsg
           }
         ]
       };

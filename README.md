@@ -9,6 +9,7 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 [![Version](https://img.shields.io/badge/Version-3.7.0-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.7.0)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
+[![Hermes](https://img.shields.io/badge/Hermes_Agent-Supported-orange?style=for-the-badge)](docs/HERMES_INTEGRATION_GUIDE.md)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
@@ -287,11 +288,27 @@ ssh-manager tools disable backup
 - **Platforms**: Linux, macOS, Windows
 - **For Claude Code**: Claude Code CLI installed
 - **For OpenAI Codex**: Codex CLI configured
+- **For Hermes / Open-Weights Agents**: Compatible runtime (e.g., Open Interpreter)
 - Bash 4.0+ (for CLI management tools)
 - rsync (for file synchronization)
 - sshpass (optional, for rsync with password authentication)
   - macOS: `brew install hudochenkov/sshpass/sshpass`
   - Linux: `apt-get install sshpass`
+
+## 🤖 Quick Start - Hermes Agent
+
+MCP SSH Manager includes optimized context windows and explicit LLM UX error recovery hints tailored for NousResearch's Hermes 3 and other open-weights local agents.
+
+1. **Run the Hermes Setup Wizard:**
+   ```bash
+   ssh-manager hermes setup
+   ```
+2. The wizard automatically enforces `MODE=readonly` safety guardrails and audit logging.
+3. Feed the resulting `hermes-mcp-config.json` to your agent runtime.
+
+👉 **[Read the complete Hermes Integration Guide](docs/HERMES_INTEGRATION_GUIDE.md)**
+
+---
 
 ## 🚀 Quick Start - Claude Code
 

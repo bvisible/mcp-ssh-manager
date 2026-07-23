@@ -97,7 +97,7 @@ class ToolConfigManager {
     }
 
     // Validate mode
-    if (!['all', 'minimal', 'custom'].includes(config.mode)) {
+    if (!['all', 'minimal', 'custom', 'hermes'].includes(config.mode)) {
       return false;
     }
 
@@ -133,6 +133,12 @@ class ToolConfigManager {
     if (this.config.mode === 'minimal') {
       const group = findToolGroup(toolName);
       return group === 'core';
+    }
+
+    // Mode: hermes - safe minimal subset
+    if (this.config.mode === 'hermes') {
+      const hermesTools = ['ssh_execute', 'ssh_list_servers', 'ssh_health_check', 'ssh_process_manager'];
+      return hermesTools.includes(toolName);
     }
 
     // Mode: custom - check group setting
@@ -181,6 +187,10 @@ class ToolConfigManager {
 
     if (this.config.mode === 'minimal') {
       return groupName === 'core';
+    }
+
+    if (this.config.mode === 'hermes') {
+      return groupName === 'core' || groupName === 'monitoring';
     }
 
     if (this.config.mode === 'custom' && this.config.groups) {
@@ -329,11 +339,11 @@ class ToolConfigManager {
 
   /**
    * Set configuration mode
-   * @param {string} mode - Mode to set ('all', 'minimal', 'custom')
+   * @param {string} mode - Mode to set ('all', 'minimal', 'custom', 'hermes')
    * @returns {Promise<boolean>} True if successful
    */
   async setMode(mode) {
-    if (!['all', 'minimal', 'custom'].includes(mode)) {
+    if (!['all', 'minimal', 'custom', 'hermes'].includes(mode)) {
       logger.error(`Invalid mode: ${mode}`);
       return false;
     }

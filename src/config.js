@@ -1,11 +1,14 @@
 // Configuration constants for MCP SSH Manager
 
+// Detect Hermes client
+export const isHermes = process.env.MCP_CLIENT_ID === 'hermes' || process.env.MCP_CLIENT_ID === 'open-interpreter';
+
 // Output limits to prevent Claude Code crashes
 const OUTPUT_LIMITS = {
   // Maximum length of stdout/stderr in responses (characters)
   MAX_OUTPUT_LENGTH: process.env.MCP_SSH_MAX_OUTPUT_LENGTH
     ? parseInt(process.env.MCP_SSH_MAX_OUTPUT_LENGTH)
-    : 10000,
+    : (isHermes ? 4000 : 10000),
 
   // Maximum length for log file tailing
   MAX_TAIL_LINES: process.env.MCP_SSH_MAX_TAIL_LINES
@@ -44,7 +47,7 @@ export const TIMEOUTS = {
 // Response formatting
 const RESPONSE_FORMAT = {
   // Whether to use compact JSON (no formatting)
-  COMPACT_JSON: process.env.MCP_SSH_COMPACT_JSON === 'true',
+  COMPACT_JSON: process.env.MCP_SSH_COMPACT_JSON === 'true' || isHermes,
 
   // Whether to include debug information in responses
   INCLUDE_DEBUG_INFO: process.env.MCP_SSH_DEBUG === 'true',

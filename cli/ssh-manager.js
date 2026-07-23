@@ -27,8 +27,25 @@ if (!existsSync(bashScript)) {
 const isWindows = platform() === 'win32';
 const args = process.argv.slice(2);
 
+// Intercept 'hermes' command to use Node implementation
+if (args[0] === 'hermes' && args[1] === 'setup') {
+  import('./commands/hermes-setup.js').then((module) => {
+    module.setupHermes().catch(err => {
+      console.error(err);
+      process.exit(1);
+    });
+  });
+} else {
+  if (isWindows) {
+    runWindows();
+  } else {
+    runUnix();
+  }
+}
+
 /**
  * Convert a Windows-style path (C:\foo\bar) into a POSIX-style path
+
  * understood by Git Bash / MSYS (/c/foo/bar). Leaves non-Windows paths alone.
  */
 function toPosixPath(winPath) {
