@@ -51,6 +51,7 @@ export class ServerConfigManager {
         preferToml: this.preferToml
       });
 
+      /** @type {Record<string, ServerConfig>} */
       const nextServers = {};
       for (const [name, config] of loadedServers) {
         nextServers[name] = config;

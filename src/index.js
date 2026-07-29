@@ -3023,7 +3023,9 @@ registerToolConditional(
         }
         serverConfig = servers[resolvedName];
         host = serverConfig.host;
-        port = parseInt(serverConfig.port || '22');
+        // port is already a number from ConfigLoader; parseInt() on it only
+        // worked because JS stringifies the argument first.
+        port = serverConfig.port || 22;
       }
 
       switch (action) {
