@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`@modelcontextprotocol/sdk` floor raised to `^1.30.0`** — the declared range (`^1.17.2`) still allowed versions carrying three published advisories, one of them high: cross-client data leak through shared server/transport instance reuse, DNS rebinding protection off by default, and a ReDoS. It also dragged in vulnerable transitive express packages (`body-parser`, `path-to-regexp`, `qs`, `ajv`). `npm audit --omit=dev` now reports **0 vulnerabilities**. Behaviour verified against the real MCP stdio protocol: identical to 1.17.5 (37 tools registered, same negotiation, clean shutdown).
 
+### Added
+
+- **Static type-checking over the existing JavaScript** (`npm run typecheck`) — a `tsconfig.json` in `checkJs`/`noEmit` mode runs TypeScript as a linter over JSDoc annotations. **Nothing is compiled and nothing changes for users**: the package still ships plain JS straight from `src/`, with no build step and no `dist/`. Added as a hard gate in the Code Quality workflow.
+  - A `ServerConfig` typedef in `src/config-loader.js` documents the resolved server shape and makes its camelCase contract enforceable: reading `serverConfig.default_dir` — the exact issue #49 regression — is now a type error (*"Property 'default_dir' does not exist on type 'ServerConfig'. Did you mean 'defaultDir'?"*) instead of a silent `undefined`. `tests/test-config-field-names.js` keeps guarding the same contract at runtime.
+
+### Fixed
+
+- **A tunnel on an already-used local port crashed the entire MCP server** — `net.Server#listen` never passes an error to its callback (a failed bind is emitted as an `'error'` event), yet `ssh_tunnel_create` used `listen(port, host, (err) => ...)` and registered no `'error'` listener. On `EADDRINUSE` — the everyday tunnel failure — Node rethrew the unhandled event and killed the process, taking every pooled SSH connection and session with it, while the awaited promise never settled. Binding now rejects properly and the tool returns an error. Guarded by `tests/test-tunnel-listen.js`.
+- **`ssh_sync` always passed an explicit `-p 22` to rsync** — the guard read `serverConfig.port !== '22'`, comparing a number against a string, so it never matched. Harmless in effect, but the intent (omit the flag on the default port) never applied. Found by the new typecheck.
+
 ### Changed
 
 - **Dropped the `uuid` dependency** in favour of Node's built-in `crypto.randomUUID()` — available since Node 14.17, and this package already requires Node >= 18. Removes one runtime dependency and the last remaining advisory. Session and tunnel ID formats are unchanged.

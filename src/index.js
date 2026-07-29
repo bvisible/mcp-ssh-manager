@@ -296,6 +296,13 @@ async function auditOk(serverName, toolName, args, executionResult) {
 }
 
 // Execute command with timeout - using child_process timeout for real kill
+/**
+ * @param {any} ssh
+ * @param {string} command
+ * @param {{rawCommand?: boolean, platform?: string, execOptions?: Record<string, any>,
+ *   [key: string]: any}} [options]
+ * @param {number} [timeoutMs]
+ */
 async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30000) {
   // Pass through rawCommand and platform if specified
   const { rawCommand, platform = 'linux', ...otherOptions } = options;
@@ -461,11 +468,13 @@ async function createProxyCommandSocket(proxyCommand, host, port) {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    const socket = Duplex.from({
+    // Cast: Node accepts a {readable, writable} pair here, but the bundled
+    // types only model the stream/iterable overloads.
+    const socket = Duplex.from(/** @type {any} */ ({
       readable: child.stdout,
       writable: child.stdin,
       allowHalfOpen: false
-    });
+    }));
 
     // Forward proxy stderr to the MCP server's stderr for debugging
     child.stderr.on('data', (chunk) => {
@@ -642,12 +651,14 @@ logger.info('MCP Server initialized', { version: serverVersion });
 /**
  * Helper function to conditionally register tools based on configuration
  * @param {string} toolName - Name of the tool
- * @param {Object} schema - Tool schema
- * @param {Function} handler - Tool handler function
+ * @param {any} schema - Tool schema (description + zod inputSchema)
+ * @param {(args: any, extra?: any) => any} handler - Tool handler function
  */
 function registerToolConditional(toolName, schema, handler) {
   if (isToolEnabled(toolName)) {
-    server.registerTool(toolName, schema, handler);
+    // Cast: registerTool infers its handler signature from the zod schema, which
+    // this generic wrapper cannot express while staying one helper for 37 tools.
+    server.registerTool(toolName, schema, /** @type {any} */ (handler));
     logger.debug(`Registered tool: ${toolName}`);
   } else {
     logger.debug(`Skipped disabled tool: ${toolName}`);
@@ -1010,7 +1021,9 @@ registerToolConditional(
         sshOptions.push('-o ConnectTimeout=10');
       }
 
-      if (serverConfig.port && serverConfig.port !== '22') {
+      // port is a number (ConfigLoader parseInt's it), so comparing against the
+      // string '22' never matched and every server got an explicit -p 22.
+      if (serverConfig.port && serverConfig.port !== 22) {
         sshOptions.push(`-p ${serverConfig.port}`);
       }
 

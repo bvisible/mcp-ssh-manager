@@ -378,10 +378,11 @@ export function buildMongoDBListCollectionsCommand(options) {
  * so the pipeline is passed via `options.pipeline` and emitted as `<<'DELIM' | awk ...`.
  *
  * @param body Text fed to the command's stdin (e.g. a SQL statement). Passed verbatim.
- * @param options.delimiter Heredoc terminator. Must not appear as a standalone line in
- *   `body`, otherwise the heredoc would end early; this is rejected defensively.
- * @param options.pipeline Shell pipeline appended after the heredoc marker on the
- *   opening line (e.g. `"| awk '...'"`). Omit for a plain stdin redirect.
+ * @param {object} [options]
+ * @param {string} [options.delimiter] Heredoc terminator. Must not appear as a standalone
+ *   line in `body`, otherwise the heredoc would end early; this is rejected defensively.
+ * @param {string} [options.pipeline] Shell pipeline appended after the heredoc marker on
+ *   the opening line (e.g. `"| awk '...'"`). Omit for a plain stdin redirect.
  * @returns The redirection fragment to append after a command, ending with the
  *   terminator on its own line.
  * @throws {Error} If a line of `body` equals `delimiter`.

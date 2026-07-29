@@ -1,0 +1,36 @@
+{
+  "//": [
+    "Type-checking only — this project ships plain JavaScript and is published",
+    "straight from src/, with no build step. TypeScript is used purely as a",
+    "static checker over JSDoc annotations (`npm run typecheck`), so nothing",
+    "here ever emits a file or changes what users install.",
+    "",
+    "Strictness is deliberately moderate: the goal is catching the mistakes that",
+    "actually bit this project (reading a config field that does not exist — see",
+    "issue #49 — wrong argument counts, typos on typed objects), not converting",
+    "the codebase to TypeScript."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.js"],
+  "exclude": ["node_modules", "src/index.js.bak"]
+}

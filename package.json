@@ -13,7 +13,7 @@
     "setup": "npm install && pip install -r tools/requirements.txt",
     "configure": "python tools/server-manager.py",
     "test-connection": "python tools/test-connection.py",
-    "test": "npm run test:profiles && npm run test:aliases && npm run test:hooks && npm run test:tools && npm run test:policy && npm run test:ping && npm run test:config && npm run test:fieldnames && npm run test:agentforward && npm run test:lifecycle && npm run test:sync && npm run test:dbquoting && npm run test:dbinjection && npm run test:dbrowcount",
+    "test": "npm run test:profiles && npm run test:aliases && npm run test:hooks && npm run test:tools && npm run test:policy && npm run test:ping && npm run test:config && npm run test:fieldnames && npm run test:agentforward && npm run test:lifecycle && npm run test:tunnel && npm run test:sync && npm run test:dbquoting && npm run test:dbinjection && npm run test:dbrowcount",
     "test:profiles": "node tests/test-profiles.js",
     "test:aliases": "node tests/test-command-aliases.js",
     "test:hooks": "node tests/test-hooks.js",
@@ -24,12 +24,14 @@
     "test:fieldnames": "node tests/test-config-field-names.js",
     "test:agentforward": "node tests/test-agent-forward.js",
     "test:lifecycle": "node tests/test-lifecycle.js",
+    "test:tunnel": "node tests/test-tunnel-listen.js",
     "test:sync": "node tests/test-sync-stats.js",
     "test:dbquoting": "node tests/test-database-query-quoting.js",
     "test:dbinjection": "node tests/test-database-injection.js",
     "test:dbrowcount": "node tests/test-database-row-count.js",
-    "test:all": "npm test && ./scripts/validate.sh",
+    "test:all": "npm test && npm run typecheck && ./scripts/validate.sh",
     "validate": "./scripts/validate.sh",
+    "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src/*.js",
     "format": "prettier --write 'src/**/*.js' 'tests/**/*.js'"
   },
@@ -92,7 +94,8 @@
   "devDependencies": {
     "eslint": "^8.56.0",
     "knip": "^5.0.0",
-    "prettier": "^3.2.4"
+    "prettier": "^3.2.4",
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=18.0.0"
