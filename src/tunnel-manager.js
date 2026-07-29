@@ -3,7 +3,7 @@
  * Manages SSH port forwarding and SOCKS proxy tunnels
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import net from 'net';
 import { logger } from './logger.js';
 
@@ -439,7 +439,7 @@ class SSHTunnel {
  * Create a new SSH tunnel
  */
 export async function createTunnel(serverName, ssh, config) {
-  const tunnelId = `tunnel_${Date.now()}_${uuidv4().substring(0, 8)}`;
+  const tunnelId = `tunnel_${Date.now()}_${randomUUID().substring(0, 8)}`;
 
   // Validate config
   if (!config.type || !Object.values(TUNNEL_TYPES).includes(config.type)) {

@@ -5,6 +5,20 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **`@modelcontextprotocol/sdk` floor raised to `^1.30.0`** — the declared range (`^1.17.2`) still allowed versions carrying three published advisories, one of them high: cross-client data leak through shared server/transport instance reuse, DNS rebinding protection off by default, and a ReDoS. It also dragged in vulnerable transitive express packages (`body-parser`, `path-to-regexp`, `qs`, `ajv`). `npm audit --omit=dev` now reports **0 vulnerabilities**. Behaviour verified against the real MCP stdio protocol: identical to 1.17.5 (37 tools registered, same negotiation, clean shutdown).
+
+### Changed
+
+- **Dropped the `uuid` dependency** in favour of Node's built-in `crypto.randomUUID()` — available since Node 14.17, and this package already requires Node >= 18. Removes one runtime dependency and the last remaining advisory. Session and tunnel ID formats are unchanged.
+
+### Fixed
+
+- **The MCP server announced itself as version `1.2.0`** — the `serverInfo` version sent to Claude Code / Codex was a hardcoded literal the release process never bumped, so it had drifted far behind the real package version (3.7.0). It is now derived from `package.json`, the same treatment the CLI banner got in 3.7.0. This matters more under the MCP `2026-07-28` spec, where servers identify themselves in the `_meta` of every result.
+
 ## [3.7.0] - 2026-07-13
 
 ### Added

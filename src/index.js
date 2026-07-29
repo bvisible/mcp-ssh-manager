@@ -614,13 +614,30 @@ async function getConnection(serverName) {
   return connections.get(normalizedName);
 }
 
+// Server version reported to MCP clients — derived from package.json so it
+// always reflects the real build instead of a literal that drifts across
+// releases. Resolves both in-repo (src/../package.json) and installed, since
+// package.json always sits at the package root.
+function getServerVersion() {
+  try {
+    const pkgPath = path.join(__dirname, '..', 'package.json');
+    const version = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version;
+    if (version) return version;
+  } catch (error) {
+    logger.warn('Could not read version from package.json', { error: error.message });
+  }
+
+  return '0.0.0-unknown';
+}
+
 // Create MCP server
+const serverVersion = getServerVersion();
 const server = new McpServer({
   name: 'mcp-ssh-manager',
-  version: '1.2.0',
+  version: serverVersion,
 });
 
-logger.info('MCP Server initialized', { version: '1.2.0' });
+logger.info('MCP Server initialized', { version: serverVersion });
 
 /**
  * Helper function to conditionally register tools based on configuration

@@ -84,10 +84,9 @@
   "homepage": "https://github.com/bvisible/mcp-ssh-manager#readme",
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "@modelcontextprotocol/sdk": "^1.17.2",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^16.4.5",
     "ssh2": "^1.17.0",
-    "uuid": "^11.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
