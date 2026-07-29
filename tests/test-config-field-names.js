@@ -174,6 +174,43 @@ async function testForwardAgentCoercion() {
   }
 }
 
+// group (issue #55) is free-form text: it can hold spaces and `#`. dotenv stops
+// an unquoted value at the first ` #`, so the .env exporter has to quote it or
+// exporting and re-importing a config silently truncates the group.
+async function testGroupExportRoundTrip() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-mgr-group-'));
+  const label = 'prod #eu west';
+  const tomlPath = path.join(dir, 'config.toml');
+  fs.writeFileSync(tomlPath, [
+    '[ssh_servers.grp_tagged]', 'host = "h"', 'user = "u"', `group = "${label}"`,
+    '[ssh_servers.grp_plain]', 'host = "h"', 'user = "u"',
+    ''
+  ].join('\n'));
+
+  try {
+    const loader = new ConfigLoader();
+    const servers = await loader.load({ envPath: path.join(dir, 'absent.env'), tomlPath });
+    assert.strictEqual(servers.get('grp_tagged').group, label, 'TOML group is loaded verbatim');
+    assert.strictEqual(servers.get('grp_plain').group, undefined, 'no group stays undefined');
+
+    const exportedToml = loader.exportToToml();
+    assert.ok(exportedToml.includes(`group = "${label}"`), 'exportToToml emits the group');
+    assert.ok(!/\[ssh_servers\.grp_plain\][^[]*group/.test(exportedToml), 'untagged server exports no group key');
+
+    const envPath = path.join(dir, 'roundtrip.env');
+    fs.writeFileSync(envPath, loader.exportToEnv());
+    const reloaded = await new ConfigLoader().load({ envPath, tomlPath: path.join(dir, 'absent.toml') });
+    assert.strictEqual(reloaded.get('grp_tagged').group, label, 'export→reload keeps the group intact (quoting)');
+    assert.strictEqual(reloaded.get('grp_plain').group, undefined, 'untagged server stays untagged');
+    ok('group survives the .env/TOML export round-trip, spaces and "#" included');
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith('SSH_SERVER_GRP_')) delete process.env[key];
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // Static guard: no handler may access the stale snake_case/lowercase names on a
 // config object. config-loader.js legitimately references them (it parses TOML
 // source keys and serializes back); ssh-manager.js keeps an intentional
@@ -199,6 +236,7 @@ async function main() {
   await testEnvFieldNames();
   await testTomlFieldNames();
   await testForwardAgentCoercion();
+  await testGroupExportRoundTrip();
   testNoStaleAccessInSource();
   console.log(`\n✅ config field name tests passed (${passed} checks)`);
 }

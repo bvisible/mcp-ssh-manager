@@ -54,6 +54,8 @@ import {
   closeSession
 } from './session-manager.js';
 import {
+  setServerConfigProvider,
+  getGroup,
   createGroup,
   updateGroup,
   deleteGroup,
@@ -191,6 +193,10 @@ const serverConfigManager = new ServerConfigManager({
   tomlPath: getRuntimeEnv('SSH_CONFIG_PATH'),
   preferToml: getRuntimeEnv('PREFER_TOML_CONFIG') === 'true'
 });
+
+// Let the group layer read the loaded servers, so groups can be derived from
+// each server's `group` field (and so the 'all' group also sees TOML servers).
+setServerConfigProvider(() => serverConfigManager.servers);
 
 try {
   const loadedServers = await serverConfigManager.loadInitial();
@@ -1861,7 +1867,7 @@ function formatDuration(seconds) {
 registerToolConditional(
   'ssh_execute_group',
   {
-    description: 'Runs one command on every server belonging to the named group and returns a per-server success or failure report. Mutates remote state on each member and is not idempotent. Best-effort: the security policy of each server is evaluated independently, so readonly or restricted members are reported as failed without aborting the rest unless stopOnError is set. Strategy may be parallel, sequential, or rolling (delay applies between servers). Per-server timeout is 30000 ms; cwd defaults to the default_dir of each server.',
+    description: 'Runs one command on every server belonging to the named group and returns a per-server success or failure report. Members come from the groups defined with ssh_group_manage plus every server whose configuration carries a matching group field, so a group can exist through the config alone. Mutates remote state on each member and is not idempotent. Best-effort: the security policy of each server is evaluated independently, so readonly or restricted members are reported as failed without aborting the rest unless stopOnError is set. Strategy may be parallel, sequential, or rolling (delay applies between servers). Per-server timeout is 30000 ms; cwd defaults to the default_dir of each server.',
     inputSchema: {
       group: z.string().describe('Group name (e.g., "production", "staging", "all")'),
       command: z.string().describe('Command to execute'),
@@ -1873,6 +1879,11 @@ registerToolConditional(
   },
   async ({ group: groupName, command, strategy, delay, stopOnError, cwd }) => {
     try {
+      // Refresh the server config before resolving the group: membership can
+      // come from the per-server `group` field, so an edited config must be
+      // visible here, not only inside the per-server executor below.
+      await loadServerConfig();
+
       // Execute command on each server in the group
       const result = await executeOnGroup(
         groupName,
@@ -1985,10 +1996,29 @@ registerToolConditional(
   }
 );
 
+// The stored member list is only half the story: servers tagged with this group
+// in their SSH config belong to it too. Spell that out after an edit, so the
+// counts above are not read as the full set of targets.
+function formatConfigMembers(groupName, storedServers) {
+  try {
+    const resolved = getGroup(groupName);
+    if (!resolved.fromConfig) return '';
+
+    const stored = new Set(storedServers.map(server => server.toLowerCase()));
+    const fromConfig = resolved.servers.filter(server => !stored.has(server));
+    if (fromConfig.length === 0) return '';
+
+    return `\n\nAlso in this group via the server config (group = "${groupName}"): ${fromConfig.join(', ')}` +
+      `\nEffective target: ${resolved.servers.length} servers`;
+  } catch {
+    return '';
+  }
+}
+
 registerToolConditional(
   'ssh_group_manage',
   {
-    description: 'Creates, updates, deletes, and inspects named server groups used by ssh_execute_group, persisting changes to local configuration only with no remote side effects. The action selects the operation: create, update, delete, add-servers, remove-servers, or list. Every action except list requires name; add-servers and remove-servers also require a non-empty servers array. list is read-only. Optional strategy, delay, and stopOnError set default group execution behavior.',
+    description: 'Creates, updates, deletes, and inspects named server groups used by ssh_execute_group, persisting changes to local configuration only with no remote side effects. The action selects the operation: create, update, delete, add-servers, remove-servers, or list. Every action except list requires name; add-servers and remove-servers also require a non-empty servers array. list is read-only and also reports the groups derived from the per-server group field of the SSH configuration, which are read-only here and change only by editing that configuration. Optional strategy, delay, and stopOnError set default group execution behavior.',
     inputSchema: {
       action: z.enum(['create', 'update', 'delete', 'list', 'add-servers', 'remove-servers']).describe('Action to perform'),
       name: z.string().optional().describe('Group name'),
@@ -2001,6 +2031,10 @@ registerToolConditional(
   },
   async ({ action, name, servers, description, strategy, delay, stopOnError }) => {
     try {
+      // Groups can be derived from the per-server `group` field, so make sure
+      // the group layer sees the current configuration before answering.
+      await loadServerConfig();
+
       let result;
       let output = '';
 
@@ -2044,6 +2078,7 @@ registerToolConditional(
         output = `✅ Added ${servers.length} servers to '${name}'\n`;
         output += `Total servers: ${result.servers.length}\n`;
         output += `Members: ${result.servers.join(', ')}`;
+        output += formatConfigMembers(name, result.servers);
         break;
 
       case 'remove-servers':
@@ -2053,6 +2088,7 @@ registerToolConditional(
         output = `✅ Removed ${servers.length} servers from '${name}'\n`;
         output += `Remaining: ${result.servers.length}\n`;
         output += `Members: ${result.servers.join(', ') || 'none'}`;
+        output += formatConfigMembers(name, result.servers);
         break;
 
       case 'list': {
@@ -2063,6 +2099,7 @@ registerToolConditional(
         groups.forEach(group => {
           output += `📁 ${group.name}`;
           if (group.dynamic) output += ' (dynamic)';
+          if (group.fromConfig) output += ' (from server config)';
           output += '\n';
           output += `   Description: ${group.description}\n`;
           output += `   Servers: ${group.serverCount} servers\n`;

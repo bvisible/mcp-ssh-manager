@@ -9,8 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Optional `group` field on server config** — a free-form label (`SSH_SERVER_<NAME>_GROUP` in `.env`, `group = "..."` in TOML) that round-trips through `exportToToml`/`exportToEnv` and is now returned by `ssh_list_servers`. Purely descriptive metadata carried on the server entry itself, distinct from the existing `.server-groups.json` / `ssh_group_manage` batch-execution groups — it exists so a server's group membership can be read straight off its config when exporting to or importing from other tools, without needing to also ship/parse `.server-groups.json`. Optional and additive; omitted entirely from generated output when unset.
-- Tests: `tests/test-config-field-names.js` gains `group` coverage across the `.env` loader, the TOML loader, and the forbidden-field guard.
+- **Optional `group` field on server config** ([#56](https://github.com/bvisible/mcp-ssh-manager/pull/56) — contributed by [@ice616](https://github.com/ice616), requested in [#55](https://github.com/bvisible/mcp-ssh-manager/issues/55))
+  - A free-form label (`SSH_SERVER_<NAME>_GROUP` in `.env`, `group = "..."` in TOML) carried on the server entry itself, so a server's group membership can be read straight off its config when exporting to — or importing from — another tool, with no second file to ship. It round-trips through `exportToToml`/`exportToEnv` and is returned by `ssh_list_servers`.
+  - **The label is not just descriptive: it makes the group usable.** `ssh_execute_group` and `ssh_group_manage list` now resolve members from the `group` field as well, so tagging servers is enough to run a command across them — `.server-groups.json` is no longer required to have a working group.
+  - Membership is the **union** of both sources: the explicit list stored by `ssh_group_manage` (which keeps carrying strategy, delay and stop-on-error) plus every server tagged with that name. Group names are case-insensitive. Config-derived members are resolved at read time and never written to `.server-groups.json`, so they cannot go stale.
+  - A group that exists only through the config is read-only for `ssh_group_manage`; attempting to edit it now returns an error pointing at the server config instead of a bare "not found".
+  - The `ssh-manager` add-server wizard asks for an optional group.
+- Tests: new `tests/test-server-groups.js` (13 checks) covers config-derived groups, the union with stored groups, case-insensitivity, read-only enforcement, persistence isolation and group execution; `tests/test-config-field-names.js` gains `group` coverage across the `.env` loader, the TOML loader, the forbidden-field guard and the export round-trip.
+
+### Fixed
+
+- **`exportToEnv` no longer truncates a `group` containing `#`** — the value is now quoted like `DESCRIPTION`, so a label such as `prod #eu west` survives an export/re-import instead of coming back as `prod`.
+- **The dynamic `all` group now sees TOML-defined servers** — it enumerated `process.env` only, so `ssh_execute_group all` silently skipped every server declared in a TOML config. The group layer now reads the configuration actually loaded by `ConfigLoader`.
+- **The `all` group no longer disappears after the first group edit** — dynamic groups are deliberately never persisted, so every `.server-groups.json` written by `ssh_group_manage` lacked `all`, and the next start loaded that file as the complete set: `ssh_execute_group all` then failed with `Group 'all' not found`. Dynamic groups are now re-injected when the file is read.
 
 ## [3.7.0] - 2026-07-13
 

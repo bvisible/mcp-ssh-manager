@@ -895,6 +895,41 @@ proxy_command = "C:\\Windows\\System32\\OpenSSH\\ssh.exe -W %h:%p user@jump-host
 
 The proxy command must be a valid command that reads from stdin and writes to stdout, accepting `%h` and `%p` placeholders for host and port.
 
+### Server Groups
+
+Tag a server with `group` and it becomes part of that group — no extra file to maintain. The label is free-form and travels with the server definition, so it survives an export to (or import from) another tool.
+
+```env
+SSH_SERVER_WEB1_HOST=10.0.0.1
+SSH_SERVER_WEB1_USER=deploy
+SSH_SERVER_WEB1_GROUP=production
+
+SSH_SERVER_WEB2_HOST=10.0.0.2
+SSH_SERVER_WEB2_USER=deploy
+SSH_SERVER_WEB2_GROUP=production
+```
+
+Or in TOML:
+```toml
+[ssh_servers.web1]
+host = "10.0.0.1"
+user = "deploy"
+group = "production"
+```
+
+Both servers are then reachable as a group:
+
+```
+Run "uptime" on the production group     → ssh_execute_group
+List my server groups                    → ssh_group_manage (action: list)
+```
+
+`ssh_list_servers` also reports the group of each server, so you can see membership without opening the config.
+
+**How it combines with `ssh_group_manage`:** groups you create with `ssh_group_manage` live in `.server-groups.json` and carry execution settings (strategy, delay, stop-on-error). Groups implied by the `group` field carry membership only. When a name exists on both sides, **membership is the union** — the stored list plus every server tagged with that name — and the stored execution settings apply. Group names are case-insensitive.
+
+A group that exists only through the `group` field is read-only for `ssh_group_manage`: to change who belongs to it, edit the servers' `group` in your `.env`/TOML. Creating a group of the same name with `ssh_group_manage` is still allowed and simply adds stored members and settings on top.
+
 ### Documentation
 - [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Deployment strategies and permission handling
 - [ALIASES_AND_HOOKS.md](docs/ALIASES_AND_HOOKS.md) - Command aliases and automation hooks

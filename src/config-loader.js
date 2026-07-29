@@ -320,7 +320,9 @@ export class ConfigLoader {
       if (server.defaultDir) lines.push(`SSH_SERVER_${upperName}_DEFAULT_DIR=${server.defaultDir}`);
       if (server.sudoPassword) lines.push(`SSH_SERVER_${upperName}_SUDO_PASSWORD="${server.sudoPassword}"`);
       if (server.description) lines.push(`SSH_SERVER_${upperName}_DESCRIPTION="${server.description}"`);
-      if (server.group) lines.push(`SSH_SERVER_${upperName}_GROUP=${server.group}`);
+      // Quoted like DESCRIPTION: free-form text, so an unquoted value would be
+      // truncated at the first ` #` when the generated file is read back.
+      if (server.group) lines.push(`SSH_SERVER_${upperName}_GROUP="${server.group}"`);
       if (server.platform) lines.push(`SSH_SERVER_${upperName}_PLATFORM=${server.platform}`);
       if (server.proxyJump) lines.push(`SSH_SERVER_${upperName}_PROXYJUMP=${server.proxyJump}`);
       if (server.proxyCommand) lines.push(`SSH_SERVER_${upperName}_PROXYCOMMAND=${server.proxyCommand}`);

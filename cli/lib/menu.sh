@@ -178,6 +178,13 @@ wizard_add_server() {
     echo "Example: /var/www/html, /home/user/app, /opt/services"
     prompt_input "Default directory" "" "default_dir"
 
+    local group
+    echo
+    echo "Assign this server to a group (optional)."
+    echo "Servers sharing a group can be targeted together with ssh_execute_group."
+    echo "Example: production, staging, customer-acme"
+    prompt_input "Group" "" "group"
+
     local forward_agent="n"
     echo
     echo "Forward your local ssh-agent to this server (optional)."
@@ -208,6 +215,9 @@ wizard_add_server() {
     if [ -n "$default_dir" ]; then
         print_table_row "Default Dir:" "$default_dir"
     fi
+    if [ -n "$group" ]; then
+        print_table_row "Group:" "$group"
+    fi
     if [ "$forward_agent" = "y" ]; then
         print_table_row "Agent Forwarding:" "enabled"
     fi
@@ -222,6 +232,11 @@ wizard_add_server() {
         # Add default directory if specified
         if [ -n "$default_dir" ]; then
             echo "SSH_SERVER_${name_upper}_DEFAULT_DIR=$default_dir" >> "$SSH_MANAGER_ENV"
+        fi
+
+        # Add group if specified (quoted: free-form text, may contain spaces)
+        if [ -n "$group" ]; then
+            echo "SSH_SERVER_${name_upper}_GROUP=\"$group\"" >> "$SSH_MANAGER_ENV"
         fi
 
         # Enable agent forwarding if opted in

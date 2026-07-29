@@ -193,6 +193,8 @@ forward_agent = true                       # Optional: forward local ssh-agent t
 
 6. **Proxy Command Support**: Custom proxy commands (SOCKS5, ssh -W, etc.) are executed locally to establish connections, with proper error handling and timeout management (src/index.js:389-432)
 
+7. **Server Groups**: Membership is the union of two sources — the explicit lists in `.server-groups.json` (created via `ssh_group_manage`, which also hold strategy/delay/stopOnError) and the per-server `group` field of the SSH config. Config-derived groups are resolved at read time, never written to `.server-groups.json`, and are read-only for `ssh_group_manage`. `src/index.js` injects the loaded config into the group layer via `setServerConfigProvider()`; without it the module can only see `.env` servers (src/server-groups.js)
+
 ## Security Considerations
 
 - Never commit `.env` files (included in .gitignore)

@@ -21,9 +21,52 @@ const EXECUTION_STRATEGIES = {
   ROLLING: 'rolling'        // Execute with delay between servers
 };
 
-class ServerGroups {
-  constructor() {
+export class ServerGroups {
+  constructor(options = {}) {
+    // Both options exist so this class can be instantiated in isolation (tests,
+    // embedding). The exported singleton below keeps the historical defaults.
+    this.groupsFile = options.groupsFile || GROUPS_FILE;
+    this.serverConfigProvider = typeof options.serverConfigProvider === 'function'
+      ? options.serverConfigProvider
+      : null;
     this.groups = this.loadGroups();
+  }
+
+  /**
+   * Inject an accessor to the loaded SSH server configuration.
+   * Without it this module can only see servers declared in the environment,
+   * which misses every TOML-defined server.
+   */
+  setServerConfigProvider(provider) {
+    this.serverConfigProvider = typeof provider === 'function' ? provider : null;
+  }
+
+  /**
+   * Current SSH server configurations, keyed by server name.
+   * Empty when no provider has been injected.
+   */
+  getServerConfigs() {
+    if (!this.serverConfigProvider) return {};
+
+    try {
+      return this.serverConfigProvider() || {};
+    } catch (error) {
+      logger.warn('Failed to read SSH server configuration for groups', { error: error.message });
+      return {};
+    }
+  }
+
+  /**
+   * Built-in groups whose membership is computed, never stored.
+   */
+  getDynamicGroups() {
+    return {
+      all: {
+        description: 'All configured servers',
+        servers: [],
+        dynamic: true  // Will be populated from server config
+      }
+    };
   }
 
   /**
@@ -31,9 +74,16 @@ class ServerGroups {
    */
   loadGroups() {
     try {
-      if (fs.existsSync(GROUPS_FILE)) {
-        const data = fs.readFileSync(GROUPS_FILE, 'utf8');
-        return JSON.parse(data);
+      if (fs.existsSync(this.groupsFile)) {
+        const data = fs.readFileSync(this.groupsFile, 'utf8');
+        const stored = JSON.parse(data);
+
+        // Dynamic groups are deliberately never persisted (see saveGroups), so
+        // they are missing from every file written after the first group edit.
+        // Re-inject them, otherwise 'all' disappears for good the moment a user
+        // creates a group. They cannot be deleted on purpose either, so nothing
+        // the user did is being undone here.
+        return { ...this.getDynamicGroups(), ...stored };
       }
     } catch (error) {
       logger.warn('Failed to load server groups', { error: error.message });
@@ -41,11 +91,7 @@ class ServerGroups {
 
     // Return default groups
     return {
-      all: {
-        description: 'All configured servers',
-        servers: [],
-        dynamic: true  // Will be populated from server config
-      },
+      ...this.getDynamicGroups(),
       production: {
         description: 'Production servers',
         servers: [],
@@ -78,7 +124,7 @@ class ServerGroups {
         }
       }
 
-      fs.writeFileSync(GROUPS_FILE, JSON.stringify(groupsToSave, null, 2));
+      fs.writeFileSync(this.groupsFile, JSON.stringify(groupsToSave, null, 2));
       logger.info('Server groups saved', { count: Object.keys(groupsToSave).length });
       return true;
     } catch (error) {
@@ -88,21 +134,108 @@ class ServerGroups {
   }
 
   /**
+   * Groups derived from the per-server `group` field of the SSH configuration.
+   * Returns a Map of group name -> server names. Group names are lowercased, so
+   * `group = "Production"` and `group = "production"` land in the same group.
+   */
+  getConfigGroups() {
+    const derived = new Map();
+
+    for (const [name, config] of Object.entries(this.getServerConfigs())) {
+      const label = typeof config?.group === 'string' ? config.group.trim() : '';
+      if (!label) continue;
+
+      const groupName = label.toLowerCase();
+      const serverName = String(config.name || name).toLowerCase();
+      const members = derived.get(groupName) || [];
+      if (!members.includes(serverName)) members.push(serverName);
+      derived.set(groupName, members);
+    }
+
+    return derived;
+  }
+
+  /**
+   * Members of a group, merging the explicit `.server-groups.json` list with
+   * every server whose config carries a matching `group` field. Membership is a
+   * union: tagging a server in the SSH config adds it to the group without
+   * touching the stored list, and the stored list keeps working on its own.
+   */
+  resolveMembers(groupName, explicitServers = [], derived = this.getConfigGroups()) {
+    const members = [];
+
+    for (const server of [...explicitServers, ...(derived.get(groupName) || [])]) {
+      const normalized = String(server).toLowerCase();
+      if (!members.includes(normalized)) members.push(normalized);
+    }
+
+    return members;
+  }
+
+  /**
    * Get a group by name
    */
   getGroup(name) {
-    const group = this.groups[name.toLowerCase()];
+    const groupName = name.toLowerCase();
+    const group = this.groups[groupName];
+    const derived = this.getConfigGroups();
+    const derivedMembers = derived.get(groupName) || [];
 
     if (!group) {
-      throw new Error(`Group '${name}' not found`);
+      // Group declared only through the `group` field of the SSH configuration.
+      if (derivedMembers.length === 0) {
+        throw new Error(`Group '${name}' not found`);
+      }
+
+      return {
+        description: `Servers configured with group = "${groupName}"`,
+        servers: derivedMembers,
+        strategy: EXECUTION_STRATEGIES.PARALLEL,
+        dynamic: true,
+        fromConfig: true
+      };
     }
 
     // For 'all' group, return all configured servers
-    if (name.toLowerCase() === 'all' && group.dynamic) {
+    if (groupName === 'all' && group.dynamic) {
       return {
         ...group,
         servers: this.getAllServers()
       };
+    }
+
+    if (derivedMembers.length === 0) {
+      return group;
+    }
+
+    return {
+      ...group,
+      servers: this.resolveMembers(groupName, group.servers, derived),
+      fromConfig: true
+    };
+  }
+
+  /**
+   * Resolve a group for mutation, rejecting the ones that are not editable.
+   * `verb` only shapes the error message ("Cannot update dynamic group ...").
+   */
+  getMutableGroup(name, verb) {
+    const groupName = name.toLowerCase();
+    const group = this.groups[groupName];
+
+    if (!group) {
+      if (this.getConfigGroups().has(groupName)) {
+        throw new Error(
+          `Group '${name}' comes from the 'group' field of your SSH server configuration and cannot be edited here. ` +
+          'Change the group of the servers themselves in your .env/TOML config, or use a different group name.'
+        );
+      }
+
+      throw new Error(`Group '${name}' not found`);
+    }
+
+    if (group.dynamic) {
+      throw new Error(`Cannot ${verb} dynamic group '${name}'`);
     }
 
     return group;
@@ -112,7 +245,13 @@ class ServerGroups {
    * Get all configured servers
    */
   getAllServers() {
-    // This will be populated from the main server config
+    const configured = Object.keys(this.getServerConfigs());
+    if (configured.length > 0) {
+      return configured.map(name => name.toLowerCase());
+    }
+
+    // No provider injected: fall back to scanning the environment. This only
+    // sees .env servers, never TOML ones — hence the provider.
     const servers = [];
 
     for (const key of Object.keys(process.env)) {
@@ -160,15 +299,7 @@ class ServerGroups {
    */
   updateGroup(name, updates) {
     const groupName = name.toLowerCase();
-    const group = this.groups[groupName];
-
-    if (!group) {
-      throw new Error(`Group '${name}' not found`);
-    }
-
-    if (group.dynamic) {
-      throw new Error(`Cannot update dynamic group '${name}'`);
-    }
+    const group = this.getMutableGroup(name, 'update');
 
     // Update group properties
     if (updates.servers !== undefined) {
@@ -204,15 +335,7 @@ class ServerGroups {
    */
   deleteGroup(name) {
     const groupName = name.toLowerCase();
-    const group = this.groups[groupName];
-
-    if (!group) {
-      throw new Error(`Group '${name}' not found`);
-    }
-
-    if (group.dynamic) {
-      throw new Error(`Cannot delete dynamic group '${name}'`);
-    }
+    this.getMutableGroup(name, 'delete');
 
     delete this.groups[groupName];
     this.saveGroups();
@@ -227,15 +350,7 @@ class ServerGroups {
    */
   addServers(name, servers) {
     const groupName = name.toLowerCase();
-    const group = this.groups[groupName];
-
-    if (!group) {
-      throw new Error(`Group '${name}' not found`);
-    }
-
-    if (group.dynamic) {
-      throw new Error(`Cannot modify dynamic group '${name}'`);
-    }
+    const group = this.getMutableGroup(name, 'modify');
 
     // Add servers (avoid duplicates)
     const currentServers = new Set(group.servers);
@@ -258,15 +373,7 @@ class ServerGroups {
    */
   removeServers(name, servers) {
     const groupName = name.toLowerCase();
-    const group = this.groups[groupName];
-
-    if (!group) {
-      throw new Error(`Group '${name}' not found`);
-    }
-
-    if (group.dynamic) {
-      throw new Error(`Cannot modify dynamic group '${name}'`);
-    }
+    const group = this.getMutableGroup(name, 'modify');
 
     // Remove servers
     const toRemove = new Set(servers.map(s => s.toLowerCase()));
@@ -287,18 +394,36 @@ class ServerGroups {
    * List all groups
    */
   listGroups() {
+    const derived = this.getConfigGroups();
     const groups = [];
 
     for (const [name, group] of Object.entries(this.groups)) {
       // Populate dynamic groups
-      if (group.dynamic && name === 'all') {
-        group.servers = this.getAllServers();
-      }
+      const servers = group.dynamic && name === 'all'
+        ? this.getAllServers()
+        : this.resolveMembers(name, group.servers, derived);
 
       groups.push({
         name,
         ...group,
-        serverCount: group.servers.length
+        servers,
+        serverCount: servers.length,
+        ...((derived.get(name) || []).length > 0 ? { fromConfig: true } : {})
+      });
+    }
+
+    // Groups that exist only through the `group` field of the SSH configuration
+    for (const [name, servers] of derived) {
+      if (this.groups[name]) continue;
+
+      groups.push({
+        name,
+        description: `Servers configured with group = "${name}"`,
+        servers,
+        serverCount: servers.length,
+        strategy: EXECUTION_STRATEGIES.PARALLEL,
+        dynamic: true,
+        fromConfig: true
       });
     }
 
@@ -398,6 +523,8 @@ class ServerGroups {
 const serverGroups = new ServerGroups();
 
 // Export convenience functions
+export const setServerConfigProvider = (provider) => serverGroups.setServerConfigProvider(provider);
+export const getGroup = (name) => serverGroups.getGroup(name);
 export const createGroup = (name, servers, options) => serverGroups.createGroup(name, servers, options);
 export const updateGroup = (name, updates) => serverGroups.updateGroup(name, updates);
 export const deleteGroup = (name) => serverGroups.deleteGroup(name);
