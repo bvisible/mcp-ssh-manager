@@ -1063,6 +1063,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### SSH Sync (rsync)
 - Password authentication requires `sshpass` to be installed
 - SSH key authentication is recommended for better security and reliability
+- **Windows MCP hosts**: pass native local paths such as `local:C:\project` or `local:.\project`; `ssh_sync` converts drive-letter and UNC paths to MSYS2 format before launching rsync. Do not pre-convert local paths to `/c/...` because Node checks them using Windows path semantics.
 - Large file transfers may take time and appear to hang - be patient
 
 ### Connection Management

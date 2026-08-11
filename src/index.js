@@ -47,6 +47,7 @@ import {
 } from './profile-loader.js';
 import { logger } from './logger.js';
 import { parseRsyncStats } from './rsync-stats.js';
+import { toRsyncLocalPath } from './rsync-path.js';
 import {
   createSession,
   getSession,
@@ -902,11 +903,11 @@ registerToolConditional(
 registerToolConditional(
   'ssh_sync',
   {
-    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. Timeout defaults to 30000 ms.',
+    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. On Windows MCP hosts, provide native Windows local paths such as C:\\project or .\\project; the tool converts drive-letter and UNC paths to MSYS2 format before spawning rsync. Do not pre-convert a local path to /c/project because Node performs local filesystem checks using Windows path semantics. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. Timeout defaults to 30000 ms.',
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
-      source: z.string().describe('Source path (use "local:" or "remote:" prefix)'),
-      destination: z.string().describe('Destination path (use "local:" or "remote:" prefix)'),
+      source: z.string().describe('Source path with a "local:" or "remote:" prefix. On Windows, use a native local path such as "local:C:\\project" or "local:.\\project"; do not pre-convert it to MSYS2 /c/... syntax.'),
+      destination: z.string().describe('Destination path with a "local:" or "remote:" prefix. On Windows, use a native local path such as "local:C:\\output" or "local:.\\output"; do not pre-convert it to MSYS2 /c/... syntax.'),
       exclude: z.array(z.string()).optional().describe('Patterns to exclude from sync'),
       dryRun: z.boolean().optional().describe('Perform dry run without actual changes'),
       delete: z.boolean().optional().describe('Delete files in destination not in source'),
@@ -1004,6 +1005,10 @@ registerToolConditional(
         remotePath = cleanSource;
       }
 
+      // Native Windows paths must remain unchanged for fs.existsSync() and
+      // logging, but MSYS2 rsync expects drive paths such as /c/project/file.
+      const rsyncLocalPath = toRsyncLocalPath(localPath);
+
       // Add SSH options for non-interactive mode
       const sshOptions = [];
 
@@ -1079,11 +1084,11 @@ registerToolConditional(
 
         // Add source and destination
         if (direction === 'push') {
-          rsyncArgs.push(localPath);
+          rsyncArgs.push(rsyncLocalPath);
           rsyncArgs.push(`${serverConfig.user}@${serverConfig.host}:${remotePath}`);
         } else {
           rsyncArgs.push(`${serverConfig.user}@${serverConfig.host}:${remotePath}`);
-          rsyncArgs.push(localPath);
+          rsyncArgs.push(rsyncLocalPath);
         }
 
         const rsyncProcess = spawn(rsyncCommand, rsyncArgs, {
