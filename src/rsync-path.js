@@ -19,6 +19,18 @@ export function toRsyncLocalPath(localPath, options = {}) {
   }
 
   const cwd = options.cwd ?? process.cwd();
+
+  // Already in MSYS2 form — a drive mount (/c/project) or a UNC share
+  // (//server/share). Pass it through untouched instead of resolving it against
+  // the current drive, which would produce /c/c/project. Windows users hit this
+  // bug before it was fixed and worked around it by pre-converting their paths;
+  // silently double-mounting those would trade one broken path for another.
+  // The test is deliberately narrow: only a single-letter first segment is a
+  // drive mount, so a genuine rooted path such as /Users/me still converts.
+  if (/^\/[A-Za-z](\/|$)/.test(localPath) || localPath.startsWith('//')) {
+    return localPath;
+  }
+
   const preserveTrailingSeparator = /[\\/]$/.test(localPath);
   let nativePath = localPath;
 
