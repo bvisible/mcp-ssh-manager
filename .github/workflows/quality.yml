@@ -44,6 +44,11 @@ jobs:
       run: npx eslint src/
       continue-on-error: true
 
+    # Type-checks the JSDoc annotations over plain JS (no build, nothing emitted).
+    # Not continue-on-error: this gate is only useful if it can fail the build.
+    - name: Typecheck (JSDoc via tsc)
+      run: npm run typecheck
+
     - name: Run knip (dead code & unused dependencies)
       run: npx knip
 

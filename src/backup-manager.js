@@ -419,7 +419,7 @@ export function parseBackupsList(output) {
   }
 
   // Sort by created_at descending
-  return backups.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return backups.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
 /**

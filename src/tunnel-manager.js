@@ -3,12 +3,44 @@
  * Manages SSH port forwarding and SOCKS proxy tunnels
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import net from 'net';
 import { logger } from './logger.js';
 
 // Map to store active tunnels
 const tunnels = new Map();
+
+/**
+ * Bind a local server, rejecting when the bind fails.
+ *
+ * `net.Server#listen` does NOT pass an error to its callback — the callback
+ * only ever fires on success. A failed bind (EADDRINUSE, the common case when
+ * the requested tunnel port is already taken) surfaces as an `'error'` event
+ * instead. With no listener for it, Node rethrows as an uncaught exception:
+ * that used to kill the whole MCP server process, while the awaited promise
+ * never settled either way.
+ *
+ * @param {import('net').Server} server
+ * @param {number} port
+ * @param {string} host
+ * @returns {Promise<void>}
+ */
+export function listenOrReject(server, port, host) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.removeListener('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      resolve();
+    };
+
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, host);
+  });
+}
 
 // Tunnel types
 const TUNNEL_TYPES = {
@@ -154,12 +186,7 @@ class SSHTunnel {
     });
 
     // Start listening
-    await new Promise((resolve, reject) => {
-      this.server.listen(localPort, localHost, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await listenOrReject(this.server, localPort, localHost);
 
     logger.info('Local forwarding established', {
       local: `${localHost}:${localPort}`,
@@ -174,12 +201,14 @@ class SSHTunnel {
     const { localHost, localPort, remoteHost, remotePort } = this.config;
 
     // Request remote forwarding from SSH server
-    await new Promise((resolve, reject) => {
+    /** @type {Promise<void>} */
+    const forwarded = new Promise((resolve, reject) => {
       this.ssh.forwardIn(remoteHost, remotePort, (err) => {
         if (err) reject(err);
         else resolve();
       });
     });
+    await forwarded;
 
     // Handle incoming connections from remote
     this.ssh.on('tcp connection', (info, accept) => {
@@ -258,7 +287,7 @@ class SSHTunnel {
           // Send auth method response
           localSocket.write(Buffer.from([0x05, 0x00]));
 
-          localSocket.once('data', async (chunk2) => {
+          localSocket.once('data', async (/** @type {Buffer} */ chunk2) => {
             // Parse connection request
             if (chunk2[0] === 0x05 && chunk2[1] === 0x01) { // CONNECT
               const addrType = chunk2[3];
@@ -338,12 +367,7 @@ class SSHTunnel {
     });
 
     // Start listening
-    await new Promise((resolve, reject) => {
-      this.server.listen(localPort, localHost, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await listenOrReject(this.server, localPort, localHost);
 
     logger.info('SOCKS proxy established', {
       local: `${localHost}:${localPort}`
@@ -439,7 +463,7 @@ class SSHTunnel {
  * Create a new SSH tunnel
  */
 export async function createTunnel(serverName, ssh, config) {
-  const tunnelId = `tunnel_${Date.now()}_${uuidv4().substring(0, 8)}`;
+  const tunnelId = `tunnel_${Date.now()}_${randomUUID().substring(0, 8)}`;
 
   // Validate config
   if (!config.type || !Object.values(TUNNEL_TYPES).includes(config.type)) {

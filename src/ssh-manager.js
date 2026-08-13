@@ -32,6 +32,7 @@ class SSHManager {
     this.jumpConnection = null;
   }
 
+  /** @returns {Promise<void>} */
   async connect(options = {}) {
     return new Promise((resolve, reject) => {
       this.client.on('ready', () => {
@@ -445,9 +446,9 @@ class SSHManager {
         return;
       }
 
-      sftp.fastPut(localPath, resolvedRemotePath, (err) => {
+      sftp.fastPut(localPath, resolvedRemotePath, (/** @type {Error|undefined} */ err) => {
         if (err) reject(err);
-        else resolve();
+        else resolve(undefined);
       });
     });
   }
@@ -476,9 +477,9 @@ class SSHManager {
 
     const sftp = await this.getSFTP();
     return new Promise((resolve, reject) => {
-      sftp.fastGet(resolvedRemotePath, localPath, (err) => {
+      sftp.fastGet(resolvedRemotePath, localPath, (/** @type {Error|undefined} */ err) => {
         if (err) reject(err);
-        else resolve();
+        else resolve(undefined);
       });
     });
   }

@@ -47,6 +47,7 @@ import {
 } from './profile-loader.js';
 import { logger } from './logger.js';
 import { parseRsyncStats } from './rsync-stats.js';
+import { toRsyncLocalPath } from './rsync-path.js';
 import {
   createSession,
   getSession,
@@ -302,6 +303,13 @@ async function auditOk(serverName, toolName, args, executionResult) {
 }
 
 // Execute command with timeout - using child_process timeout for real kill
+/**
+ * @param {any} ssh
+ * @param {string} command
+ * @param {{rawCommand?: boolean, platform?: string, execOptions?: Record<string, any>,
+ *   [key: string]: any}} [options]
+ * @param {number} [timeoutMs]
+ */
 async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30000) {
   // Pass through rawCommand and platform if specified
   const { rawCommand, platform = 'linux', ...otherOptions } = options;
@@ -467,11 +475,13 @@ async function createProxyCommandSocket(proxyCommand, host, port) {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    const socket = Duplex.from({
+    // Cast: Node accepts a {readable, writable} pair here, but the bundled
+    // types only model the stream/iterable overloads.
+    const socket = Duplex.from(/** @type {any} */ ({
       readable: child.stdout,
       writable: child.stdin,
       allowHalfOpen: false
-    });
+    }));
 
     // Forward proxy stderr to the MCP server's stderr for debugging
     child.stderr.on('data', (chunk) => {
@@ -620,23 +630,42 @@ async function getConnection(serverName) {
   return connections.get(normalizedName);
 }
 
+// Server version reported to MCP clients — derived from package.json so it
+// always reflects the real build instead of a literal that drifts across
+// releases. Resolves both in-repo (src/../package.json) and installed, since
+// package.json always sits at the package root.
+function getServerVersion() {
+  try {
+    const pkgPath = path.join(__dirname, '..', 'package.json');
+    const version = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version;
+    if (version) return version;
+  } catch (error) {
+    logger.warn('Could not read version from package.json', { error: error.message });
+  }
+
+  return '0.0.0-unknown';
+}
+
 // Create MCP server
+const serverVersion = getServerVersion();
 const server = new McpServer({
   name: 'mcp-ssh-manager',
-  version: '1.2.0',
+  version: serverVersion,
 });
 
-logger.info('MCP Server initialized', { version: '1.2.0' });
+logger.info('MCP Server initialized', { version: serverVersion });
 
 /**
  * Helper function to conditionally register tools based on configuration
  * @param {string} toolName - Name of the tool
- * @param {Object} schema - Tool schema
- * @param {Function} handler - Tool handler function
+ * @param {any} schema - Tool schema (description + zod inputSchema)
+ * @param {(args: any, extra?: any) => any} handler - Tool handler function
  */
 function registerToolConditional(toolName, schema, handler) {
   if (isToolEnabled(toolName)) {
-    server.registerTool(toolName, schema, handler);
+    // Cast: registerTool infers its handler signature from the zod schema, which
+    // this generic wrapper cannot express while staying one helper for 37 tools.
+    server.registerTool(toolName, schema, /** @type {any} */ (handler));
     logger.debug(`Registered tool: ${toolName}`);
   } else {
     logger.debug(`Skipped disabled tool: ${toolName}`);
@@ -880,11 +909,11 @@ registerToolConditional(
 registerToolConditional(
   'ssh_sync',
   {
-    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. Timeout defaults to 30000 ms.',
+    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. On Windows MCP hosts, provide native Windows local paths such as C:\\project or .\\project; the tool converts drive-letter and UNC paths to MSYS2 format before spawning rsync. Do not pre-convert a local path to /c/project because Node performs local filesystem checks using Windows path semantics. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. Timeout defaults to 30000 ms.',
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
-      source: z.string().describe('Source path (use "local:" or "remote:" prefix)'),
-      destination: z.string().describe('Destination path (use "local:" or "remote:" prefix)'),
+      source: z.string().describe('Source path with a "local:" or "remote:" prefix. On Windows, use a native local path such as "local:C:\\project" or "local:.\\project"; do not pre-convert it to MSYS2 /c/... syntax.'),
+      destination: z.string().describe('Destination path with a "local:" or "remote:" prefix. On Windows, use a native local path such as "local:C:\\output" or "local:.\\output"; do not pre-convert it to MSYS2 /c/... syntax.'),
       exclude: z.array(z.string()).optional().describe('Patterns to exclude from sync'),
       dryRun: z.boolean().optional().describe('Perform dry run without actual changes'),
       delete: z.boolean().optional().describe('Delete files in destination not in source'),
@@ -982,6 +1011,10 @@ registerToolConditional(
         remotePath = cleanSource;
       }
 
+      // Native Windows paths must remain unchanged for fs.existsSync() and
+      // logging, but MSYS2 rsync expects drive paths such as /c/project/file.
+      const rsyncLocalPath = toRsyncLocalPath(localPath);
+
       // Add SSH options for non-interactive mode
       const sshOptions = [];
 
@@ -999,7 +1032,9 @@ registerToolConditional(
         sshOptions.push('-o ConnectTimeout=10');
       }
 
-      if (serverConfig.port && serverConfig.port !== '22') {
+      // port is a number (ConfigLoader parseInt's it), so comparing against the
+      // string '22' never matched and every server got an explicit -p 22.
+      if (serverConfig.port && serverConfig.port !== 22) {
         sshOptions.push(`-p ${serverConfig.port}`);
       }
 
@@ -1055,11 +1090,11 @@ registerToolConditional(
 
         // Add source and destination
         if (direction === 'push') {
-          rsyncArgs.push(localPath);
+          rsyncArgs.push(rsyncLocalPath);
           rsyncArgs.push(`${serverConfig.user}@${serverConfig.host}:${remotePath}`);
         } else {
           rsyncArgs.push(`${serverConfig.user}@${serverConfig.host}:${remotePath}`);
-          rsyncArgs.push(localPath);
+          rsyncArgs.push(rsyncLocalPath);
         }
 
         const rsyncProcess = spawn(rsyncCommand, rsyncArgs, {
@@ -3031,7 +3066,9 @@ registerToolConditional(
         }
         serverConfig = servers[resolvedName];
         host = serverConfig.host;
-        port = parseInt(serverConfig.port || '22');
+        // port is already a number from ConfigLoader; parseInt() on it only
+        // worked because JS stringifies the argument first.
+        port = serverConfig.port || 22;
       }
 
       switch (action) {

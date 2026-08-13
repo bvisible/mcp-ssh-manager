@@ -6,6 +6,40 @@ import os from 'os';
 import { logger } from './logger.js';
 import { VALID_MODES } from './policy.js';
 
+/**
+ * A resolved SSH server configuration, as produced by this loader and consumed
+ * by every handler. **Field names are camelCase, always** — the `.env` keys
+ * (`SUDO_PASSWORD`) and TOML keys (`sudo_password`) are source syntax and are
+ * mapped here; they never survive into a resolved config.
+ *
+ * This is the contract that broke in issue #49: handlers kept reading the
+ * pre-v3.0.0 snake_case names, which silently evaluated to `undefined`. Anything
+ * typed as a `ServerConfig` now makes that a type error rather than a runtime
+ * no-op. `tests/test-config-field-names.js` guards the same contract at runtime.
+ *
+ * @typedef {Object} ServerConfig
+ * @property {string} name Normalized (lowercased) server name.
+ * @property {string} host Hostname or IP address.
+ * @property {string} [user] SSH user.
+ * @property {string} [password] Password for password authentication.
+ * @property {string} [keyPath] Path to the private key (`KEYPATH` / `key_path`).
+ * @property {string} [passphrase] Passphrase for a protected private key.
+ * @property {number} [port] TCP port; defaults to 22.
+ * @property {string} [defaultDir] Working directory used when a tool omits `cwd`.
+ * @property {string} [sudoPassword] Password piped to `sudo -S`.
+ * @property {string} [description] Free-form description.
+ * @property {string} [group] Free-form group label; also feeds server groups.
+ * @property {string} [platform] `'linux'` (default) or `'windows'`.
+ * @property {string} [proxyJump] Name of another configured server to jump through.
+ * @property {string} [proxyCommand] Custom proxy command (`%h` / `%p` placeholders).
+ * @property {boolean} [forwardAgent] Forward the local ssh-agent to this server.
+ * @property {string} [mode] Security mode: `unrestricted`, `readonly` or `restricted`.
+ * @property {string[]} [allowPatterns] Regex sources allowed in `restricted` mode.
+ * @property {string[]} [denyPatterns] Regex sources always refused.
+ * @property {string} [auditLog] Path to a per-server audit log.
+ * @property {'env'|'toml'} [source] Which configuration source won for this server.
+ */
+
 // Parse a `;`-separated list of regex pattern strings. Empty entries are dropped.
 // We do NOT compile here — that happens lazily in policy.js so config-loader stays
 // free of regex error handling.
@@ -44,7 +78,9 @@ function parseBool(raw) {
 
 export class ConfigLoader {
   constructor() {
+    /** @type {Map<string, ServerConfig>} */
     this.servers = new Map();
+    /** @type {string|null} */
     this.configSource = null;
   }
 
@@ -53,6 +89,8 @@ export class ConfigLoader {
    * 1. Environment variables (highest priority)
    * 2. .env file
    * 3. TOML config file (lowest priority)
+   *
+   * @returns {Promise<Map<string, ServerConfig>>}
    */
   async load(options = {}) {
     const {
@@ -206,6 +244,7 @@ export class ConfigLoader {
           );
         }
 
+        /** @type {ServerConfig} */
         const server = {
           name: serverName,
           host: value,
@@ -237,6 +276,9 @@ export class ConfigLoader {
 
   /**
    * Get server configuration by name
+   *
+   * @param {string} name
+   * @returns {ServerConfig|undefined}
    */
   getServer(name) {
     return this.servers.get(name.toLowerCase());
@@ -244,6 +286,8 @@ export class ConfigLoader {
 
   /**
    * Get all server configurations
+   *
+   * @returns {ServerConfig[]}
    */
   getAllServers() {
     return Array.from(this.servers.values());
@@ -348,6 +392,7 @@ export class ConfigLoader {
    * Save configuration to Codex TOML format
    */
   async saveToCodexConfig(codexConfigPath = path.join(os.homedir(), '.codex', 'config.toml')) {
+    /** @type {Record<string, any>} */
     let config = {};
 
     // Load existing config if it exists

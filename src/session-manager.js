@@ -3,14 +3,14 @@
  * Manages persistent SSH sessions with state and context
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { logger } from './logger.js';
 
 // Map to store active sessions
 const sessions = new Map();
 
 function generateMarker(prefix) {
-  return `${prefix}_${uuidv4().replace(/-/g, '')}`;
+  return `${prefix}_${randomUUID().replace(/-/g, '')}`;
 }
 
 // Session states
@@ -289,7 +289,7 @@ class SSHSession {
  * Create a new SSH session
  */
 export async function createSession(serverName, ssh) {
-  const sessionId = `ssh_${Date.now()}_${uuidv4().substring(0, 8)}`;
+  const sessionId = `ssh_${Date.now()}_${randomUUID().substring(0, 8)}`;
 
   const session = new SSHSession(sessionId, serverName, ssh);
   sessions.set(sessionId, session);

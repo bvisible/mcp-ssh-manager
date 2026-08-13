@@ -70,10 +70,19 @@ See [docs/TOOL_MANAGEMENT.md](docs/TOOL_MANAGEMENT.md) for complete guide.
 ### Development and Testing
 ```bash
 npm start                                     # Start MCP server (requires stdin)
+npm test                                      # Run the full test suite
+npm run typecheck                             # Type-check JSDoc with tsc (no build, nothing emitted)
+npm run test:all                              # Tests + typecheck + validation
 ./scripts/validate.sh                        # Run all validation checks
 node --check src/index.js                   # Check JavaScript syntax
 python -m py_compile tools/*.py             # Check Python syntax
 ```
+
+**Typecheck**: `tsconfig.json` runs TypeScript in `checkJs`/`noEmit` mode over the plain JS —
+this project ships JavaScript straight from `src/` with no build step, and that must stay true.
+The baseline is 0 errors and CI enforces it, so add JSDoc annotations (or a narrow
+`/** @type {...} */` cast) rather than leaving new errors. `typescript` is pinned to `^6`
+because knip 5 declares `peer typescript ">=5.0.4 <7"` — bumping one requires bumping the other.
 
 ### Debug Tools (in `debug/` directory)
 ```bash

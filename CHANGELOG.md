@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`@modelcontextprotocol/sdk` floor raised to `^1.30.0`** — the declared range (`^1.17.2`) still allowed versions carrying three published advisories, one of them high: cross-client data leak through shared server/transport instance reuse, DNS rebinding protection off by default, and a ReDoS. It also dragged in vulnerable transitive express packages (`body-parser`, `path-to-regexp`, `qs`, `ajv`). `npm audit --omit=dev` now reports **0 vulnerabilities**. Behaviour verified against the real MCP stdio protocol: identical to 1.17.5 (37 tools registered, same negotiation, clean shutdown).
+
 ### Added
 
 - **Optional `group` field on server config** ([#56](https://github.com/bvisible/mcp-ssh-manager/pull/56) — contributed by [@ice616](https://github.com/ice616), requested in [#55](https://github.com/bvisible/mcp-ssh-manager/issues/55))
@@ -15,13 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Membership is the **union** of both sources: the explicit list stored by `ssh_group_manage` (which keeps carrying strategy, delay and stop-on-error) plus every server tagged with that name. Group names are case-insensitive. Config-derived members are resolved at read time and never written to `.server-groups.json`, so they cannot go stale.
   - A group that exists only through the config is read-only for `ssh_group_manage`; attempting to edit it now returns an error pointing at the server config instead of a bare "not found".
   - The `ssh-manager` add-server wizard asks for an optional group.
-- Tests: new `tests/test-server-groups.js` (13 checks) covers config-derived groups, the union with stored groups, case-insensitivity, read-only enforcement, persistence isolation and group execution; `tests/test-config-field-names.js` gains `group` coverage across the `.env` loader, the TOML loader, the forbidden-field guard and the export round-trip.
+- Tests: new `tests/test-server-groups.js` (14 checks) covers config-derived groups, the union with stored groups, case-insensitivity, read-only enforcement, persistence isolation, the dynamic-group reload regression and group execution; `tests/test-config-field-names.js` gains `group` coverage across the `.env` loader, the TOML loader, the forbidden-field guard and the export round-trip.
+- **Static type-checking over the existing JavaScript** (`npm run typecheck`) — a `tsconfig.json` in `checkJs`/`noEmit` mode runs TypeScript as a linter over JSDoc annotations. **Nothing is compiled and nothing changes for users**: the package still ships plain JS straight from `src/`, with no build step and no `dist/`. Added as a hard gate in the Code Quality workflow.
+  - A `ServerConfig` typedef in `src/config-loader.js` documents the resolved server shape and makes its camelCase contract enforceable: reading `serverConfig.default_dir` — the exact issue #49 regression — is now a type error (*"Property 'default_dir' does not exist on type 'ServerConfig'. Did you mean 'defaultDir'?"*) instead of a silent `undefined`. `tests/test-config-field-names.js` keeps guarding the same contract at runtime.
 
 ### Fixed
 
+- **A tunnel on an already-used local port crashed the entire MCP server** — `net.Server#listen` never passes an error to its callback (a failed bind is emitted as an `'error'` event), yet `ssh_tunnel_create` used `listen(port, host, (err) => ...)` and registered no `'error'` listener. On `EADDRINUSE` — the everyday tunnel failure — Node rethrew the unhandled event and killed the process, taking every pooled SSH connection and session with it, while the awaited promise never settled. Binding now rejects properly and the tool returns an error. Guarded by `tests/test-tunnel-listen.js`.
+- **`ssh_sync` always passed an explicit `-p 22` to rsync** — the guard read `serverConfig.port !== '22'`, comparing a number against a string, so it never matched. Harmless in effect, but the intent (omit the flag on the default port) never applied. Found by the new typecheck, along with a matching `parseInt(serverConfig.port || '22')` in `ssh_known_hosts` that only worked because `parseInt` stringifies its argument first.
+- **`ssh_sync` treated native Windows local paths as remote rsync specifications** — a path such as `C:\project` was passed unchanged to MSYS2 rsync, which parsed `C:` as a remote host and attempted an SSH connection to `c`. Windows drive-letter, rooted, UNC, and extended-length paths are now resolved and converted only for the spawned rsync argument while Node keeps the native path for local filesystem checks and logging; relative paths keep their existing semantics with normalized separators. Trailing separators retain rsync's directory-content semantics. A path already written in MSYS2 form (`/c/project`, `//server/share`) — the shape Windows users adopted to work around this very bug — is passed through untouched instead of being mounted twice into `/c/c/project`. Guarded by `tests/test-rsync-path.js` (24 checks: conversion table, pass-through, invariants over every input, platform isolation, failure modes, and a static guard on the `ssh_sync` wiring) plus a real MSYS2 rsync dry run.
+- **The MCP server announced itself as version `1.2.0`** — the `serverInfo` version sent to Claude Code / Codex was a hardcoded literal the release process never bumped, so it had drifted far behind the real package version (3.7.0). It is now derived from `package.json`, the same treatment the CLI banner got in 3.7.0. This matters more under the MCP `2026-07-28` spec, where servers identify themselves in the `_meta` of every result.
 - **`exportToEnv` no longer truncates a `group` containing `#`** — the value is now quoted like `DESCRIPTION`, so a label such as `prod #eu west` survives an export/re-import instead of coming back as `prod`.
 - **The dynamic `all` group now sees TOML-defined servers** — it enumerated `process.env` only, so `ssh_execute_group all` silently skipped every server declared in a TOML config. The group layer now reads the configuration actually loaded by `ConfigLoader`.
 - **The `all` group no longer disappears after the first group edit** — dynamic groups are deliberately never persisted, so every `.server-groups.json` written by `ssh_group_manage` lacked `all`, and the next start loaded that file as the complete set: `ssh_execute_group all` then failed with `Group 'all' not found`. Dynamic groups are now re-injected when the file is read.
+
+### Changed
+
+- **Dropped the `uuid` dependency** in favour of Node's built-in `crypto.randomUUID()` — available since Node 14.17, and this package already requires Node >= 18. Removes one runtime dependency and the last remaining advisory. Session and tunnel ID formats are unchanged.
 
 ## [3.7.0] - 2026-07-13
 
