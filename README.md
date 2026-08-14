@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dt/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.7.0-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.7.0)
+[![Version](https://img.shields.io/badge/Version-3.8.0-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.0)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
@@ -22,23 +22,32 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 ---
 
-## 🎉 What's New in v3.7.0
+## 🎉 What's New in v3.8.0
 
-**🔗 Per-server SSH agent forwarding (`ForwardAgent`)** (Released: July 13, 2026)
+**👥 Groups that live in your config, `ssh_sync` fixed on Windows, and a crash that took the whole server down** (Released: August 14, 2026)
 
-- **New opt-in `FORWARD_AGENT` / `forward_agent` option** ([#53](https://github.com/bvisible/mcp-ssh-manager/pull/53) — requested by [@raphaelbahat](https://github.com/raphaelbahat) in [#52](https://github.com/bvisible/mcp-ssh-manager/issues/52)) — enable the equivalent of OpenSSH's `ForwardAgent yes` per server, so processes on the remote host can authenticate to *other* SSH hosts using the keys in your **local** `ssh-agent` (e.g. `git clone` over SSH on a remote server using your local GitHub key), without copying any private key to the server.
-- **Safe by construction** — requires a running local agent (`SSH_AUTH_SOCK`); the flag is ignored when no agent is present, so it never breaks a connection. Boolean parsing treats only `true`/`1`/`yes`/`on` as enabled — `FORWARD_AGENT=false` stays off.
-- **⚠️ Defaults to `false`** — agent forwarding lets anyone with root on the remote host use your loaded keys for the life of the connection, so enable it only for servers you trust. See the new *SSH Agent Forwarding* section in the docs.
+- **New optional `group` field per server** ([#56](https://github.com/bvisible/mcp-ssh-manager/pull/56) — contributed by [@ice616](https://github.com/ice616), requested in [#55](https://github.com/bvisible/mcp-ssh-manager/issues/55)) — tag a server with `group = "production"` and it *is* in that group: `ssh_execute_group` and `ssh_group_manage list` resolve members straight from your `.env`/TOML, so there is no `.server-groups.json` to maintain and the grouping travels with the config when you export it to another tool. Membership is the **union** of both sources, so groups you already store keep working untouched.
+- **🪟 `ssh_sync` works from a Windows host** ([#59](https://github.com/bvisible/mcp-ssh-manager/pull/59) — contributed by [@2836603852](https://github.com/2836603852)) — a local path like `C:\project` reached MSYS2 rsync unchanged, which read `C:` as a remote host and tried to SSH into a machine named `c`. Drive-letter, UNC and extended-length paths are now converted for the rsync argument only, while Node keeps the native path for its filesystem checks.
+- **💥 A tunnel on a busy port no longer kills the MCP server** — `ssh_tunnel_create` on an already-bound port hit an unhandled `'error'` event and took the entire process down with it, dropping every pooled SSH connection and open session. It now returns a normal error.
+- **🔒 Security: `@modelcontextprotocol/sdk` floor raised to `^1.30.0`** — the previous range still allowed versions carrying three published advisories, one of them high. `npm audit` is clean, and the `uuid` dependency is gone in favour of Node's built-in `crypto.randomUUID()`.
+- **🧪 JSDoc type-checking in CI** (`npm run typecheck`) — TypeScript now runs as a static checker over the plain JavaScript. **No build step, no `dist/`, nothing changes for users**; it found two of the bugs above on the day it landed.
 
 ```env
-SSH_SERVER_MYSERVER_FORWARD_AGENT=true
+SSH_SERVER_WEB1_GROUP=production
 ```
 
-[Read full changelog →](CHANGELOG.md#370---2026-07-13)
+[Read full changelog →](CHANGELOG.md#380---2026-08-14)
 
 ---
 
 ## Previous Releases
+
+<details>
+<summary><b>📜 Release history — v3.7.0 down to v1.0.0</b> (click to expand)</summary>
+
+### v3.7.0 - Per-server SSH agent forwarding (July 13, 2026)
+
+- **🔗 New opt-in `FORWARD_AGENT` / `forward_agent` option** ([#53](https://github.com/bvisible/mcp-ssh-manager/pull/53) — requested by [@raphaelbahat](https://github.com/raphaelbahat) in [#52](https://github.com/bvisible/mcp-ssh-manager/issues/52)) — the equivalent of OpenSSH's `ForwardAgent yes`, per server: processes on the remote host authenticate to *other* SSH hosts with the keys in your local `ssh-agent`, without copying any private key. Requires a running agent and defaults to `false`. [Full changelog →](CHANGELOG.md#370---2026-07-13)
 
 ### v3.6.7 - Security: command injection fix in the database helpers (July 11, 2026)
 
@@ -179,6 +188,8 @@ This release adds **12 new MCP tools** transforming SSH Manager into a comprehen
 **📊 Total: 37 MCP Tools** | **🔧 ~4,100 Lines of Code Added** | **✅ Production Ready**
 
 [Read Full Changelog →](CHANGELOG.md#300---2025-10-01)
+
+</details>
 
 ---
 
