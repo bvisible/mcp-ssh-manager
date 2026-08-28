@@ -16,8 +16,11 @@ const SERVER = path.join(__dirname, '..', 'src', 'index.js');
 
 // Isolate from the developer's real .env / ~/.codex config: the test only cares
 // about process lifetime, not about which servers get loaded.
-const tmpEnv = path.join(os.tmpdir(), `mcp-ssh-lifecycle-${process.pid}.env`);
-const tmpToml = path.join(os.tmpdir(), `mcp-ssh-lifecycle-${process.pid}.toml`);
+// mkdtempSync, not a pid-based name: /tmp is shared, and a predictable path can
+// be pre-created or symlinked by any other local account before we write it.
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-ssh-lifecycle-'));
+const tmpEnv = path.join(tmpDir, 'test.env');
+const tmpToml = path.join(tmpDir, 'test.toml');
 fs.writeFileSync(tmpEnv, '');
 
 let passed = 0;

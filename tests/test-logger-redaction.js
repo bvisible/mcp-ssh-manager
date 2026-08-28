@@ -46,7 +46,7 @@ function captureLog(message, data) {
 
 function testSecretsNeverReachEitherDestination() {
   const { stderr, file, both } = captureLog('connecting', {
-    host: 'prod.example.com',
+    host: 'web-01-prod',
     user: 'deploy',
     password: SECRET
   });
@@ -57,7 +57,7 @@ function testSecretsNeverReachEitherDestination() {
 
   // Redaction must not swallow the useful context — a log that says nothing is
   // its own kind of failure.
-  assert.ok(both.includes('prod.example.com'), 'the host must still be logged');
+  assert.ok(both.includes('web-01-prod'), 'the host must still be logged');
   assert.ok(both.includes('deploy'), 'the user must still be logged');
   assert.ok(both.includes('[redacted]'), 'the redaction must be visible, not silent');
   ok('non-secret fields survive, and the redaction is visible');
@@ -80,7 +80,7 @@ function testEverySecretSpelling() {
 function testNestedAndArrayValues() {
   const { both } = captureLog('server list', {
     servers: [
-      { name: 'web1', host: 'a.example.com', password: SECRET },
+      { name: 'web1', host: 'web-02-prod', password: SECRET },
       { name: 'web2', config: { deep: { sudoPassword: SECRET } } }
     ]
   });
@@ -92,7 +92,7 @@ function testNestedAndArrayValues() {
 function testCyclicObjectDoesNotHang() {
   // A server config that references its own parent would otherwise recurse
   // forever inside the logger — turning a log line into a crash.
-  const cyclic = { host: 'a.example.com', password: SECRET };
+  const cyclic = { host: 'web-02-prod', password: SECRET };
   cyclic.self = cyclic;
   const { both } = captureLog('cyclic', cyclic);
   assert.ok(!both.includes(SECRET), 'the password must still be redacted in a cyclic object');

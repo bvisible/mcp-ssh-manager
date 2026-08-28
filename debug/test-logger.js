@@ -9,7 +9,7 @@
  * SSH_LOG_LEVEL=ERROR node debug/test-logger.js
  */
 
-import { logger, LOG_LEVELS } from '../src/logger.js';
+import { logger } from '../src/logger.js';
 
 console.log('🧪 Testing Logger System');
 console.log('========================');

@@ -98,8 +98,10 @@ try {
   // Restore original profile
   if (originalProfile) {
     fs.writeFileSync(testProfileFile, originalProfile);
-  } else if (fs.existsSync(testProfileFile)) {
-    fs.unlinkSync(testProfileFile);
+  } else {
+    // force:true removes it if present and stays quiet otherwise — no window
+    // between checking and unlinking.
+    fs.rmSync(testProfileFile, { force: true });
   }
   console.log('✅ Restored original profile setting\n');
 } catch (error) {
@@ -107,8 +109,10 @@ try {
   // Cleanup
   if (originalProfile) {
     fs.writeFileSync(testProfileFile, originalProfile);
-  } else if (fs.existsSync(testProfileFile)) {
-    fs.unlinkSync(testProfileFile);
+  } else {
+    // force:true removes it if present and stays quiet otherwise — no window
+    // between checking and unlinking.
+    fs.rmSync(testProfileFile, { force: true });
   }
   process.exit(1);
 }

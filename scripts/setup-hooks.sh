@@ -34,7 +34,10 @@ pre-commit install
 
 # Create secrets baseline
 echo "🔐 Creating secrets baseline..."
-pip install detect-secrets
+# Pinned: an unpinned install in a setup script gives every developer whatever
+# version is current that day, and this one writes the secrets baseline the
+# pre-commit hooks then trust.
+pip install 'detect-secrets==1.5.0'
 detect-secrets scan > .secrets.baseline
 
 # Run hooks on all files (optional first run)
