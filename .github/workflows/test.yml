@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, v4 ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, v4 ]
 
 # Least privilege: without this block the workflow gets the repository's default
 # token scopes, which are far wider than needed. The test job only needs to read the repository.
