@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bvisible/mcp-ssh-manager",
+  "description": "SSH server management for agents, with per-server read-only and allowlist security modes",
+  "repository": {
+    "url": "https://github.com/bvisible/mcp-ssh-manager",
+    "source": "github"
+  },
+  "version": "3.8.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "mcp-ssh-manager",
+      "version": "3.8.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SSH_CONFIG_PATH",
+          "description": "Path to a TOML file holding the server definitions. Defaults to ~/.codex/ssh-config.toml. Each server can set MODE to readonly or restricted to constrain what the agent may run.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "filepath"
+        },
+        {
+          "name": "SSH_ENV_PATH",
+          "description": "Path to a .env file declaring servers as SSH_SERVER_<NAME>_HOST, _USER, _KEYPATH and friends. Defaults to a .env next to the package.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "filepath"
+        }
+      ]
+    }
+  ]
+}

@@ -2284,7 +2284,14 @@ registerToolConditional(
         for (const step of strategy.steps) {
           const command = step.command.replace('{{tempFile}}', tempFile);
 
-          const result = await execCommandWithTimeout(ssh, command, { platform: deployServerConfig?.platform }, 15000);
+          // step.stdin carries the sudo password for steps that need it, so it
+          // never reaches the remote command line (issue #34).
+          const result = await execCommandWithTimeout(
+            ssh,
+            command,
+            { platform: deployServerConfig?.platform, stdin: step.stdin ?? null },
+            15000
+          );
 
           if (result.code !== 0 && step.type !== 'backup') {
             throw new Error(`${step.type} failed: ${result.stderr}`);
@@ -2364,12 +2371,21 @@ registerToolConditional(
         fullCommand = `sudo ${fullCommand}`;
       }
 
-      // Add password if provided
-      if (password) {
-        fullCommand = `echo "${password}" | sudo -S ${command.replace(/^sudo /, '')}`;
-      } else if (serverConfig?.sudoPassword) {
-        // Use configured sudo password if available
-        fullCommand = `echo "${serverConfig.sudoPassword}" | sudo -S ${command.replace(/^sudo /, '')}`;
+      // Add password if provided. The password travels on the exec channel's
+      // stdin, never inside the command string: the previous
+      // `echo "<pass>" | sudo -S …` left it readable in the remote process list
+      // and /proc/<pid>/cmdline for anyone with an account on the host (#34).
+      //   -S  read the password from stdin
+      //   -k  invalidate any cached sudo timestamp first, so sudo always
+      //       consumes the password we wrote. Without it, an already-authorised
+      //       sudo skips the prompt and the password stays in the pipe, where
+      //       the command itself would read it as its own input.
+      //   -p ''  suppress the prompt, which would otherwise land in stderr.
+      let sudoStdin = null;
+      const effectiveSudoPassword = password || serverConfig?.sudoPassword;
+      if (effectiveSudoPassword) {
+        fullCommand = `sudo -S -k -p '' ${command.replace(/^sudo /, '')}`;
+        sudoStdin = `${effectiveSudoPassword}\n`;
       }
 
       // Add working directory if specified
@@ -2390,10 +2406,12 @@ registerToolConditional(
         }
       }
 
-      const result = await execCommandWithTimeout(ssh, fullCommand, { platform }, timeout);
+      const result = await execCommandWithTimeout(ssh, fullCommand, { platform, stdin: sudoStdin }, timeout);
 
-      // Mask password in output for security
-      const maskedCommand = fullCommand.replace(/echo "[^"]+" \| sudo -S/, 'sudo');
+      // The command string no longer carries the password, so there is nothing
+      // left to mask — the flags are shown as-is. Kept as a named value so the
+      // response format is unchanged for existing callers.
+      const maskedCommand = fullCommand;
 
       return {
         content: [

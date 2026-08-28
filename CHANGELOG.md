@@ -5,6 +5,23 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.2] - 2026-08-28
+
+### Security
+
+- **The sudo password no longer reaches the remote command line** ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)). `ssh_execute_sudo` and the three privileged steps of `ssh_deploy` built `echo "<password>" | sudo -S <cmd>`, which published the password to the remote process list, `/proc/<pid>/cmdline` and any `auditd` trail for the lifetime of the `echo` — readable by every account on the host. The existing output masking never helped: it only redacted the copy sent back to the agent. The password now travels on the SSH exec channel's stdin (`sudo -S -k -p ''`), where no other process can observe it. `-k` is required: without it an already-authorised sudo skips the prompt, leaving the password in the pipe for the command itself to read as input. Guarded by `npm run test:sudostdin`, which also fails if the old pipeline reappears anywhere in `src/`.
+
+### Added
+
+- **`server.json`** — the manifest for the official [MCP Registry](https://registry.modelcontextprotocol.io), published as `io.github.bvisible/mcp-ssh-manager`, plus the `mcpName` field in `package.json` that proves package ownership. The registry is what feeds MCP clients today; the project was absent from it.
+- **OpenSSF Scorecard workflow and badge** — a public grade of the repository's supply-chain posture. For a server that hands an agent a shell on production machines, that grade is part of the product.
+- **`Release` workflow** publishing to npm with build provenance and attaching a CycloneDX SBOM to each GitHub release. Removes the hand-publish step that failed twice on 2026-08-28 (expired token, then a 2FA prompt), and lets anyone verify the tarball's origin with `npm audit signatures`.
+- **README section "Giving an agent SSH access, safely"** documenting the per-server `unrestricted` / `readonly` / `restricted` modes, which existed since v3.5.0 but were never surfaced where readers land.
+
+### Fixed
+
+- `SSHManager.execCommand` accepts an `stdin` option, written to the exec channel and then closed. Commands that pass no stdin are untouched, so interactive remote processes keep working.
+
 ## [3.8.1] - 2026-08-28
 
 ### Added

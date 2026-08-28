@@ -1,0 +1,70 @@
+# Publishes to npm with build provenance, and attaches an SBOM to the release.
+#
+# Why this exists: publishing by hand from a laptop proves nothing about where
+# the tarball came from, and it broke twice on 2026-08-28 (expired token, then
+# a 2FA prompt). Publishing from CI with OIDC removes the token entirely and
+# stamps every release with a signed statement of which commit and which
+# workflow built it — verifiable by anyone with `npm audit signatures`.
+#
+# One-time setup on npmjs.com before the OIDC path works: package settings →
+# Trusted publisher → GitHub Actions, repository `bvisible/mcp-ssh-manager`,
+# workflow `release.yml`. Until then the run falls back to NPM_TOKEN if that
+# secret exists, still with --provenance.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to publish (e.g. v3.8.2). Must already exist.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # Required for both npm provenance and the SBOM attestation.
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Never publish a version the suite has not passed. The lockfile test also
+      # catches a tag whose package.json and lockfile versions disagree.
+      - name: Run full validation
+        run: npm run test:all
+
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Generate SBOM
+        run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cyclonedx.json
+
+      - name: Attest the SBOM
+        uses: actions/attest-sbom@v2
+        with:
+          subject-path: 'package.json'
+          sbom-path: 'sbom.cyclonedx.json'
+
+      - name: Attach SBOM to the GitHub release
+        run: gh release upload "${{ inputs.tag }}" sbom.cyclonedx.json --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

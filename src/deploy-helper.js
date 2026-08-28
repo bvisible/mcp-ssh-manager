@@ -51,40 +51,40 @@ export function buildDeploymentStrategy(remotePath, options = {}) {
     strategy.requiresSudo = true;
   }
 
-  // Step 3: Copy from temp to final location
-  const copyCmd = needsSudo && sudoPassword ?
-    `echo "${sudoPassword}" | sudo -S cp {{tempFile}} "${remotePath}"` :
-    needsSudo ?
-      `sudo cp {{tempFile}} "${remotePath}"` :
-      `cp {{tempFile}} "${remotePath}"`;
+  // A step that needs the sudo password carries it as `stdin`, never inside
+  // `command`. Interpolating it (`echo "<pass>" | sudo -S …`) published the
+  // password to the remote process list and /proc/<pid>/cmdline (issue #34).
+  // See the ssh_execute_sudo handler for what -S -k -p '' each do.
+  const sudoPrefix = sudoPassword ? "sudo -S -k -p '' " : 'sudo ';
+  const withSudoStdin = (step) => (sudoPassword ? { ...step, stdin: `${sudoPassword}\n` } : step);
 
-  strategy.steps.push({
+  // Step 3: Copy from temp to final location
+  const copyCmd = needsSudo ?
+    `${sudoPrefix}cp {{tempFile}} "${remotePath}"` :
+    `cp {{tempFile}} "${remotePath}"`;
+
+  strategy.steps.push(needsSudo ? withSudoStdin({
+    type: 'copy',
+    command: copyCmd
+  }) : {
     type: 'copy',
     command: copyCmd
   });
 
   // Step 4: Set ownership if specified
   if (owner) {
-    const chownCmd = sudoPassword ?
-      `echo "${sudoPassword}" | sudo -S chown ${owner} "${remotePath}"` :
-      `sudo chown ${owner} "${remotePath}"`;
-
-    strategy.steps.push({
+    strategy.steps.push(withSudoStdin({
       type: 'chown',
-      command: chownCmd
-    });
+      command: `${sudoPrefix}chown ${owner} "${remotePath}"`
+    }));
   }
 
   // Step 5: Set permissions if specified
   if (permissions) {
-    const chmodCmd = sudoPassword ?
-      `echo "${sudoPassword}" | sudo -S chmod ${permissions} "${remotePath}"` :
-      `sudo chmod ${permissions} "${remotePath}"`;
-
-    strategy.steps.push({
+    strategy.steps.push(withSudoStdin({
       type: 'chmod',
-      command: chmodCmd
-    });
+      command: `${sudoPrefix}chmod ${permissions} "${remotePath}"`
+    }));
   }
 
   // Step 6: Restart service if specified

@@ -6,10 +6,11 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dt/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.8.1-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.1)
+[![Version](https://img.shields.io/badge/Version-3.8.2-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.2)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/bvisible/mcp-ssh-manager?style=for-the-badge&label=OpenSSF)](https://scorecard.dev/viewer/?uri=github.com/bvisible/mcp-ssh-manager)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 [![MCP Toplist](https://mcptoplist.com/badge/glama%2Fbvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/glama%2Fbvisible%2Fmcp-ssh-manager)
@@ -22,23 +23,63 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 ---
 
-## 🎉 What's New in v3.8.1
+## 🎉 What's New in v3.8.2
 
-**🔒 Reproducible installs: the lockfile is committed, CI installs from it, and a test keeps it honest** (Released: August 28, 2026)
+**🔐 The sudo password stops leaking to the remote process list, and the server joins the official MCP Registry** (Released: August 28, 2026)
 
-- **`package-lock.json` is now committed** ([#60](https://github.com/bvisible/mcp-ssh-manager/pull/60) — contributed by [@cudatuda](https://github.com/cudatuda)) — installs are reproducible, `npm ci` works, and the transitive tree is auditable at last. **Nothing changes if you install from npm**: a lockfile is never shipped inside a published tarball.
-- **🧪 New `npm run test:lockfile` guard** — a lockfile is only worth committing while it stays truthful, so a test locks the ways it rots: version drift, dependency ranges out of sync, a package resolved from anywhere but registry.npmjs.org, a missing integrity hash, a `file:`/`git+`/`link:` entry smuggled into the tree, an install script outside the reviewed allowlist, or a runtime dependency requiring a newer Node than `engines` advertises. Validated by mutating the lockfile 17 different ways — each one caught.
-- **⚙️ CI installs with `npm ci`, and the quality gates finally block.** ESLint and the JSDoc typecheck ran in a workflow that was **not** a required check, ESLint with `continue-on-error` on top — neither could fail a pull request. Both moved into the required `lint` job. Node 22.x added to the test matrix, and the module cache (keyed on a lockfile that did not exist) works now.
-- **🤖 Dependabot** — a pinned tree stops receiving upstream fixes on its own, so monthly grouped updates act as the counterweight.
+- **🔒 Security fix: the sudo password no longer reaches the remote command line** ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)) — `ssh_execute_sudo` and `ssh_deploy` built `echo "<password>" | sudo -S …`, leaving the password visible in `ps` and `/proc/<pid>/cmdline` to every account on the host. It now travels on the SSH channel's stdin, where nothing else can read it. A regression test fails if the old pattern comes back anywhere in `src/`.
+- **📖 Listed in the official MCP Registry** as `io.github.bvisible/mcp-ssh-manager` — the registry that feeds MCP clients. The project was simply absent from it.
+- **🛡️ OpenSSF Scorecard + signed provenance + SBOM** — releases now publish from CI with build provenance you can check via `npm audit signatures`, and each one carries a CycloneDX SBOM.
+- **📋 The security modes are finally documented where people land** — `readonly` and `restricted` have existed since v3.5.0 and were buried. See the section right below.
 
-[Read full changelog →](CHANGELOG.md#381---2026-08-28)
+[Read full changelog →](CHANGELOG.md#382---2026-08-28)
+
+---
+
+## 🔐 Giving an agent SSH access, safely
+
+An MCP SSH server is the most dangerous tool you can hand an AI agent: a shell on
+machines that matter. This one is built so you decide how far the agent can go —
+**per server**, not globally.
+
+| Mode | What the agent can do |
+|---|---|
+| `unrestricted` *(default)* | Everything. Same behaviour as any other SSH MCP server. |
+| `readonly` | Mutating tools are refused outright — no deploy, no upload, no sudo, no database import. Read commands still work. |
+| `restricted` | Every command must match an allow pattern **and** no deny pattern. Anything else is refused before it reaches the host. |
+
+```env
+SSH_SERVER_PROD_MODE=readonly
+SSH_SERVER_STAGING_MODE=restricted
+SSH_SERVER_STAGING_ALLOW_PATTERNS=^systemctl (status|restart) myapp$;^tail -n \d+ /var/log/
+```
+
+Alongside that:
+
+- **The sudo password never reaches the remote command line.** It travels on the
+  SSH channel's stdin, so it is not visible in `ps`, in `/proc/<pid>/cmdline`, or
+  in an `auditd` trail — unlike the `echo "$pass" | sudo -S` pattern common in
+  this category ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)).
+- **Every database argument is shell-quoted** through one centralised helper,
+  guarded by a 648-combination injection test.
+- **Read-only SQL is enforced**, not suggested: `ssh_db_query` refuses anything
+  that is not a `SELECT`.
+- **Vulnerabilities are published, not buried.** See [SECURITY.md](SECURITY.md)
+  for the reporting process and the advisories already fixed.
+- **Reproducible installs**: the lockfile is committed, CI installs with
+  `npm ci`, and a test enforces that every dependency resolves to
+  registry.npmjs.org with an integrity hash and no unreviewed install scripts.
 
 ---
 
 ## Previous Releases
 
 <details>
-<summary><b>📜 Release history — v3.8.0 down to v1.0.0</b> (click to expand)</summary>
+<summary><b>📜 Release history — v3.8.1 down to v1.0.0</b> (click to expand)</summary>
+
+### v3.8.1 - Reproducible installs and blocking quality gates (August 28, 2026)
+
+- **Committed lockfile** ([#60](https://github.com/bvisible/mcp-ssh-manager/pull/60) — contributed by [@cudatuda](https://github.com/cudatuda)) plus `npm run test:lockfile` guarding it against drift and tampering. CI installs with `npm ci`; ESLint and the JSDoc typecheck became blocking gates after being purely decorative. [Full changelog →](CHANGELOG.md#381---2026-08-28)
 
 ### v3.8.0 - Groups in your config, `ssh_sync` on Windows, tunnel crash fix (August 14, 2026)
 

@@ -188,7 +188,7 @@ class SSHManager {
       throw new Error('Not connected to SSH server');
     }
 
-    const { timeout = 30000, cwd, rawCommand = false } = options;
+    const { timeout = 30000, cwd, rawCommand = false, stdin = null } = options;
     const fullCommand = (cwd && !rawCommand) ? `cd ${cwd} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
@@ -237,6 +237,27 @@ class SSHManager {
         }
 
         stream = streamObj;
+
+        // Feed the remote process on the exec channel's stdin. This is how the
+        // sudo password reaches `sudo -S` without ever appearing in the remote
+        // command line: interpolating it into `echo "..." | sudo -S` left it
+        // readable in `ps` and /proc/<pid>/cmdline for every account on the
+        // host, for the lifetime of the echo (issue #34). Closing the input
+        // afterwards tells sudo no more is coming; only done when a caller
+        // actually supplies stdin, so interactive commands are unaffected.
+        if (stdin !== null) {
+          try {
+            stream.write(stdin);
+            stream.end();
+          } catch (writeError) {
+            if (!completed) {
+              completed = true;
+              if (timeoutId) clearTimeout(timeoutId);
+              reject(writeError);
+              return;
+            }
+          }
+        }
 
         stream.on('close', (code, signal) => {
           if (!completed) {
