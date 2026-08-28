@@ -7,6 +7,7 @@
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from './logger.js';
+import { shellQuote, safeInteger } from './shell-quote.js';
 
 // Backup types
 export const BACKUP_TYPES = {
@@ -61,23 +62,23 @@ export function buildMySQLDumpCommand(options) {
   let command = 'mysqldump';
 
   // Connection parameters
-  if (user) command += ` -u${user}`;
-  if (password) command += ` -p'${password}'`;
-  if (host) command += ` -h ${host}`;
-  if (port) command += ` -P ${port}`;
+  if (user) command += ` -u${shellQuote(user)}`;
+  if (password) command += ` -p${shellQuote(password)}`;
+  if (host) command += ` -h ${shellQuote(host)}`;
+  if (port) command += ` -P ${safeInteger(port, 3306)}`;
 
   // Dump options
   if (singleTransaction) command += ' --single-transaction';
   command += ' --routines --triggers';
 
   // Database name
-  command += ` ${database}`;
+  command += ` ${shellQuote(database)}`;
 
   // Output handling
   if (compress) {
-    command += ` | gzip > "${outputFile}"`;
+    command += ` | gzip > ${shellQuote(outputFile)}`;
   } else {
-    command += ` > "${outputFile}"`;
+    command += ` > ${shellQuote(outputFile)}`;
   }
 
   return command;
@@ -100,27 +101,27 @@ export function buildPostgreSQLDumpCommand(options) {
   // PostgreSQL uses PGPASSWORD environment variable
   let command = '';
   if (password) {
-    command = `PGPASSWORD='${password}' `;
+    command = `PGPASSWORD=${shellQuote(password)} `;
   }
 
   command += 'pg_dump';
 
   // Connection parameters
-  if (user) command += ` -U ${user}`;
-  if (host) command += ` -h ${host}`;
-  if (port) command += ` -p ${port}`;
+  if (user) command += ` -U ${shellQuote(user)}`;
+  if (host) command += ` -h ${shellQuote(host)}`;
+  if (port) command += ` -p ${safeInteger(port, 5432)}`;
 
   // Dump options
   command += ' --format=custom --clean --if-exists';
 
   // Database name
-  command += ` ${database}`;
+  command += ` ${shellQuote(database)}`;
 
   // Output handling
   if (compress) {
-    command += ` | gzip > "${outputFile}"`;
+    command += ` | gzip > ${shellQuote(outputFile)}`;
   } else {
-    command += ` > "${outputFile}"`;
+    command += ` > ${shellQuote(outputFile)}`;
   }
 
   return command;
@@ -143,22 +144,24 @@ export function buildMongoDBDumpCommand(options) {
   let command = 'mongodump';
 
   // Connection parameters
-  if (host) command += ` --host ${host}`;
-  if (port) command += ` --port ${port}`;
-  if (user) command += ` --username ${user}`;
-  if (password) command += ` --password '${password}'`;
+  if (host) command += ` --host ${shellQuote(host)}`;
+  if (port) command += ` --port ${safeInteger(port, 27017)}`;
+  if (user) command += ` --username ${shellQuote(user)}`;
+  if (password) command += ` --password ${shellQuote(password)}`;
 
   // Database selection
-  if (database) command += ` --db ${database}`;
+  if (database) command += ` --db ${shellQuote(database)}`;
 
   // Output directory
-  command += ` --out "${outputDir}"`;
+  command += ` --out ${shellQuote(outputDir)}`;
 
   // Compress the output directory
   if (compress) {
     const archiveName = `${outputDir}.tar.gz`;
-    command += ` && tar -czf "${archiveName}" -C "$(dirname ${outputDir})" "$(basename ${outputDir})"`;
-    command += ` && rm -rf "${outputDir}"`;
+    // dirname/basename receive the quoted value, so the substitution itself
+    // cannot be steered by the caller.
+    command += ` && tar -czf ${shellQuote(archiveName)} -C "$(dirname ${shellQuote(outputDir)})" "$(basename ${shellQuote(outputDir)})"`;
+    command += ` && rm -rf ${shellQuote(outputDir)}`;
   }
 
   return command;
@@ -189,15 +192,15 @@ export function buildFilesBackupCommand(options) {
   }
 
   // Output file
-  command += ` "${outputFile}"`;
+  command += ` ${shellQuote(outputFile)}`;
 
   // Exclude patterns
   for (const pattern of exclude) {
-    command += ` --exclude="${pattern}"`;
+    command += ` --exclude=${shellQuote(pattern)}`;
   }
 
   // Paths to backup
-  command += ` ${paths.map(p => `"${p}"`).join(' ')}`;
+  command += ` ${paths.map(p => shellQuote(p)).join(' ')}`;
 
   return command;
 }
@@ -236,19 +239,19 @@ function buildMySQLRestoreCommand(backupFile, options) {
 
   // Decompress if needed
   if (backupFile.endsWith('.gz')) {
-    command = `gunzip -c "${backupFile}" | `;
+    command = `gunzip -c ${shellQuote(backupFile)} | `;
   } else {
-    command = `cat "${backupFile}" | `;
+    command = `cat ${shellQuote(backupFile)} | `;
   }
 
   command += 'mysql';
 
   // Connection parameters
-  if (user) command += ` -u${user}`;
-  if (password) command += ` -p'${password}'`;
-  if (host) command += ` -h ${host}`;
-  if (port) command += ` -P ${port}`;
-  if (database) command += ` ${database}`;
+  if (user) command += ` -u${shellQuote(user)}`;
+  if (password) command += ` -p${shellQuote(password)}`;
+  if (host) command += ` -h ${shellQuote(host)}`;
+  if (port) command += ` -P ${safeInteger(port, 3306)}`;
+  if (database) command += ` ${shellQuote(database)}`;
 
   return command;
 }
@@ -267,25 +270,25 @@ function buildPostgreSQLRestoreCommand(backupFile, options) {
 
   let command = '';
   if (password) {
-    command = `PGPASSWORD='${password}' `;
+    command = `PGPASSWORD=${shellQuote(password)} `;
   }
 
   command += 'pg_restore';
 
   // Connection parameters
-  if (user) command += ` -U ${user}`;
-  if (host) command += ` -h ${host}`;
-  if (port) command += ` -p ${port}`;
-  if (database) command += ` -d ${database}`;
+  if (user) command += ` -U ${shellQuote(user)}`;
+  if (host) command += ` -h ${shellQuote(host)}`;
+  if (port) command += ` -p ${safeInteger(port, 5432)}`;
+  if (database) command += ` -d ${shellQuote(database)}`;
 
   // Restore options
   command += ' --clean --if-exists';
 
   // Handle compressed files
   if (backupFile.endsWith('.gz')) {
-    command = `gunzip -c "${backupFile}" | ${command}`;
+    command = `gunzip -c ${shellQuote(backupFile)} | ${command}`;
   } else {
-    command += ` "${backupFile}"`;
+    command += ` ${shellQuote(backupFile)}`;
   }
 
   return command;
@@ -308,25 +311,25 @@ function buildMongoDBRestoreCommand(backupFile, options) {
   // Extract if compressed
   if (backupFile.endsWith('.tar.gz')) {
     const extractDir = backupFile.replace('.tar.gz', '');
-    command = `tar -xzf "${backupFile}" -C "$(dirname ${backupFile})" && `;
+    command = `tar -xzf ${shellQuote(backupFile)} -C "$(dirname ${shellQuote(backupFile)})" && `;
     command += 'mongorestore';
 
     if (drop) command += ' --drop';
-    if (host) command += ` --host ${host}`;
-    if (port) command += ` --port ${port}`;
-    if (user) command += ` --username ${user}`;
-    if (password) command += ` --password '${password}'`;
+    if (host) command += ` --host ${shellQuote(host)}`;
+    if (port) command += ` --port ${safeInteger(port, 27017)}`;
+    if (user) command += ` --username ${shellQuote(user)}`;
+    if (password) command += ` --password ${shellQuote(password)}`;
 
-    command += ` "${extractDir}"`;
-    command += ` && rm -rf "${extractDir}"`;
+    command += ` ${shellQuote(extractDir)}`;
+    command += ` && rm -rf ${shellQuote(extractDir)}`;
   } else {
     command = 'mongorestore';
     if (drop) command += ' --drop';
-    if (host) command += ` --host ${host}`;
-    if (port) command += ` --port ${port}`;
-    if (user) command += ` --username ${user}`;
-    if (password) command += ` --password '${password}'`;
-    command += ` "${backupFile}"`;
+    if (host) command += ` --host ${shellQuote(host)}`;
+    if (port) command += ` --port ${safeInteger(port, 27017)}`;
+    if (user) command += ` --username ${shellQuote(user)}`;
+    if (password) command += ` --password ${shellQuote(password)}`;
+    command += ` ${shellQuote(backupFile)}`;
   }
 
   return command;
@@ -347,8 +350,8 @@ function buildFilesRestoreCommand(backupFile, options) {
     command += ' -xf';
   }
 
-  command += ` "${backupFile}"`;
-  command += ` -C "${targetPath}"`;
+  command += ` ${shellQuote(backupFile)}`;
+  command += ` -C ${shellQuote(targetPath)}`;
 
   return command;
 }
@@ -377,19 +380,20 @@ export function createBackupMetadata(backupId, type, options = {}) {
  */
 export function buildSaveMetadataCommand(metadata, metadataPath) {
   const jsonData = JSON.stringify(metadata, null, 2);
-  // Escape single quotes in JSON for shell
-  const escapedJson = jsonData.replace(/'/g, '\'\\\'\'');
-  return `echo '${escapedJson}' > "${metadataPath}"`;
+  // The metadata carries caller-supplied fields (database name, paths...), so
+  // both the payload and the destination go through shellQuote rather than
+  // hand-rolled escaping.
+  return `echo ${shellQuote(jsonData)} > ${shellQuote(metadataPath)}`;
 }
 
 /**
  * Build command to list backups from remote server
  */
 export function buildListBackupsCommand(backupDir = DEFAULT_BACKUP_DIR, type = null) {
-  let command = `find "${backupDir}" -name "*.meta.json" -type f`;
+  let command = `find ${shellQuote(backupDir)} -name '*.meta.json' -type f`;
 
   if (type) {
-    command += ` | grep "${type}_"`;
+    command += ` | grep ${shellQuote(`${type}_`)}`;
   }
 
   // Read and parse each metadata file
@@ -427,14 +431,17 @@ export function parseBackupsList(output) {
  */
 export function buildCleanupCommand(backupDir = DEFAULT_BACKUP_DIR, retentionDays = 7) {
   // Find backup files older than retention period and delete them
-  return `find "${backupDir}" -name "*_*_*" -type f -mtime +${retentionDays} -delete`;
+  return `find ${shellQuote(backupDir)} -name '*_*_*' -type f -mtime +${safeInteger(retentionDays, 7)} -delete`;
 }
 
 /**
  * Build cron schedule command
  */
 export function buildCronScheduleCommand(schedule, backupCommand, cronComment) {
-  // Add cron job with comment
+  // A crontab line is data here, not a command to evaluate: the whole line goes
+  // through shellQuote so a schedule or comment carrying quotes cannot break
+  // out of the echo and run something else. backupCommand is built by the
+  // builders above, which quote their own arguments.
   const cronLine = `${schedule} ${backupCommand} # ${cronComment}`;
-  return `(crontab -l 2>/dev/null; echo '${cronLine}') | crontab -`;
+  return `(crontab -l 2>/dev/null; echo ${shellQuote(cronLine)}) | crontab -`;
 }

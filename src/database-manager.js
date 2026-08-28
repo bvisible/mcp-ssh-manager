@@ -12,25 +12,8 @@ export const DB_TYPES = {
 
 // A single quote character as a constant, so shellQuote()'s escaping stays
 // readable under the repo's single-quote lint style.
-const SQ = '\'';
-
-/**
- * Quote a value for safe inclusion as a single POSIX shell word.
- *
- * Wraps the value in single quotes and escapes any embedded single quote as
- * '\'' so the remote shell treats it literally — it never interprets $(...),
- * backticks, $VAR, ;, |, &, redirects, spaces, or newlines inside the value.
- * EVERY caller-controlled value interpolated into a database command string
- * MUST go through this: the database/table/collection names, file paths, and
- * connection fields all arrive from tool arguments (issue #48 — command
- * injection via ssh_db_list / ssh_db_dump / ssh_db_import builder arguments).
- * Numbers are coerced to string; null/undefined become an empty quoted word.
- */
-export function shellQuote(value) {
-  if (value === null || value === undefined) return SQ + SQ;
-  // Replace every ' with '\'' (close quote, escaped quote, reopen), then wrap.
-  return SQ + String(value).replace(/'/g, SQ + '\\' + SQ + SQ) + SQ;
-}
+import { shellQuote } from './shell-quote.js';
+export { shellQuote };
 
 /**
  * Build MySQL dump command

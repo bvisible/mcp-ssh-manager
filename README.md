@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dt/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.8.4-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.4)
+[![Version](https://img.shields.io/badge/Version-3.8.5-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.5)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
@@ -23,16 +23,19 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 ---
 
-## 🎉 What's New in v3.8.4
+## 🎉 What's New in v3.8.5
 
-**🔒 The logger stops writing secrets in clear text, and static analysis now runs on every commit** (Released: August 28, 2026)
+**🔒 Security release — three command-injection advisories fixed, one of which defeated `readonly` mode** (Released: August 28, 2026)
 
-- **🔒 Security: secrets are redacted inside the logger.** It writes to two places outside your control — `~/.ssh-manager.log` and stderr, which your MCP host captures — so a single call site handing it a whole server config would have persisted a production password on disk. Redaction now happens structurally: any `password` / `passphrase` / `secret` / `token` / `credential` / private key / API key field becomes `[redacted]`, at any depth, in arrays, whatever the casing. No call site can leak one.
-- **🔍 CodeQL runs on every push and pull request.** For a server that turns model output into shell commands on production hosts, "we read it carefully" is not an answer. It found every fix in this release on its first run — **`src/` now has zero open findings**.
-- **🛡️ Every GitHub action pinned to a commit SHA**, including one that tracked a moving branch inside a workflow with read access to the whole repository. Closes 17 of the 22 OpenSSF Scorecard findings.
-- **🐛 `examples/backup-workflow.js` never parsed** — a cron `*/6` inside a block comment closed it early — and called a function that does not exist. It was documentation, not a JavaScript API, and it shipped in the npm tarball. It is now `examples/backup-workflow.md`. `scripts/validate.sh` checks all 49 tracked `.js` files instead of 2, which is how that hid for months.
+**Upgrade if you use `ssh_backup_*`, `ssh_db_dump`, `ssh_service_status` or `ssh_tail` — and especially if you rely on the `readonly` / `restricted` security modes.**
 
-[Read full changelog →](CHANGELOG.md#384---2026-08-28)
+- **🔴 RCE bypassing `readonly` / `restricted`** (GHSA-m793-whw6-f537) — `ssh_service_status` and `ssh_tail` are read-only, so they stay enabled on servers you locked down, and neither quoted its arguments nor consulted the policy layer. A service name like `nginx; id > /tmp/pwned` executed. This defeated the exact control those modes exist to provide.
+- **🔴 RCE through `ssh_db_dump`** (GHSA-796j-h5q5-jx6p) — the `stat` command run after the dump interpolated the output path raw. The v3.6.7 patch had stopped one line short.
+- **🟠 RCE through every `ssh_backup_*` tool** (GHSA-qwwm-vrm9-4mw8) — `backup-manager.js` had **zero** shell escaping across its 9 builders, while `database-manager.js` had 95. The v3.6.7 fix was never extended to it.
+
+The quoting helper now lives in one module (`src/shell-quote.js`) so "did this builder quote its inputs?" has a single answer, and a new test drives **340 builder × argument × payload combinations** through a real shell to prove none of them execute.
+
+[Read full changelog →](CHANGELOG.md#385---2026-08-28)
 
 ---
 
@@ -75,7 +78,11 @@ Alongside that:
 ## Previous Releases
 
 <details>
-<summary><b>📜 Release history — v3.8.3 down to v1.0.0</b> (click to expand)</summary>
+<summary><b>📜 Release history — v3.8.4 down to v1.0.0</b> (click to expand)</summary>
+
+### v3.8.4 - Secrets stop reaching the log, CodeQL on every commit (August 28, 2026)
+
+- **🔒 The logger no longer writes secrets in clear text** — it writes to `~/.ssh-manager.log` and stderr (which your MCP host captures), so one call site handing it a server config would have persisted a production password. Redaction now happens inside the logger. Also: CodeQL on every push, every action pinned by SHA, and a broken example that never parsed. [Full changelog →](CHANGELOG.md#384---2026-08-28)
 
 ### v3.8.2 / v3.8.3 - Sudo password leak fixed, MCP Registry, signed releases (August 28, 2026)
 

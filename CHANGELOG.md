@@ -5,6 +5,22 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.5] - 2026-08-28
+
+### Security
+
+Three reported advisories, all the same class of bug, all confirmed present in 3.8.4 and fixed here. The v3.6.7 fix (CVE-2026-77383) introduced `shellQuote()` but applied it to `src/database-manager.js` only; the parallel builders for backups and monitoring were never covered.
+
+- **RCE through every `ssh_backup_*` builder** (GHSA-qwwm-vrm9-4mw8, high). `src/backup-manager.js` concatenated `database`, `dbUser`, `dbPassword`, `dbHost`, `backupDir`, `paths` and `exclude` into shell strings with no escaping — 0 uses of `shellQuote` across 9 builders. Arbitrary command execution as the SSH user on every managed server.
+- **RCE through `ssh_db_dump` and the MongoDB backup path** (GHSA-796j-h5q5-jx6p, critical). The follow-up `stat` command interpolated `outputFile` raw, after the dump itself had been fixed — the earlier patch stopped one line short.
+- **RCE bypassing readonly/restricted mode** (GHSA-m793-whw6-f537, critical). `ssh_service_status` and `ssh_tail` are read-only, so they stay enabled on servers the operator locked down — and neither quoted its arguments nor consulted the policy layer. `buildServiceStatusCommand` interpolated the service name unquoted six times; `ssh_tail` built `tail -n ${lines} "${file}" | grep "${grep}"` with double quotes only, so a `"` breakout ran. **This defeated the exact control those modes exist to provide**, and the README had just started advertising them.
+
+Fixes: `shellQuote()` extracted to `src/shell-quote.js` and applied across `backup-manager.js` (54 call sites), `health-monitor.js` and the remaining inline commands in `index.js`; a `safeInteger()` helper for numeric arguments that still land in command strings; `buildProcessInfoCommand` now validates its PID like `buildKillProcessCommand` always did; and `ssh_tail` and `ssh_service_status` now call the policy layer.
+
+Guarded by `npm run test:backupinjection`: **340 builder × argument × payload combinations** driven through a real `/bin/sh` with a canary file, asserting no payload ever executes. Verified by mutation — removing any single quote-call is caught.
+
+**Upgrade if you use `ssh_backup_*`, `ssh_db_dump`, `ssh_service_status` or `ssh_tail`, and especially if you rely on `readonly` or `restricted` mode.**
+
 ## [3.8.4] - 2026-08-28
 
 ### Security

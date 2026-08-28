@@ -4,6 +4,7 @@
  */
 
 import { logger } from './logger.js';
+import { shellQuote, safeInteger } from './shell-quote.js';
 
 // Health status levels
 export const HEALTH_STATUS = {
@@ -169,17 +170,21 @@ function determineOverallHealth(cpu, memory, disks) {
  * Build command to check service status (systemd or sysv)
  */
 export function buildServiceStatusCommand(serviceName) {
+  // serviceName is a tool argument: resolveServiceName returns non-aliases
+  // unchanged, so it reaches the shell as-is. Quoting every occurrence is what
+  // stops `nginx; id > /tmp/pwned` from executing (GHSA-m793-whw6-f537).
+  const name = shellQuote(serviceName);
   // Try systemd first, fallback to sysv
   return `
     if command -v systemctl >/dev/null 2>&1; then
-      systemctl is-active ${serviceName} 2>/dev/null >/dev/null && echo "ACTIVE" || echo "INACTIVE"
-      systemctl is-enabled ${serviceName} 2>/dev/null >/dev/null && echo "ENABLED" || echo "DISABLED"
-      systemctl status ${serviceName} 2>/dev/null | grep "Main PID" | awk '{print $3}' | cut -d'(' -f1
-      systemctl status ${serviceName} 2>/dev/null | grep "Active:" | sed 's/.*Active: //' | awk '{print $1,$2,$3}'
+      systemctl is-active ${name} 2>/dev/null >/dev/null && echo "ACTIVE" || echo "INACTIVE"
+      systemctl is-enabled ${name} 2>/dev/null >/dev/null && echo "ENABLED" || echo "DISABLED"
+      systemctl status ${name} 2>/dev/null | grep "Main PID" | awk '{print $3}' | cut -d'(' -f1
+      systemctl status ${name} 2>/dev/null | grep "Active:" | sed 's/.*Active: //' | awk '{print $1,$2,$3}'
     elif command -v service >/dev/null 2>&1; then
-      service ${serviceName} status >/dev/null 2>&1 && echo "ACTIVE" || echo "INACTIVE"
+      service ${name} status >/dev/null 2>&1 && echo "ACTIVE" || echo "INACTIVE"
       echo "UNKNOWN"
-      pgrep -f ${serviceName} | head -1 || echo ""
+      pgrep -f ${name} | head -1 || echo ""
       echo "sysv"
     else
       echo "UNKNOWN"
@@ -218,10 +223,10 @@ export function buildProcessListCommand(options = {}) {
   } = options;
 
   let sortFlag = sortBy === 'memory' ? '-m' : '-c';  // -c for CPU, -m for memory
-  let command = `ps aux --sort=${sortFlag === '-c' ? '-pcpu' : '-pmem'} | head -n ${limit + 1}`;
+  let command = `ps aux --sort=${sortFlag === '-c' ? '-pcpu' : '-pmem'} | head -n ${safeInteger(limit, 20) + 1}`;
 
   if (filter) {
-    command += ` | grep -i "${filter}"`;
+    command += ` | grep -i ${shellQuote(filter)}`;
   }
 
   // Format output as JSON-like structure
@@ -270,6 +275,11 @@ export function buildKillProcessCommand(pid, signal = 'TERM') {
  * Build command to get process info
  */
 export function buildProcessInfoCommand(pid) {
+  // Same guard as buildKillProcessCommand: a PID is a number, and anything else
+  // has no business reaching the shell.
+  if (!Number.isInteger(pid) || pid <= 0) {
+    throw new Error(`Invalid PID: ${pid}`);
+  }
   return `ps -p ${pid} -o user,pid,pcpu,pmem,vsz,rss,stat,start,time,cmd --no-headers | awk '{printf "{\\"user\\":\\"%s\\",\\"pid\\":%s,\\"cpu\\":%.1f,\\"mem\\":%.1f,\\"vsz\\":%s,\\"rss\\":%s,\\"stat\\":\\"%s\\",\\"start\\":\\"%s\\",\\"time\\":\\"%s\\",\\"command\\":\\"%s\\"}", $1,$2,$3,$4,$5,$6,$7,$8,$9,substr($0,index($0,$10))}'`;
 }
 
@@ -296,15 +306,14 @@ export function createAlertConfig(thresholds) {
  */
 export function buildSaveAlertConfigCommand(config, configPath = '/etc/ssh-manager-alerts.json') {
   const jsonData = JSON.stringify(config, null, 2);
-  const escapedJson = jsonData.replace(/'/g, '\'\\\'\'');
-  return `echo '${escapedJson}' > "${configPath}"`;
+  return `echo ${shellQuote(jsonData)} > ${shellQuote(configPath)}`;
 }
 
 /**
  * Build command to load alert config
  */
 export function buildLoadAlertConfigCommand(configPath = '/etc/ssh-manager-alerts.json') {
-  return `cat "${configPath}" 2>/dev/null || echo '{}'`;
+  return `cat ${shellQuote(configPath)} 2>/dev/null || echo '{}'`;
 }
 
 /**

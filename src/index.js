@@ -143,6 +143,7 @@ import {
 } from './database-manager.js';
 import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 import { evaluatePolicy } from './policy.js';
+import { shellQuote, safeInteger } from './shell-quote.js';
 import { auditLog } from './audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1257,19 +1258,28 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, file, lines = 10, follow = true, grep }) => {
+    // ssh_tail is read-only and therefore stays enabled in readonly/restricted
+    // mode, which is exactly why it must consult the policy layer: without this
+    // it was a way to run commands on a server the operator locked down
+    // (GHSA-m793-whw6-f537).
+    const denied = await applyServerPolicy(serverName, 'ssh_tail', { file, lines, follow, grep });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
 
-      // Build tail command
-      let command = `tail -n ${lines}`;
+      // Build tail command. Every caller-controlled value is quoted: `file` and
+      // `grep` sat inside double quotes, where $(...), backticks and a `"`
+      // breakout all executed.
+      let command = `tail -n ${safeInteger(lines, 10)}`;
       if (follow) {
         command += ' -f';
       }
-      command += ` "${file}"`;
+      command += ` ${shellQuote(file)}`;
 
       // Add grep filter if specified
       if (grep) {
-        command += ` | grep "${grep}"`;
+        command += ` | grep ${shellQuote(grep)}`;
       }
 
       logger.info(`Starting tail on ${serverName}`, {
@@ -3541,7 +3551,7 @@ registerToolConditional(
       }
 
       // Get backup file size
-      const sizeResult = await ssh.execCommand(`stat -f%z "${backupFile}" 2>/dev/null || stat -c%s "${backupFile}" 2>/dev/null`);
+      const sizeResult = await ssh.execCommand(`stat -f%z ${shellQuote(backupFile)} 2>/dev/null || stat -c%s ${shellQuote(backupFile)} 2>/dev/null`);
       const size = parseInt(sizeResult.stdout.trim()) || 0;
 
       // Create and save metadata
@@ -4049,6 +4059,11 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, services }) => {
+    // Read-only tools stay enabled under readonly/restricted, so they are the
+    // ones that most need the policy check (GHSA-m793-whw6-f537).
+    const denied = await applyServerPolicy(serverName, 'ssh_service_status', { services });
+    if (denied) return denied;
+
     try {
       const ssh = await getConnection(serverName);
 
@@ -4527,7 +4542,7 @@ registerToolConditional(
       }
 
       // Get file size
-      const sizeCommand = `stat -f%z "${outputFile}" 2>/dev/null || stat -c%s "${outputFile}" 2>/dev/null`;
+      const sizeCommand = `stat -f%z ${shellQuote(outputFile)} 2>/dev/null || stat -c%s ${shellQuote(outputFile)} 2>/dev/null`;
       const sizeResult = await ssh.execCommand(sizeCommand);
       const size = parseSize(sizeResult.stdout);
 
