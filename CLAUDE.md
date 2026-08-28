@@ -69,6 +69,7 @@ See [docs/TOOL_MANAGEMENT.md](docs/TOOL_MANAGEMENT.md) for complete guide.
 
 ### Development and Testing
 ```bash
+npm ci                                        # Install the exact tree from package-lock.json
 npm start                                     # Start MCP server (requires stdin)
 npm test                                      # Run the full test suite
 npm run typecheck                             # Type-check JSDoc with tsc (no build, nothing emitted)
@@ -83,6 +84,27 @@ this project ships JavaScript straight from `src/` with no build step, and that 
 The baseline is 0 errors and CI enforces it, so add JSDoc annotations (or a narrow
 `/** @type {...} */` cast) rather than leaving new errors. `typescript` is pinned to `^6`
 because knip 5 declares `peer typescript ">=5.0.4 <7"` — bumping one requires bumping the other.
+
+**Lockfile**: `package-lock.json` is committed and CI installs with `npm ci`, so the tree is
+reproducible and auditable. npm never ships a lockfile inside a published tarball, so this is
+invisible to consumers of the package. Two consequences for maintainers:
+
+- **Releases bump three version spots, not one**: `package.json`, `package-lock.json`
+  (`.version` *and* `.packages[""].version`) and the README badge. `npm version <x.y.z>` does
+  the first two together; a hand edit does not. `npm run test:lockfile` fails when they diverge,
+  and so does `npm ci`.
+- **Dependency changes must commit the regenerated lockfile.** After editing `package.json` by
+  hand, run `npm install --package-lock-only` and commit both files.
+
+`tests/test-lockfile.js` guards the rest: every package resolves to registry.npmjs.org with an
+integrity hash, no `file:`/`git+`/`link:` entries, install scripts limited to a reviewed
+allowlist (`ssh2`, `cpu-features`), and no runtime dependency requiring a newer Node than
+`engines.node` advertises — that last check carries one documented exception,
+`@hono/node-server` (needs Node >=20, pulled by the MCP SDK for its HTTP transport, never
+imported by the stdio server we ship; re-check it when bumping the SDK).
+
+**Required status checks on `main`** are `lint`, `test (18.x)` and `test (20.x)`. Renaming those
+jobs or dropping a matrix entry makes `main` unmergeable until branch protection is updated.
 
 ### Debug Tools (in `debug/` directory)
 ```bash

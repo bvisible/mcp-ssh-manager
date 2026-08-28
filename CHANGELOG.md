@@ -5,6 +5,32 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`package-lock.json` is now committed** (contributed by @cudatuda in #60) — installs are reproducible, `npm ci` works, and the transitive tree is auditable. npm excludes lockfiles from published tarballs, so consumers of the package are unaffected.
+- **`npm run test:lockfile`** (`tests/test-lockfile.js`, wired into `npm test`) — guards the lockfile against the ways it rots: version drift between `package.json` and the lockfile's two version fields, dependency ranges out of sync, a locked version outside its declared range, packages resolved from anywhere but registry.npmjs.org, missing integrity hashes, `file:`/`git+`/`link:` entries, unreviewed install scripts, and runtime dependencies requiring a newer Node than `engines.node` advertises.
+- **Node 22.x added to the CI test matrix** — `engines` claims `>=18` and 22 is the active LTS.
+- **`.github/dependabot.yml`** — a pinned tree stops receiving upstream fixes on its own, so monthly grouped dependency updates (capped at 3 open PRs) act as the counterweight. GitHub Actions versions are tracked too.
+- **Advisory `npm audit --omit=dev --audit-level=high` step** in the `Code Quality` workflow. Not a required check: a CVE published against a transitive dependency should be visible without blocking unrelated merges.
+
+### Changed
+
+- **CI installs with `npm ci` instead of `npm install`** in both workflows. `npm ci` reproduces the locked tree exactly and aborts if `package.json` and the lockfile have drifted.
+- **ESLint and the JSDoc typecheck are now blocking**, and moved into the `lint` job — one of the three required status checks on `main`. They previously lived in the advisory `Code Quality` workflow, where ESLint additionally ran with `continue-on-error: true`, so neither gate could ever fail a pull request.
+- **Node module caching now works.** `Code Quality` keyed its cache on `hashFiles('**/package-lock.json')` while the lockfile was gitignored, so every run shared one degenerate key. Replaced by `actions/setup-node@v4`'s built-in `cache: 'npm'`.
+- GitHub Actions bumped from `actions/checkout@v3` / `actions/setup-node@v3` / `actions/cache@v3` to v4.
+
+### Removed
+
+- **`npm install --save-dev eslint prettier` from the `Code Quality` workflow** — it re-resolved both packages to their latest majors on every run (ESLint 9 over the pinned `^8.56.0`) and rewrote `package.json` in the CI workspace, defeating the pinning it ran next to.
+- Redundant CI steps re-running `test-profiles.js`, `test-command-aliases.js` and `test-hooks.js` individually after `npm test` had already run them.
+
+### Fixed
+
+- `mcp-ssh-manager-setup.md`: the two `.gitignore` templates no longer tell readers to ignore `package-lock.json`.
+
 ## [3.8.0] - 2026-08-14
 
 ### Security

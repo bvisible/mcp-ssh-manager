@@ -36,6 +36,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 3. Ensure the test suite passes
 4. Make sure your code follows the existing code style
 5. Write a clear commit message
+6. Commit `package-lock.json` if you touched dependencies
 
 ## Development Process
 
@@ -47,9 +48,20 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 2. Install dependencies:
    ```bash
-   npm install
+   npm ci                                # exact versions from package-lock.json
    pip install -r tools/requirements.txt
    ```
+
+   `package-lock.json` is committed. Use `npm ci` to install: it reproduces the
+   exact tree CI uses and fails loudly if the lockfile and `package.json` have
+   drifted apart. If you add, remove or bump a dependency, commit the updated
+   lockfile alongside `package.json` — `npm run test:lockfile` checks the two
+   stay in sync.
+
+   The lockfile was generated with npm 11. Older npm reformats it (key order,
+   the `libc` field) and produces a huge diff even when no version changes —
+   if your diff is thousands of lines but `npm run test:lockfile` still passes,
+   that is what happened; drop the reformat and keep only real version changes.
 
 3. Create a branch:
    ```bash
@@ -95,10 +107,14 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 Before submitting a pull request:
 
-1. Test your changes manually
-2. Ensure existing functionality still works
-3. Test with different server configurations
-4. Verify Claude Code integration works
+1. Run `npm run test:all` (test suite + typecheck + validation script)
+2. Test your changes manually
+3. Ensure existing functionality still works
+4. Test with different server configurations
+5. Verify Claude Code integration works
+
+CI installs with `npm ci` on Node 18, 20 and 22, and the `lint` job runs
+ESLint and the JSDoc typecheck as blocking gates.
 
 ## Documentation
 
