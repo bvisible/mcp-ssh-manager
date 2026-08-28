@@ -64,7 +64,14 @@ jobs:
           subject-path: 'package.json'
           sbom-path: 'sbom.cyclonedx.json'
 
+      # Create the release if it does not exist yet, so a CI publish is
+      # self-sufficient: on the first 3.8.3 run this step failed because the
+      # release had not been created by hand beforehand.
       - name: Attach SBOM to the GitHub release
-        run: gh release upload "${{ inputs.tag }}" sbom.cyclonedx.json --clobber
+        run: |
+          if ! gh release view "${{ inputs.tag }}" >/dev/null 2>&1; then
+            gh release create "${{ inputs.tag }}" --title "${{ inputs.tag }}" --generate-notes
+          fi
+          gh release upload "${{ inputs.tag }}" sbom.cyclonedx.json --clobber
         env:
           GH_TOKEN: ${{ github.token }}
