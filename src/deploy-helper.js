@@ -55,7 +55,7 @@ export function buildDeploymentStrategy(remotePath, options = {}) {
   // `command`. Interpolating it (`echo "<pass>" | sudo -S …`) published the
   // password to the remote process list and /proc/<pid>/cmdline (issue #34).
   // See the ssh_execute_sudo handler for what -S -k -p '' each do.
-  const sudoPrefix = sudoPassword ? "sudo -S -k -p '' " : 'sudo ';
+  const sudoPrefix = sudoPassword ? 'sudo -S -k -p \'\' ' : 'sudo ';
   const withSudoStdin = (step) => (sudoPassword ? { ...step, stdin: `${sudoPassword}\n` } : step);
 
   // Step 3: Copy from temp to final location
