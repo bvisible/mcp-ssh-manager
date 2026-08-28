@@ -35,6 +35,7 @@ import { SecretStore, defaultVaultPath } from './secret-store.js';
  * @property {string} [proxyCommand] Custom proxy command (`%h` / `%p` placeholders).
  * @property {boolean} [forwardAgent] Forward the local ssh-agent to this server.
  * @property {string} [mode] Security mode: `unrestricted`, `readonly` or `restricted`.
+ * @property {string} [approval] Human approval mode: `never`, `destructive` or `always`.
  * @property {string[]} [allowPatterns] Regex sources allowed in `restricted` mode.
  * @property {string[]} [denyPatterns] Regex sources always refused.
  * @property {string} [auditLog] Path to a per-server audit log.
@@ -218,6 +219,7 @@ export class ConfigLoader {
           proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
           forwardAgent: parseBool(serverConfig.forward_agent),
           mode,
+          approval: serverConfig.approval,
           allowPatterns: tomlAllow,
           denyPatterns: tomlDeny,
           auditLog: serverConfig.audit_log,
@@ -291,6 +293,7 @@ export class ConfigLoader {
           proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
           forwardAgent: parseBool(env[`SSH_SERVER_${match[1]}_FORWARD_AGENT`]),
           mode,
+          approval: env[`SSH_SERVER_${match[1]}_APPROVAL`],
           allowPatterns: envAllow,
           denyPatterns: envDeny,
           auditLog: env[`SSH_SERVER_${match[1]}_AUDIT_LOG`],
@@ -410,6 +413,7 @@ export class ConfigLoader {
       if (server.denyPatterns && server.denyPatterns.length > 0) {
         lines.push(`SSH_SERVER_${upperName}_DENY_PATTERNS="${server.denyPatterns.join(';')}"`);
       }
+      if (server.approval) lines.push(`SSH_SERVER_${upperName}_APPROVAL=${server.approval}`);
       if (server.auditLog) lines.push(`SSH_SERVER_${upperName}_AUDIT_LOG=${server.auditLog}`);
       lines.push('');
     }

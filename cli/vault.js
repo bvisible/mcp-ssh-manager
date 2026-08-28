@@ -16,6 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { SecretStore, defaultVaultPath, resolveMasterKey, SECRET_FIELDS } from '../src/secret-store.js';
+import { defaultSocketPath, isControlPlaneListening, VALID_APPROVAL_MODES } from '../src/approval.js';
 import { ConfigLoader } from '../src/config-loader.js';
 
 const GREEN = '\x1b[32m';
@@ -170,11 +171,17 @@ async function cmdImport(store, fromPath) {
 function cmdStatus(store) {
   const { source } = resolveMasterKey();
   const exists = store.exists();
+  const socketPath = defaultSocketPath();
+  const listening = isControlPlaneListening(socketPath);
   console.log(`
 ${GREEN}Vault${RESET}      ${store.vaultPath} ${exists ? `${DIM}(${store.listServers().length} server(s))${RESET}` : `${YELLOW}— not created yet${RESET}`}
 ${GREEN}Key${RESET}        ${source === 'keychain' ? `OS keychain ${DIM}(service: mcp-ssh-manager)${RESET}` : `${YELLOW}file${RESET} ${DIM}${path.join(path.dirname(store.vaultPath), 'vault.key')}${RESET}`}
 ${GREEN}Cipher${RESET}     AES-256-GCM ${DIM}(authenticated: tampering is detected, not silently accepted)${RESET}
 ${GREEN}Encrypted${RESET}  ${SECRET_FIELDS.join(', ')}
+
+${GREEN}Approval${RESET}   ${listening ? `${GREEN}a control plane is listening${RESET}` : `${DIM}nothing listening — actions run without asking${RESET}`}
+${GREEN}Socket${RESET}     ${socketPath}
+${GREEN}Modes${RESET}      ${[...VALID_APPROVAL_MODES].join(' / ')} ${DIM}(per server: SSH_SERVER_<NAME>_APPROVAL, default never)${RESET}
 `);
   if (source === 'file') {
     console.log(`${YELLOW}Note:${RESET} no OS keychain was reachable, so the key sits next to the vault.`);

@@ -24,8 +24,8 @@ optional and never required for the engine to run.
 | **Encrypted vault** (`src/secret-store.js`) | **done** — AES-256-GCM, key in the OS keychain with a file fallback |
 | **`ssh-manager vault`** (`cli/vault.js`) | **done** — list, add, remove, import, status |
 | Loader integration | **done** — vault sits above files, below the process environment |
-| Approval broker | next |
-| Control plane UI | after that |
+| **Approval broker** (`src/approval.js`) | **done** — pause an action, ask a human, deny on any failure |
+| Control plane UI | next |
 | Homebrew formula | after that |
 
 ## Done: the vault
@@ -52,25 +52,50 @@ Decisions worth keeping:
   plain SSH logins with no desktop session.
 - **A corrupt vault never blocks the other sources.** `.env` and TOML still load.
 
-## Next: the approval broker
+## Done: the approval broker
 
-`applyServerPolicy()` in `src/index.js` is the single choke point — sixteen
-handlers call it before touching a machine, and it already writes the audit
-entry. **It is already `async`**, which is the whole trick: an async function can
-wait. Waiting on a socket is a small change in one function, not a refactor of
-sixteen handlers.
+It went in where predicted — inside `applyServerPolicy()`, the single choke point
+all sixteen handlers already call, and which was already `async`. No handler
+signature changed.
 
-Shape:
+```env
+SSH_SERVER_PROD_APPROVAL=destructive   # never (default) | destructive | always
+```
 
-1. The engine checks whether a control plane is listening on a local socket.
-2. If not — today's behaviour exactly, decided by the local policy.
-3. If yes, it submits the action and waits, with a timeout and a configurable
-   default (deny is the safe one) so a crashed UI can never wedge an agent.
+Protocol: one JSON object per line over a local stream socket. The engine writes
+a request and waits for a reply carrying the same `id`, so a control plane is
+implementable in any language and debuggable with `nc`.
 
-Everything is testable before any interface exists: a fake broker in a test can
-approve, deny, or hang.
+```json
+{"id":"…","server":"prod","host":"…","tool":"ssh_execute",
+ "command":"rm -rf /var/www","destructive":true,"args":{…}}
+{"id":"…","decision":"deny","reason":"not tonight"}
+```
 
-## Then: the interface
+Rules that matter more than the happy path:
+
+- **Every failure denies.** Timeout, unreachable socket, connection dropped
+  mid-review, unreadable reply, or a reply carrying the wrong `id` — all refuse.
+  The one exception is *approval configured but nothing listening*: that allows
+  and says so loudly in the audit log, because failing shut would break every
+  agent the moment the UI is closed.
+- **The deadline is not optional.** `SSH_MANAGER_APPROVAL_TIMEOUT_MS`, 120s by
+  default. A crashed control plane fails one action, never the session.
+- **No secret leaves the engine.** The request carries the same sanitized view
+  the audit log records — one redaction implementation, not two that drift.
+- **The destructive list is deliberately short.** A prompt that cries wolf gets
+  clicked through without reading, which is worse than no prompt at all.
+
+Found while testing end to end, both now guarded:
+
+- The `approval` field existed in the module but was never parsed by the config
+  loader. Every unit test passed because they built the config object directly.
+  Only driving the real MCP server caught it.
+- A Unix socket path over 104 bytes fails `bind()` with **EADDRINUSE on a path
+  where nothing is listening** — an hour of confusion. `isControlPlaneListening`
+  now checks the length and says what is wrong.
+
+## Next: the interface
 
 Two screens, and only two, until they prove their worth:
 

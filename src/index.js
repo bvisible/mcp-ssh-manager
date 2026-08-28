@@ -143,8 +143,9 @@ import {
 } from './database-manager.js';
 import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 import { evaluatePolicy } from './policy.js';
+import { needsApproval, isControlPlaneListening, requestDecision, buildRequest } from './approval.js';
 import { shellQuote, safeInteger } from './shell-quote.js';
-import { auditLog } from './audit.js';
+import { auditLog, sanitize } from './audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -293,6 +294,51 @@ async function applyServerPolicy(serverName, toolName, args, command) {
       isError: true,
     };
   }
+
+  // Human-in-the-loop (v4). The local policy said yes; a person may still say
+  // no. This is the only place in the engine that waits on a human, and it is
+  // reached only when the server opts in AND a control plane is listening —
+  // otherwise it is a single comparison and we carry on exactly as in v3.
+  if (needsApproval(serverConfig, toolName, command)) {
+    if (!isControlPlaneListening()) {
+      // Approval was configured but nothing is there to ask. Refusing would
+      // break every agent the moment the UI is closed; allowing silently would
+      // make the setting a lie. Allow, and say so loudly in the audit trail.
+      logger.warn('Approval requested but no control plane is listening — allowing', {
+        server: serverName, tool: toolName,
+      });
+      auditLog(serverConfig, toolName, args, {
+        allowed: true,
+        reason: 'approval requested but no control plane was listening',
+      });
+    } else {
+      const decision = await requestDecision(
+        buildRequest(serverConfig, toolName, sanitize(args), command)
+      );
+      auditLog(serverConfig, toolName, args, {
+        allowed: decision.decision === 'allow',
+        reason: `approval ${decision.decision} (${decision.source})${decision.reason ? `: ${decision.reason}` : ''}`,
+      });
+      if (decision.decision !== 'allow') {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatJSONResponse({
+                server: serverName,
+                tool: toolName,
+                success: false,
+                error: `Refused by the operator${decision.reason ? `: ${decision.reason}` : ''}`,
+                code: -3,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  }
+
   return null;
 }
 
