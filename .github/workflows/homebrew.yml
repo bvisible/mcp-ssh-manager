@@ -31,16 +31,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # `brew audit` no longer accepts a path — it wants a formula name, which
+      # means the formula has to live in a tap. A throwaway local tap is the
+      # standard way to exercise one before it is published anywhere.
+      - name: Put the formula in a local tap
+        run: |
+          brew tap-new local/test --no-git
+          cp Formula/ssh-manager.rb "$(brew --repository local/test)/Formula/"
+          brew formula local/test/ssh-manager
+
       - name: Audit the formula
-        run: brew audit --formula --strict --online Formula/ssh-manager.rb
+        run: brew audit --formula --strict --online local/test/ssh-manager
 
       - name: Install from the formula
-        run: brew install --formula --verbose ./Formula/ssh-manager.rb
+        run: brew install --formula --verbose local/test/ssh-manager
 
       # brew test runs the formula's own `test do` block — a real MCP stdio
       # handshake, not a --version check.
       - name: Run the formula's test block
-        run: brew test --formula ./Formula/ssh-manager.rb
+        run: brew test local/test/ssh-manager
 
       - name: Check both binaries are on PATH and work
         run: |
