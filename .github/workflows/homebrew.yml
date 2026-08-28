@@ -1,0 +1,50 @@
+# Audits and installs the Homebrew formula on a real macOS runner.
+#
+# It cannot be done reliably on a developer's machine: Homebrew refuses to run
+# its developer commands when any installed Xcode is older than it expects, and
+# it scrubs DEVELOPER_DIR from its subprocesses, so pointing at an Xcode beta
+# does not help. A runner has a current toolchain and no such history.
+#
+# Only runs when the formula changes, or on demand: macOS minutes cost ten times
+# Linux ones, and nothing else here needs them.
+name: Homebrew formula
+
+on:
+  push:
+    branches: [ main, v4 ]
+    paths:
+      - 'Formula/**'
+      - '.github/workflows/homebrew.yml'
+  pull_request:
+    branches: [ main, v4 ]
+    paths:
+      - 'Formula/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Audit the formula
+        run: brew audit --formula --strict --online Formula/ssh-manager.rb
+
+      - name: Install from the formula
+        run: brew install --formula --verbose ./Formula/ssh-manager.rb
+
+      # brew test runs the formula's own `test do` block — a real MCP stdio
+      # handshake, not a --version check.
+      - name: Run the formula's test block
+        run: brew test --formula ./Formula/ssh-manager.rb
+
+      - name: Check both binaries are on PATH and work
+        run: |
+          ssh-manager --help > /dev/null
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            | mcp-ssh-manager 2>/dev/null | grep -q '"name":"mcp-ssh-manager"'
+          echo "Both binaries work."
