@@ -39,6 +39,68 @@ The quoting helper now lives in one module (`src/shell-quote.js`) so "did this b
 
 ---
 
+## 🎛️ The control plane (v4)
+
+> **On the `v4` branch, not yet released.** Everything below is opt-in: with no
+> vault, no `APPROVAL` setting and no control plane running, the engine behaves
+> exactly as it does today.
+
+### Credentials out of the clear-text `.env`
+
+```bash
+ssh-manager vault import      # take what you already have, encrypted
+ssh-manager vault list        # see it, without ever printing a secret
+ssh-manager vault add prod    # add one interactively
+ssh-manager vault status      # where the vault and its key live
+```
+
+AES-256-GCM, master key in your OS keychain (a `0600` file where there is none —
+Windows, CI, containers). Only secret values are encrypted: hosts, users and
+modes stay readable so the file can still be inspected and diffed. GCM is
+authenticated, so a tampered vault fails loudly instead of returning a wrong
+password that would then be sent to a production server.
+
+The vault sits above your config files and below the process environment, so a
+credential you deliberately stored wins over one left in a `.env`, while an
+operator overriding for one run still wins over both.
+
+### Approve what your agents do, before it runs
+
+```env
+SSH_SERVER_PROD_APPROVAL=destructive   # never (default) | destructive | always
+```
+
+```bash
+ssh-manager control            # opens a local page: the queue, and the timeline
+```
+
+`readonly` is a blunt yes/no decided in advance. Approval is a decision taken
+with the actual command in view: the engine pauses, shows you the machine and
+what is about to run, and waits.
+
+Every failure denies — timeout, unreachable socket, a control plane that hangs
+up mid-review, an unreadable reply. The one exception is *approval configured
+but nothing listening*: that allows and records it loudly in the audit log,
+because failing shut would break every agent the moment you close the window.
+
+The `destructive` list is deliberately short. A prompt that cries wolf gets
+clicked through without being read, which is worse than no prompt at all:
+`systemctl restart` does not interrupt you, `systemctl stop` does.
+
+### Install
+
+```bash
+npm install -g mcp-ssh-manager
+# or
+brew tap bvisible/mcp-ssh-manager https://github.com/bvisible/mcp-ssh-manager
+brew install ssh-manager
+```
+
+Both give the same binaries. See [ROADMAP-V4.md](ROADMAP-V4.md) for what is
+built and what is not.
+
+---
+
 ## 🔐 Giving an agent SSH access, safely
 
 An MCP SSH server is the most dangerous tool you can hand an AI agent: a shell on
