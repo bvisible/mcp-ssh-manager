@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dt/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.8.3-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.3)
+[![Version](https://img.shields.io/badge/Version-3.8.4-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.4)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
@@ -23,16 +23,16 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 ---
 
-## 🎉 What's New in v3.8.2
+## 🎉 What's New in v3.8.4
 
-**🔐 The sudo password stops leaking to the remote process list, and the server joins the official MCP Registry** (Released: August 28, 2026)
+**🔒 The logger stops writing secrets in clear text, and static analysis now runs on every commit** (Released: August 28, 2026)
 
-- **🔒 Security fix: the sudo password no longer reaches the remote command line** ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)) — `ssh_execute_sudo` and `ssh_deploy` built `echo "<password>" | sudo -S …`, leaving the password visible in `ps` and `/proc/<pid>/cmdline` to every account on the host. It now travels on the SSH channel's stdin, where nothing else can read it. A regression test fails if the old pattern comes back anywhere in `src/`.
-- **📖 Listed in the official MCP Registry** as `io.github.bvisible/mcp-ssh-manager` — the registry that feeds MCP clients. The project was simply absent from it.
-- **🛡️ OpenSSF Scorecard + signed provenance + SBOM** — releases now publish from CI with build provenance you can check via `npm audit signatures`, and each one carries a CycloneDX SBOM.
-- **📋 The security modes are finally documented where people land** — `readonly` and `restricted` have existed since v3.5.0 and were buried. See the section right below.
+- **🔒 Security: secrets are redacted inside the logger.** It writes to two places outside your control — `~/.ssh-manager.log` and stderr, which your MCP host captures — so a single call site handing it a whole server config would have persisted a production password on disk. Redaction now happens structurally: any `password` / `passphrase` / `secret` / `token` / `credential` / private key / API key field becomes `[redacted]`, at any depth, in arrays, whatever the casing. No call site can leak one.
+- **🔍 CodeQL runs on every push and pull request.** For a server that turns model output into shell commands on production hosts, "we read it carefully" is not an answer. It found every fix in this release on its first run — **`src/` now has zero open findings**.
+- **🛡️ Every GitHub action pinned to a commit SHA**, including one that tracked a moving branch inside a workflow with read access to the whole repository. Closes 17 of the 22 OpenSSF Scorecard findings.
+- **🐛 `examples/backup-workflow.js` never parsed** — a cron `*/6` inside a block comment closed it early — and called a function that does not exist. It was documentation, not a JavaScript API, and it shipped in the npm tarball. It is now `examples/backup-workflow.md`. `scripts/validate.sh` checks all 49 tracked `.js` files instead of 2, which is how that hid for months.
 
-[Read full changelog →](CHANGELOG.md#382---2026-08-28)
+[Read full changelog →](CHANGELOG.md#384---2026-08-28)
 
 ---
 
@@ -75,7 +75,11 @@ Alongside that:
 ## Previous Releases
 
 <details>
-<summary><b>📜 Release history — v3.8.1 down to v1.0.0</b> (click to expand)</summary>
+<summary><b>📜 Release history — v3.8.3 down to v1.0.0</b> (click to expand)</summary>
+
+### v3.8.2 / v3.8.3 - Sudo password leak fixed, MCP Registry, signed releases (August 28, 2026)
+
+- **🔒 The sudo password no longer reaches the remote command line** ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)) — it travelled through `echo "<password>" | sudo -S`, readable in `ps` and `/proc/<pid>/cmdline` by every account on the host. It now goes over the SSH channel's stdin. Also: listed in the **official MCP Registry** as `io.github.bvisible/mcp-ssh-manager`, releases published from CI with **SLSA provenance** and a CycloneDX SBOM, and the per-server security modes documented at last. [Full changelog →](CHANGELOG.md#383---2026-08-28)
 
 ### v3.8.1 - Reproducible installs and blocking quality gates (August 28, 2026)
 
