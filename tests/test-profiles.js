@@ -82,8 +82,14 @@ try {
 // Test 5: Switch profiles
 console.log('Test 5: Switch profiles');
 const testProfileFile = path.join(__dirname, '..', '.ssh-manager-profile');
-const originalProfile = fs.existsSync(testProfileFile) ? 
-  fs.readFileSync(testProfileFile, 'utf8').trim() : null;
+// Read first and treat a missing file as "no profile set", rather than
+// checking then reading: the file can change between the two calls.
+let originalProfile = null;
+try {
+  originalProfile = fs.readFileSync(testProfileFile, 'utf8').trim();
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
 
 try {
   // Switch to docker profile
