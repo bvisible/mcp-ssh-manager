@@ -65,6 +65,37 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # A formula pinning an old version and sha256 is worse than no formula:
+      # `brew install` would silently give people the previous release. Updating
+      # it in the same run that publishes removes the chance to forget.
+      - name: Update the Homebrew formula
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          URL="https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-${VERSION}.tgz"
+          # Wait for the registry to serve the version we just published.
+          for i in $(seq 1 30); do
+            if curl -fsL --head "$URL" >/dev/null 2>&1; then break; fi
+            sleep 5
+          done
+          SHA=$(curl -fsL "$URL" | shasum -a 256 | cut -d' ' -f1)
+          echo "version=$VERSION sha256=$SHA"
+          sed -i.bak -E "s|url \"https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-[^\"]+\"|url \"$URL\"|" Formula/ssh-manager.rb
+          sed -i.bak -E "s|sha256 \"[a-f0-9]+\"|sha256 \"$SHA\"|" Formula/ssh-manager.rb
+          rm -f Formula/ssh-manager.rb.bak
+          git diff --stat Formula/ssh-manager.rb
+
+      - name: Commit the formula update
+        run: |
+          if git diff --quiet Formula/ssh-manager.rb; then
+            echo "Formula already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/ssh-manager.rb
+          git commit -m "chore(brew): point the formula at ${{ inputs.tag }}"
+          git push origin HEAD:main
+
       - name: Generate SBOM
         run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cyclonedx.json
 

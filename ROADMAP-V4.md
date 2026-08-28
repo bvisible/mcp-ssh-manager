@@ -26,7 +26,7 @@ optional and never required for the engine to run.
 | Loader integration | **done** — vault sits above files, below the process environment |
 | **Approval broker** (`src/approval.js`) | **done** — pause an action, ask a human, deny on any failure |
 | **Control plane** (`src/control-plane.js`, `cli/control.js`) | **done** — approval queue + timeline, no dependency |
-| Homebrew formula | next |
+| **Homebrew formula** (`Formula/ssh-manager.rb`) | **done** — kept current by the release workflow |
 
 ## Done: the vault
 
@@ -138,6 +138,31 @@ website could approve an agent's `rm -rf`. Hence, all tested:
 
 Found by the test: an audit file that is empty when the control plane starts had
 its offset left unset, so every later line was skipped as history.
+
+## Done: Homebrew
+
+```bash
+brew tap bvisible/mcp-ssh-manager https://github.com/bvisible/mcp-ssh-manager
+brew install ssh-manager
+```
+
+The formula installs the **same npm package**, so `brew` and `npm install -g`
+give identical binaries. There is no separate desktop build to keep in step: the
+vault, the approval broker and the control plane all live in the engine.
+
+It sits in this repository rather than a separate tap, so it is updated in the
+same commit as the release that changes it — and the release workflow rewrites
+its `url` and `sha256` automatically. A formula pinning a stale version is worse
+than no formula at all: `brew install` would quietly hand people the previous
+release.
+
+Its `test do` block does a real MCP stdio handshake rather than checking
+`--version`, because a formula that only proves the binary exists proves nothing
+about whether the package works.
+
+> A short `brew install bvisible/tap/ssh-manager` would need a separate
+> `bvisible/homebrew-tap` repository. Worth doing if the formula gets traction;
+> not worth a second repository to maintain before then.
 
 ## Non-negotiables
 
