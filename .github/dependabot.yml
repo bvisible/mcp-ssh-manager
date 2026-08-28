@@ -1,0 +1,32 @@
+# Committing package-lock.json pins the transitive tree, which is the point —
+# but a pinned tree also stops receiving upstream fixes on its own. Dependabot
+# is the counterweight, deliberately kept quiet: monthly, grouped, capped.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    groups:
+      # One PR for the whole dev toolchain: eslint/prettier/knip/typescript
+      # move together and never affect what users install.
+      dev-dependencies:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+      # Runtime patches grouped too; majors and minors come as individual PRs
+      # so an ssh2 or MCP SDK bump gets read on its own.
+      runtime-patches:
+        dependency-type: "production"
+        update-types: ["patch"]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "ci"

@@ -9,70 +9,77 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     strategy:
+      # 18.x and 20.x are the required status checks on main; 22.x is the
+      # current active LTS and package.json claims engines >=18.
       matrix:
-        node-version: [18.x, 20.x]
-    
+        node-version: [18.x, 20.x, 22.x]
+
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-    
+        cache: 'npm'
+
+    # npm ci installs exactly what package-lock.json pins, and aborts if the
+    # lockfile has drifted from package.json. npm install would quietly paper
+    # over that drift, which is the whole reason the lockfile is committed.
     - name: Install Node dependencies
-      run: npm install
-    
+      run: npm ci
+
     - name: Check Node syntax
       run: node --check src/index.js
-    
+
     - name: Check SSH Manager syntax
       run: node --check src/ssh-manager.js
-    
+
     - name: Create test .env file
       run: |
         echo "SSH_SERVER_TEST_HOST=localhost" > .env
         echo "SSH_SERVER_TEST_USER=test" >> .env
         echo "SSH_SERVER_TEST_PASSWORD=test" >> .env
         echo "SSH_SERVER_TEST_PORT=22" >> .env
-    
+
+    # Runs every tests/ suite, including test:lockfile.
     - name: Run JavaScript tests
       run: npm test
-      
+
     - name: Run validation script
       run: ./scripts/validate.sh
-      
+
     - name: Validate profile JSON files
       run: |
         for file in profiles/*.json; do
           python -m json.tool "$file" > /dev/null
         done
-      
-    - name: Test profile system
-      run: node tests/test-profiles.js
-      
-    - name: Test command aliases
-      run: node tests/test-command-aliases.js
-      
-    - name: Test hooks system  
-      run: node tests/test-hooks.js
 
   lint:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Use Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '18.x'
-    
+        node-version: '20.x'
+        cache: 'npm'
+
     - name: Install dependencies
-      run: npm install
-      
+      run: npm ci
+
+    # This job is a required check on main, so the two gates that must never
+    # regress live here rather than in the advisory Code Quality workflow.
+    - name: Run ESLint
+      run: npm run lint
+
+    - name: Typecheck (JSDoc via tsc)
+      run: npm run typecheck
+
     - name: Check for secrets
       run: |
         # Basic check for common secret patterns

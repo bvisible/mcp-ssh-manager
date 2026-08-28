@@ -9,54 +9,52 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         node-version: [18.x, 20.x]
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-    
-    - name: Cache Node modules
-      uses: actions/cache@v3
-      with:
-        path: ~/.npm
-        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-node-
-    
+        # Replaces the hand-rolled actions/cache step, whose key hashed a
+        # package-lock.json that did not exist until it was committed — every
+        # run shared one degenerate cache key.
+        cache: 'npm'
+
     - name: Install Node dependencies
-      run: |
-        npm install
-        npm install --save-dev eslint prettier
-    
+      run: npm ci
+
     - name: Run JavaScript syntax check
       run: |
         node --check src/index.js
         node --check src/ssh-manager.js
-    
+
     - name: Run ESLint
-      run: npx eslint src/
-      continue-on-error: true
+      run: npm run lint
 
     # Type-checks the JSDoc annotations over plain JS (no build, nothing emitted).
-    # Not continue-on-error: this gate is only useful if it can fail the build.
     - name: Typecheck (JSDoc via tsc)
       run: npm run typecheck
 
     - name: Run knip (dead code & unused dependencies)
       run: npx knip
 
+    # Advisory, not a required check: a CVE published against a transitive
+    # dependency must be visible here without blocking unrelated merges on main.
+    # The runtime tree is expected to stay at 0 vulnerabilities.
+    - name: npm audit (runtime dependencies)
+      run: npm audit --omit=dev --audit-level=high
+
     - name: Run validation script
       run: |
         chmod +x scripts/validate.sh
         ./scripts/validate.sh
-    
+
     - name: Check for secrets
       uses: trufflesecurity/trufflehog@main
       with:
