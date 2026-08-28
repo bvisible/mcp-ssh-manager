@@ -16,17 +16,23 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
-# Install pre-commit
+# Versions are pinned on purpose. An unpinned install in a setup script hands
+# every contributor whatever version is current that day, and the tools below
+# gate commits — a silent major bump changes what passes.
 echo "📦 Installing pre-commit..."
-pip install pre-commit
+pip install 'pre-commit==4.0.1'
 
-# Install Node.js dev dependencies
-echo "📦 Installing Node.js linting tools..."
-npm install --save-dev eslint prettier
+# eslint and prettier are already devDependencies, at versions the CI gates
+# depend on. `npm install --save-dev eslint prettier` would re-resolve both to
+# their latest majors (ESLint 10 over the pinned ^8.56.0) and rewrite
+# package.json in the contributor's working tree. npm ci installs exactly what
+# package-lock.json pins.
+echo "📦 Installing Node.js dev dependencies from the lockfile..."
+npm ci
 
 # Install Python linting tools
 echo "📦 Installing Python linting tools..."
-pip install black flake8 isort
+pip install 'black==24.10.0' 'flake8==7.1.1' 'isort==5.13.2'
 
 # Install pre-commit hooks
 echo "🔗 Installing git hooks..."

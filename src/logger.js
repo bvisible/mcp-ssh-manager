@@ -11,6 +11,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Log levels
+/**
+ * Log level constants. Exported as part of the package's public surface so a
+ * consumer can map SSH_LOG_LEVEL values; nothing inside the repository imports
+ * it, hence the @public tag telling knip this export is deliberate.
+ * @public
+ */
 export const LOG_LEVELS = {
   DEBUG: 0,
   INFO: 1,

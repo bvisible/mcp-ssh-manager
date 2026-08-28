@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Least privilege: without this block the workflow gets the repository's default
+# token scopes, which are far wider than needed. The validate job only needs to read the repository; trufflehog reads history.
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest

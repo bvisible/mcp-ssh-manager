@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Least privilege: without this block the workflow gets the repository's default
+# token scopes, which are far wider than needed. The test job only needs to read the repository.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
