@@ -395,10 +395,13 @@ export class ConfigLoader {
     /** @type {Record<string, any>} */
     let config = {};
 
-    // Load existing config if it exists
-    if (fs.existsSync(codexConfigPath)) {
-      const content = fs.readFileSync(codexConfigPath, 'utf8');
-      config = TOML.parse(content);
+    // Load existing config if it exists. Read first and handle ENOENT, rather
+    // than checking then reading: between the two the file can be replaced or
+    // removed, and the check buys nothing the error handling does not.
+    try {
+      config = TOML.parse(fs.readFileSync(codexConfigPath, 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
     }
 
     // Add MCP server configuration

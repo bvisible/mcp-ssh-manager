@@ -5,6 +5,25 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **The logger no longer writes secrets in clear text** (CodeQL `js/clear-text-logging`, `src/logger.js`). Structured log data is now redacted inside the logger rather than at each call site: any key matching password / passphrase / secret / token / credential / private key / api key / auth becomes `[redacted]`, at any depth, in arrays, whatever the casing. This matters because the logger writes to **two** places outside our control — `~/.ssh-manager.log` and stderr, which the MCP host captures — so one forgotten call site handing over a whole server config would have persisted a production password. Cyclic objects are marked rather than followed, so a self-referencing config cannot hang a log call. Guarded by `npm run test:redaction`.
+
+### Fixed
+
+- **`examples/backup-workflow.js` did not parse at all.** A cron expression (`*/6`) inside a `/* */` block closed the comment early. It is an example people copy. Found by CodeQL (`js/syntax-error`) — `scripts/validate.sh` only ever syntax-checked `src/index.js` and `src/ssh-manager.js`, so nothing else in the repository was covered.
+- **`scripts/validate.sh` now syntax-checks every tracked `.js` file** (49 instead of 2), which is how the above escaped for so long.
+- Two time-of-check/time-of-use races (CodeQL `js/file-system-race`): `ssh-key-manager.js` guarded `mkdirSync({recursive:true})` with an `existsSync` that was both redundant and racy, and `config-loader.js` checked for the Codex config before reading it instead of reading it and handling `ENOENT`.
+
+### Changed
+
+- **Every GitHub action is pinned to a commit SHA**, including `trufflesecurity/trufflehog`, which tracked the moving `main` branch inside a workflow that reads the whole repository. This closes 17 of the 22 findings OpenSSF Scorecard reported.
+- **CodeQL analysis added** (`security-and-quality`), answering Scorecard's SAST finding. It paid for itself immediately: every fix in this entry came out of its first run.
+- **Dependabot alerts and automated security fixes enabled** on the repository — they were switched off.
+- The `Release` workflow is re-runnable: it skips publishing when the version is already on the registry instead of failing on a duplicate, and creates the GitHub release if the SBOM step finds none.
+
 ## [3.8.3] - 2026-08-28
 
 ### Changed

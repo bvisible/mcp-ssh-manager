@@ -168,11 +168,11 @@ export async function addHostKey(host, port = 22, keyData = null) {
       keyData = fingerprints.map(fp => fp.fullKey).join('\n');
     }
 
-    // Ensure .ssh directory exists
+    // Ensure .ssh directory exists. No existsSync guard: mkdirSync with
+    // recursive:true is already a no-op on an existing directory, and checking
+    // first only opens a window where the directory can change underneath us.
     const sshDir = path.dirname(KNOWN_HOSTS_PATH);
-    if (!fs.existsSync(sshDir)) {
-      fs.mkdirSync(sshDir, { mode: 0o700, recursive: true });
-    }
+    fs.mkdirSync(sshDir, { mode: 0o700, recursive: true });
 
     // Append to known_hosts
     fs.appendFileSync(KNOWN_HOSTS_PATH, keyData + '\n');

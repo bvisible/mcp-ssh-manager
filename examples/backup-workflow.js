@@ -400,33 +400,31 @@ const monthlyCompliance = {
 // CRON SCHEDULE REFERENCE
 // ============================================================================
 
-/*
-Common cron schedules:
-
-Daily:
-  - "0 2 * * *"        // Every day at 2 AM
-  - "0 0 * * *"        // Every day at midnight
-
-Hourly:
-  - "0 * * * *"        // Every hour at minute 0
-  - "0 */6 * * *"      // Every 6 hours
-
-Weekly:
-  - "0 0 * * 0"        // Every Sunday at midnight
-  - "0 3 * * 1"        // Every Monday at 3 AM
-
-Monthly:
-  - "0 0 1 * *"        // 1st of month at midnight
-  - "0 2 15 * *"       // 15th of month at 2 AM
-
-Weekdays:
-  - "0 1 * * 1-5"      // Mon-Fri at 1 AM
-
-Custom:
-  - "*/30 * * * *"     // Every 30 minutes
-  - "0 */4 * * *"      // Every 4 hours
-  - "0 9-17 * * *"     // Every hour from 9 AM to 5 PM
-*/
+// Common cron schedules:
+//
+// Daily:
+//   - "0 2 * * *"        // Every day at 2 AM
+//   - "0 0 * * *"        // Every day at midnight
+//
+// Hourly:
+//   - "0 * * * *"        // Every hour at minute 0
+//   - "0 */6 * * *"      // Every 6 hours
+//
+// Weekly:
+//   - "0 0 * * 0"        // Every Sunday at midnight
+//   - "0 3 * * 1"        // Every Monday at 3 AM
+//
+// Monthly:
+//   - "0 0 1 * *"        // 1st of month at midnight
+//   - "0 2 15 * *"       // 15th of month at 2 AM
+//
+// Weekdays:
+//   - "0 1 * * 1-5"      // Mon-Fri at 1 AM
+//
+// Custom:
+//   - "*/30 * * * *"     // Every 30 minutes
+//   - "0 */4 * * *"      // Every 4 hours
+//   - "0 9-17 * * *"     // Every hour from 9 AM to 5 PM
 
 // ============================================================================
 // NOTES

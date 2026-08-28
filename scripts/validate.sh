@@ -9,22 +9,32 @@ echo ""
 
 ERRORS=0
 
-# Check JavaScript syntax
-echo "📋 Checking JavaScript syntax..."
-if node --check src/index.js 2>/dev/null; then
-    echo "  ✅ JavaScript syntax is valid"
+# Check JavaScript syntax across every tracked .js file.
+# Previously this checked only src/index.js and src/ssh-manager.js, which is how
+# examples/backup-workflow.js sat broken: a cron expression (*/6) inside a block
+# comment closed it early, so the file never parsed. Examples are code people
+# copy — they get checked too.
+echo "📋 Checking JavaScript syntax (all tracked .js files)..."
+JS_ERRORS=0
+JS_COUNT=0
+if git rev-parse --git-dir >/dev/null 2>&1; then
+    JS_FILES=$(git ls-files '*.js' | grep -v node_modules)
 else
-    echo "  ❌ JavaScript syntax error!"
-    ERRORS=$((ERRORS + 1))
+    JS_FILES=$(find src cli tests examples debug -name '*.js' 2>/dev/null)
 fi
-
-# Check SSH Manager syntax
-echo "📋 Checking SSH Manager syntax..."
-if node --check src/ssh-manager.js 2>/dev/null; then
-    echo "  ✅ SSH Manager syntax is valid"
+for f in $JS_FILES; do
+    [ -f "$f" ] || continue
+    JS_COUNT=$((JS_COUNT + 1))
+    if ! node --check "$f" 2>/dev/null; then
+        echo "  ❌ syntax error: $f"
+        JS_ERRORS=$((JS_ERRORS + 1))
+    fi
+done
+if [ $JS_ERRORS -eq 0 ]; then
+    echo "  ✅ JavaScript syntax is valid ($JS_COUNT files)"
 else
-    echo "  ❌ SSH Manager syntax error!"
-    ERRORS=$((ERRORS + 1))
+    echo "  ❌ $JS_ERRORS file(s) with syntax errors"
+    ERRORS=$((ERRORS + JS_ERRORS))
 fi
 
 # Check for .env in git
