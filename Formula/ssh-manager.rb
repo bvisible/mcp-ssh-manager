@@ -49,7 +49,7 @@ class SshManager < Formula
     # The CLI must run without a config, and the MCP server must complete a real
     # stdio handshake — a formula that only checks `--version` proves nothing
     # about whether the package actually works.
-    assert_match "ssh-manager", shell_output("#{bin}/ssh-manager --help 2>&1", 0)
+    assert_match "ssh-manager", shell_output("#{bin}/ssh-manager --help 2>&1")
 
     handshake = <<~JSON
       {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"brew-test","version":"1"}}}
