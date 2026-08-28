@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`examples/backup-workflow.js` did not parse at all.** A cron expression (`*/6`) inside a `/* */` block closed the comment early. It is an example people copy. Found by CodeQL (`js/syntax-error`) — `scripts/validate.sh` only ever syntax-checked `src/index.js` and `src/ssh-manager.js`, so nothing else in the repository was covered.
-- **`scripts/validate.sh` now syntax-checks every tracked `.js` file** (49 instead of 2), which is how the above escaped for so long.
+- **`examples/backup-workflow.js` did not parse at all**, and is now `examples/backup-workflow.md`. A cron expression (`*/6`) inside a `/* */` block closed the comment early. Repairing it exposed the deeper problem CodeQL then found (`js/call-to-non-callable`): the file called `createBackup(...)`, a function that does not exist anywhere — it was never a JavaScript API, but documentation of conversations with the agent, where the real operations are MCP tools (`ssh_backup_create`, …). Shipping it as executable `.js` in the npm tarball invited people to run something that could only throw. It is now Markdown, which is what it always was, with the illustrative nature stated at the top.
+- **`scripts/validate.sh` now syntax-checks every tracked `.js` file** (49 instead of 2), which is how the above escaped for so long. The guard is itself verified by deliberately breaking a file.
 - Two time-of-check/time-of-use races (CodeQL `js/file-system-race`): `ssh-key-manager.js` guarded `mkdirSync({recursive:true})` with an `existsSync` that was both redundant and racy, and `config-loader.js` checked for the Codex config before reading it instead of reading it and handling `ENOENT`.
 
 ### Changed

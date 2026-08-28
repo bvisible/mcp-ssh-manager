@@ -1054,7 +1054,7 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for complete guide.
 "Backup website files excluding cache and logs"
 ```
 
-For detailed backup examples, see [examples/backup-workflow.js](examples/backup-workflow.js) and [docs/BACKUP_GUIDE.md](docs/BACKUP_GUIDE.md).
+For detailed backup examples, see [examples/backup-workflow.md](examples/backup-workflow.md) and [docs/BACKUP_GUIDE.md](docs/BACKUP_GUIDE.md).
 
 ### Using the Bash CLI
 

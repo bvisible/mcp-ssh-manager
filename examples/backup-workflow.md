@@ -1,19 +1,19 @@
-/**
- * Backup Workflow Examples for MCP SSH Manager
- *
- * This file demonstrates various backup and restore workflows
- * that can be executed through Claude Code or OpenAI Codex.
- */
+# Backup workflow examples
 
-// ============================================================================
-// EXAMPLE 1: Simple MySQL Backup Before Deployment
-// ============================================================================
+How to drive MCP SSH Manager's backup tools from Claude Code or OpenAI Codex.
 
-/*
-User: "Backup production database before deployment"
+> **These are illustrations, not a JavaScript API.** The snippets name the
+> operations conceptually; what you actually call are the MCP tools
+> (`ssh_backup_create`, `ssh_backup_list`, `ssh_backup_restore`,
+> `ssh_backup_schedule`). Ask the agent in plain language — the
+> **User:** lines below are what you type.
 
-AI executes:
-*/
+## 1. Simple MySQL Backup Before Deployment
+
+**User:** "Backup production database before deployment"
+
+**AI executes:**
+```javascript
 const mysqlBackup = {
   tool: 'ssh_backup_create',
   params: {
@@ -26,22 +26,19 @@ const mysqlBackup = {
     retention: 7  // Keep for 7 days
   }
 };
+```
+**Response:**
+{
+  "success": true,
+  "backup_id": "mysql_pre-deployment_2025-10-01T10-30-45-000Z_abc123de",
+  "size_human": "50.00 MB",
+  "location": "/var/backups/ssh-manager/mysql_pre-deployment_2025-10-01T10-30-45-000Z_abc123de.gz"
+}
 
-// Response:
-// {
-//   "success": true,
-//   "backup_id": "mysql_pre-deployment_2025-10-01T10-30-45-000Z_abc123de",
-//   "size_human": "50.00 MB",
-//   "location": "/var/backups/ssh-manager/mysql_pre-deployment_2025-10-01T10-30-45-000Z_abc123de.gz"
-// }
+## 2. PostgreSQL Backup with Custom Retention
 
-// ============================================================================
-// EXAMPLE 2: PostgreSQL Backup with Custom Retention
-// ============================================================================
-
-/*
-User: "Create PostgreSQL backup and keep it for 30 days"
-*/
+**User:** "Create PostgreSQL backup and keep it for 30 days"
+```javascript
 const postgresBackup = {
   tool: 'ssh_backup_create',
   params: {
@@ -55,14 +52,12 @@ const postgresBackup = {
     compress: true
   }
 };
+```
 
-// ============================================================================
-// EXAMPLE 3: Files Backup with Exclusions
-// ============================================================================
+## 3. Files Backup with Exclusions
 
-/*
-User: "Backup website files excluding cache and logs"
-*/
+**User:** "Backup website files excluding cache and logs"
+```javascript
 const filesBackup = {
   tool: 'ssh_backup_create',
   params: {
@@ -83,14 +78,12 @@ const filesBackup = {
     retention: 14
   }
 };
+```
 
-// ============================================================================
-// EXAMPLE 4: MongoDB Backup
-// ============================================================================
+## 4. MongoDB Backup
 
-/*
-User: "Backup MongoDB user database"
-*/
+**User:** "Backup MongoDB user database"
+```javascript
 const mongoBackup = {
   tool: 'ssh_backup_create',
   params: {
@@ -105,14 +98,12 @@ const mongoBackup = {
     retention: 7
   }
 };
+```
 
-// ============================================================================
-// EXAMPLE 5: List All Backups
-// ============================================================================
+## 5. List All Backups
 
-/*
-User: "Show me all MySQL backups on production"
-*/
+**User:** "Show me all MySQL backups on production"
+```javascript
 const listBackups = {
   tool: 'ssh_backup_list',
   params: {
@@ -120,32 +111,29 @@ const listBackups = {
     type: 'mysql'  // Optional: filter by type
   }
 };
+```
+**Response:**
+{
+  "success": true,
+  "count": 5,
+  "backups": [
+    {
+      "id": "mysql_pre-deployment_2025-10-01T10-30-45-000Z_abc123de",
+      "type": "mysql",
+      "created_at": "2025-10-01T10:30:45.000Z",
+      "database": "myapp_prod",
+      "size_human": "50.00 MB",
+      "retention_days": 7
+    }
+  ]
+}
 
-// Response:
-// {
-//   "success": true,
-//   "count": 5,
-//   "backups": [
-//     {
-//       "id": "mysql_pre-deployment_2025-10-01T10-30-45-000Z_abc123de",
-//       "type": "mysql",
-//       "created_at": "2025-10-01T10:30:45.000Z",
-//       "database": "myapp_prod",
-//       "size_human": "50.00 MB",
-//       "retention_days": 7
-//     }
-//   ]
-// }
+## 6. Restore from Backup
 
-// ============================================================================
-// EXAMPLE 6: Restore from Backup
-// ============================================================================
+**User:** "Restore the latest production backup"
 
-/*
-User: "Restore the latest production backup"
-*/
-
-// Step 1: List backups to find the ID
+Step 1: List backups to find the ID
+```javascript
 const listFirst = {
   tool: 'ssh_backup_list',
   params: {
@@ -153,8 +141,9 @@ const listFirst = {
     type: 'mysql'
   }
 };
-
-// Step 2: Restore using the backup ID
+```
+Step 2: Restore using the backup ID
+```javascript
 const restoreBackup = {
   tool: 'ssh_backup_restore',
   params: {
@@ -165,14 +154,12 @@ const restoreBackup = {
     dbPassword: process.env.DB_PASSWORD
   }
 };
+```
 
-// ============================================================================
-// EXAMPLE 7: Schedule Daily Backups
-// ============================================================================
+## 7. Schedule Daily Backups
 
-/*
-User: "Schedule daily MySQL backup at 2 AM"
-*/
+**User:** "Schedule daily MySQL backup at 2 AM"
+```javascript
 const scheduleDaily = {
   tool: 'ssh_backup_schedule',
   params: {
@@ -184,14 +171,12 @@ const scheduleDaily = {
     retention: 7  // Keep last 7 days
   }
 };
+```
 
-// ============================================================================
-// EXAMPLE 8: Schedule Weekly Full Backup
-// ============================================================================
+## 8. Schedule Weekly Full Backup
 
-/*
-User: "Schedule weekly full backup every Sunday at midnight"
-*/
+**User:** "Schedule weekly full backup every Sunday at midnight"
+```javascript
 const scheduleWeekly = {
   tool: 'ssh_backup_schedule',
   params: {
@@ -203,16 +188,14 @@ const scheduleWeekly = {
     retention: 30  // Keep for 4 weeks
   }
 };
+```
 
-// ============================================================================
-// EXAMPLE 9: Multi-Server Backup Strategy
-// ============================================================================
+## 9. Multi-Server Backup Strategy
 
-/*
-User: "Backup all production databases"
-*/
+**User:** "Backup all production databases"
 
-// Production MySQL
+Production MySQL
+```javascript
 const prodMysql = {
   tool: 'ssh_backup_create',
   params: {
@@ -222,8 +205,9 @@ const prodMysql = {
     database: 'main_db'
   }
 };
-
-// Production PostgreSQL
+```
+Production PostgreSQL
+```javascript
 const prodPostgres = {
   tool: 'ssh_backup_create',
   params: {
@@ -233,8 +217,9 @@ const prodPostgres = {
     database: 'analytics'
   }
 };
-
-// Production MongoDB
+```
+Production MongoDB
+```javascript
 const prodMongo = {
   tool: 'ssh_backup_create',
   params: {
@@ -244,15 +229,13 @@ const prodMongo = {
     database: 'sessions'
   }
 };
+```
 
-// ============================================================================
-// EXAMPLE 10: Pre-Deployment Workflow
-// ============================================================================
-
-/*
+## 10. Pre-Deployment Workflow
+```javascript
 Complete deployment workflow with backup safety net
-*/
-
+```
+```javascript
 async function preDeploymentWorkflow() {
   // Step 1: Create backup
   console.log("Creating pre-deployment backup...");
@@ -290,15 +273,12 @@ async function preDeploymentWorkflow() {
     console.log("Deployment successful!");
   }
 }
+```
 
-// ============================================================================
-// EXAMPLE 11: Disaster Recovery Workflow
-// ============================================================================
+## 11. Disaster Recovery Workflow
 
-/*
-User: "Recover production database from yesterday's backup"
-*/
-
+**User:** "Recover production database from yesterday's backup"
+```javascript
 async function disasterRecovery() {
   // Step 1: List all backups
   const backups = await listBackups({
@@ -328,15 +308,12 @@ async function disasterRecovery() {
 
   console.log("Recovery completed successfully");
 }
+```
 
-// ============================================================================
-// EXAMPLE 12: Backup to Remote Storage (S3)
-// ============================================================================
+## 12. Backup to Remote Storage (S3)
 
-/*
-User: "Backup database and upload to S3"
-*/
-
+**User:** "Backup database and upload to S3"
+```javascript
 async function backupToS3() {
   // Step 1: Create local backup
   const backup = await createBackup({
@@ -363,14 +340,12 @@ async function backupToS3() {
 
   console.log(`Backup uploaded to S3: s3://my-backups/${backup.backup_id}.gz`);
 }
+```
 
-// ============================================================================
-// EXAMPLE 13: Compliance Backup (90-day retention)
-// ============================================================================
+## 13. Compliance Backup (90-day retention)
 
-/*
-User: "Create compliance backup with 90-day retention"
-*/
+**User:** "Create compliance backup with 90-day retention"
+```javascript
 const complianceBackup = {
   tool: 'ssh_backup_create',
   params: {
@@ -382,8 +357,9 @@ const complianceBackup = {
     compress: true
   }
 };
-
-// Schedule monthly compliance backups
+```
+Schedule monthly compliance backups
+```javascript
 const monthlyCompliance = {
   tool: 'ssh_backup_schedule',
   params: {
@@ -395,42 +371,49 @@ const monthlyCompliance = {
     retention: 365  // Keep for 1 year
   }
 };
+```
 
-// ============================================================================
-// CRON SCHEDULE REFERENCE
-// ============================================================================
+## Cron schedule reference
+Common cron schedules:
+```javascript
+//
+```
+Daily:
+  - "0 2 * * *"        // Every day at 2 AM
+  - "0 0 * * *"        // Every day at midnight
+```javascript
+//
+```
+Hourly:
+  - "0 * * * *"        // Every hour at minute 0
+  - "0 */6 * * *"      // Every 6 hours
+```javascript
+//
+```
+Weekly:
+  - "0 0 * * 0"        // Every Sunday at midnight
+  - "0 3 * * 1"        // Every Monday at 3 AM
+```javascript
+//
+```
+Monthly:
+  - "0 0 1 * *"        // 1st of month at midnight
+  - "0 2 15 * *"       // 15th of month at 2 AM
+```javascript
+//
+```
+Weekdays:
+  - "0 1 * * 1-5"      // Mon-Fri at 1 AM
+```javascript
+//
+```
+Custom:
+  - "*/30 * * * *"     // Every 30 minutes
+  - "0 */4 * * *"      // Every 4 hours
+  - "0 9-17 * * *"     // Every hour from 9 AM to 5 PM
 
-// Common cron schedules:
-//
-// Daily:
-//   - "0 2 * * *"        // Every day at 2 AM
-//   - "0 0 * * *"        // Every day at midnight
-//
-// Hourly:
-//   - "0 * * * *"        // Every hour at minute 0
-//   - "0 */6 * * *"      // Every 6 hours
-//
-// Weekly:
-//   - "0 0 * * 0"        // Every Sunday at midnight
-//   - "0 3 * * 1"        // Every Monday at 3 AM
-//
-// Monthly:
-//   - "0 0 1 * *"        // 1st of month at midnight
-//   - "0 2 15 * *"       // 15th of month at 2 AM
-//
-// Weekdays:
-//   - "0 1 * * 1-5"      // Mon-Fri at 1 AM
-//
-// Custom:
-//   - "*/30 * * * *"     // Every 30 minutes
-//   - "0 */4 * * *"      // Every 4 hours
-//   - "0 9-17 * * *"     // Every hour from 9 AM to 5 PM
-
-// ============================================================================
-// NOTES
-// ============================================================================
-
-/*
+## Notes
+```javascript
 Best Practices:
 
 1. Security:
@@ -462,8 +445,8 @@ Best Practices:
    - Encrypt backups at rest
    - Maintain audit logs
    - Test disaster recovery procedures
-*/
-
+```
+```javascript
 module.exports = {
   mysqlBackup,
   postgresBackup,
@@ -477,3 +460,4 @@ module.exports = {
   disasterRecovery,
   backupToS3
 };
+```
