@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dt/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.8.0-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.0)
+[![Version](https://img.shields.io/badge/Version-3.8.1-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.1)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
@@ -22,28 +22,27 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 ---
 
-## 🎉 What's New in v3.8.0
+## 🎉 What's New in v3.8.1
 
-**👥 Groups that live in your config, `ssh_sync` fixed on Windows, and a crash that took the whole server down** (Released: August 14, 2026)
+**🔒 Reproducible installs: the lockfile is committed, CI installs from it, and a test keeps it honest** (Released: August 28, 2026)
 
-- **New optional `group` field per server** ([#56](https://github.com/bvisible/mcp-ssh-manager/pull/56) — contributed by [@ice616](https://github.com/ice616), requested in [#55](https://github.com/bvisible/mcp-ssh-manager/issues/55)) — tag a server with `group = "production"` and it *is* in that group: `ssh_execute_group` and `ssh_group_manage list` resolve members straight from your `.env`/TOML, so there is no `.server-groups.json` to maintain and the grouping travels with the config when you export it to another tool. Membership is the **union** of both sources, so groups you already store keep working untouched.
-- **🪟 `ssh_sync` works from a Windows host** ([#59](https://github.com/bvisible/mcp-ssh-manager/pull/59) — contributed by [@2836603852](https://github.com/2836603852)) — a local path like `C:\project` reached MSYS2 rsync unchanged, which read `C:` as a remote host and tried to SSH into a machine named `c`. Drive-letter, UNC and extended-length paths are now converted for the rsync argument only, while Node keeps the native path for its filesystem checks.
-- **💥 A tunnel on a busy port no longer kills the MCP server** — `ssh_tunnel_create` on an already-bound port hit an unhandled `'error'` event and took the entire process down with it, dropping every pooled SSH connection and open session. It now returns a normal error.
-- **🔒 Security: `@modelcontextprotocol/sdk` floor raised to `^1.30.0`** — the previous range still allowed versions carrying three published advisories, one of them high. `npm audit` is clean, and the `uuid` dependency is gone in favour of Node's built-in `crypto.randomUUID()`.
-- **🧪 JSDoc type-checking in CI** (`npm run typecheck`) — TypeScript now runs as a static checker over the plain JavaScript. **No build step, no `dist/`, nothing changes for users**; it found two of the bugs above on the day it landed.
+- **`package-lock.json` is now committed** ([#60](https://github.com/bvisible/mcp-ssh-manager/pull/60) — contributed by [@cudatuda](https://github.com/cudatuda)) — installs are reproducible, `npm ci` works, and the transitive tree is auditable at last. **Nothing changes if you install from npm**: a lockfile is never shipped inside a published tarball.
+- **🧪 New `npm run test:lockfile` guard** — a lockfile is only worth committing while it stays truthful, so a test locks the ways it rots: version drift, dependency ranges out of sync, a package resolved from anywhere but registry.npmjs.org, a missing integrity hash, a `file:`/`git+`/`link:` entry smuggled into the tree, an install script outside the reviewed allowlist, or a runtime dependency requiring a newer Node than `engines` advertises. Validated by mutating the lockfile 17 different ways — each one caught.
+- **⚙️ CI installs with `npm ci`, and the quality gates finally block.** ESLint and the JSDoc typecheck ran in a workflow that was **not** a required check, ESLint with `continue-on-error` on top — neither could fail a pull request. Both moved into the required `lint` job. Node 22.x added to the test matrix, and the module cache (keyed on a lockfile that did not exist) works now.
+- **🤖 Dependabot** — a pinned tree stops receiving upstream fixes on its own, so monthly grouped updates act as the counterweight.
 
-```env
-SSH_SERVER_WEB1_GROUP=production
-```
-
-[Read full changelog →](CHANGELOG.md#380---2026-08-14)
+[Read full changelog →](CHANGELOG.md#381---2026-08-28)
 
 ---
 
 ## Previous Releases
 
 <details>
-<summary><b>📜 Release history — v3.7.0 down to v1.0.0</b> (click to expand)</summary>
+<summary><b>📜 Release history — v3.8.0 down to v1.0.0</b> (click to expand)</summary>
+
+### v3.8.0 - Groups in your config, `ssh_sync` on Windows, tunnel crash fix (August 14, 2026)
+
+- **👥 New optional `group` field per server** ([#56](https://github.com/bvisible/mcp-ssh-manager/pull/56) — contributed by [@ice616](https://github.com/ice616), requested in [#55](https://github.com/bvisible/mcp-ssh-manager/issues/55)) — tag a server with `group = "production"` and it *is* in that group: `ssh_execute_group` resolves members straight from your `.env`/TOML, union'd with any `.server-groups.json` you already keep. Also: `ssh_sync` fixed from a Windows host ([#59](https://github.com/bvisible/mcp-ssh-manager/pull/59) — contributed by [@2836603852](https://github.com/2836603852)), a tunnel on a busy port no longer takes the whole MCP server down, the `@modelcontextprotocol/sdk` floor raised to `^1.30.0` over three advisories, and JSDoc type-checking added to CI. [Full changelog →](CHANGELOG.md#380---2026-08-14)
 
 ### v3.7.0 - Per-server SSH agent forwarding (July 13, 2026)
 
