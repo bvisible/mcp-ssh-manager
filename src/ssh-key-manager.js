@@ -154,9 +154,14 @@ export function removeHostKey(host, port = 22) {
  */
 export async function addHostKey(host, port = 22, keyData = null) {
   try {
-    // Backup current known_hosts
-    if (fs.existsSync(KNOWN_HOSTS_PATH)) {
+    // Backup current known_hosts. Copy first and treat "not there" as nothing
+    // to back up, rather than checking then copying: between the two calls the
+    // file can be replaced, and the check adds a race without preventing the
+    // failure it appears to guard against.
+    try {
       fs.copyFileSync(KNOWN_HOSTS_PATH, KNOWN_HOSTS_BACKUP);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
     }
 
     // If no key data provided, fetch it
