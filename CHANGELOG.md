@@ -5,6 +5,18 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.3] - 2026-08-28
+
+### Changed
+
+- **First release published from CI with build provenance and an attested SBOM.** 3.8.2 shipped the workflow but was still published by hand, so it carried no attestation — `npm audit signatures` found none for it, while the comparable competitor had both an npm publish attestation and SLSA provenance. This release closes that gap for real: anyone can now verify which commit and which workflow built the tarball.
+- **`zod` 3 → 4** ([#65](https://github.com/bvisible/mcp-ssh-manager/pull/65)). Verified before merging rather than after: with zod 4 installed, all 37 tools still register over a real MCP stdio handshake, and the full suite, typecheck and lint stay green. `@modelcontextprotocol/sdk` accepts `^3.25 || ^4.0`, and knip already wanted `^4.1.11`.
+- `actions/checkout` and `actions/setup-node` bumped to v7 ([#61](https://github.com/bvisible/mcp-ssh-manager/pull/61), [#62](https://github.com/bvisible/mcp-ssh-manager/pull/62)).
+
+### Note
+
+TypeScript 7 ([#64](https://github.com/bvisible/mcp-ssh-manager/issues/64)) and ESLint 10 ([#63](https://github.com/bvisible/mcp-ssh-manager/issues/63)) were declined, not deferred by accident: knip 5 pins `peer typescript ">=5.0.4 <7"`, and ESLint 9+ requires migrating off `.eslintrc` to flat config — tracked in [#66](https://github.com/bvisible/mcp-ssh-manager/issues/66).
+
 ## [3.8.2] - 2026-08-28
 
 ### Security

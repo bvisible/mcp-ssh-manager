@@ -6,12 +6,12 @@
     "url": "https://github.com/bvisible/mcp-ssh-manager",
     "source": "github"
   },
-  "version": "3.8.2",
+  "version": "3.8.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "mcp-ssh-manager",
-      "version": "3.8.2",
+      "version": "3.8.3",
       "transport": {
         "type": "stdio"
       },
