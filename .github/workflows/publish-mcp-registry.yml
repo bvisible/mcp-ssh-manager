@@ -1,0 +1,40 @@
+# Publishes server.json to the official MCP Registry.
+#
+# Authentication is OIDC from Actions, not an interactive login: the registry
+# trusts the `io.github.bvisible/*` namespace because the workflow runs in the
+# repository GitHub knows as bvisible/mcp-ssh-manager. Nothing to store, nothing
+# to rotate, and it works the same on every future release.
+#
+# Run it after the npm version named in server.json is live on the registry —
+# the MCP Registry verifies ownership by reading the `mcpName` field back out of
+# the published npm package.
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+          mcp-publisher --help | head -3
+
+      - name: Validate server.json
+        run: mcp-publisher validate
+
+      - name: Authenticate via GitHub OIDC
+        run: mcp-publisher login github-oidc
+
+      - name: Publish
+        run: mcp-publisher publish
