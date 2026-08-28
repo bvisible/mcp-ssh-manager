@@ -373,6 +373,12 @@ main() {
         tools)
             cmd_tools "$@"
             ;;
+        vault)
+            # v4 encrypted credential store. Implemented in Node because it uses
+            # the same SecretStore the MCP server reads from — one code path for
+            # writing and reading, so the CLI and the server can never disagree.
+            node "$SCRIPT_DIR/vault.js" "$@"
+            ;;
         config)
             case "$1" in
                 edit)

@@ -1,0 +1,332 @@
+// Encrypted local store for server credentials — the v4 vault.
+//
+// Why this exists: until now the only way to give a server a password was to
+// write it in clear text in a .env or TOML file. That file sits in a project
+// directory, gets copied into backups, and shows up in `cat`. Competing MCP SSH
+// servers put credentials in the OS keychain, and it is the last substantive
+// gap we have against them.
+//
+// Design constraints, in order:
+//
+//   1. **Nothing changes for existing users.** The vault is one more source in
+//      the loader's chain, consulted only when it exists. No vault, no change.
+//   2. **No new npm dependency.** Encryption uses Node's built-in crypto; the
+//      master key lives in the OS keychain, reached through the tools already
+//      present on each platform, with a file fallback when there is none.
+//   3. **The engine stays headless.** A GUI can drive this module, but nothing
+//      here requires one — the CLI and the MCP server use the same API.
+//
+// The file format is deliberately boring JSON so it can be inspected, backed up
+// and diffed. Only the secret values are ciphertext; hosts, users, ports and
+// modes stay readable, because hiding them buys nothing and makes the file
+// impossible to reason about.
+
+import crypto from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { execFileSync } from 'child_process';
+import { logger } from './logger.js';
+
+const VAULT_VERSION = 1;
+const ALGORITHM = 'aes-256-gcm';
+const KEY_BYTES = 32;
+const IV_BYTES = 12;
+
+// Keychain coordinates. One service name per platform tool, one account.
+const KEYCHAIN_SERVICE = 'mcp-ssh-manager';
+const KEYCHAIN_ACCOUNT = 'vault-master-key';
+
+/** Fields whose values are encrypted rather than stored as-is. */
+export const SECRET_FIELDS = ['password', 'passphrase', 'sudoPassword'];
+
+/**
+ * Default vault location. Kept next to the other per-user state
+ * (~/.ssh-manager/) rather than in the project directory, so it is not caught
+ * by a `git add .` or copied with the repository.
+ * @returns {string} Absolute path to the vault file
+ */
+export function defaultVaultPath() {
+  return process.env.SSH_MANAGER_VAULT
+    || path.join(process.env.SSH_MANAGER_HOME || path.join(os.homedir(), '.ssh-manager'), 'vault.json');
+}
+
+/**
+ * Read the master key from the OS keychain.
+ *
+ * macOS uses `security`, Linux `secret-tool` (libsecret), both of which ship
+ * with the desktop. Windows has no equivalent CLI, so it falls through to the
+ * file fallback. Returns null when the platform has no store, the tool is
+ * missing, or no key has been stored yet — all normal conditions, not errors.
+ *
+ * @returns {Buffer|null} The 32-byte key, or null when unavailable
+ */
+function readKeyFromKeychain() {
+  try {
+    if (process.platform === 'darwin') {
+      const out = execFileSync('security', [
+        'find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w'
+      ], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+      return Buffer.from(out.trim(), 'base64');
+    }
+    if (process.platform === 'linux') {
+      const out = execFileSync('secret-tool', [
+        'lookup', 'service', KEYCHAIN_SERVICE, 'account', KEYCHAIN_ACCOUNT
+      ], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+      const trimmed = out.trim();
+      return trimmed ? Buffer.from(trimmed, 'base64') : null;
+    }
+  } catch {
+    // No entry, no tool, or the user declined the keychain prompt.
+  }
+  return null;
+}
+
+/**
+ * Store the master key in the OS keychain.
+ * @param {Buffer} key - The key to store
+ * @returns {boolean} True when the keychain accepted it
+ */
+function writeKeyToKeychain(key) {
+  const encoded = key.toString('base64');
+  try {
+    if (process.platform === 'darwin') {
+      execFileSync('security', [
+        'add-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT,
+        '-w', encoded, '-U'
+      ], { stdio: 'ignore' });
+      return true;
+    }
+    if (process.platform === 'linux') {
+      execFileSync('secret-tool', [
+        'store', '--label=MCP SSH Manager vault key',
+        'service', KEYCHAIN_SERVICE, 'account', KEYCHAIN_ACCOUNT
+      ], { input: encoded, stdio: ['pipe', 'ignore', 'ignore'] });
+      return true;
+    }
+  } catch {
+    // Fall through to the file fallback.
+  }
+  return false;
+}
+
+/**
+ * Path of the fallback key file, used where no OS keychain is reachable.
+ * @returns {string} Absolute path
+ */
+function fallbackKeyPath() {
+  return path.join(path.dirname(defaultVaultPath()), 'vault.key');
+}
+
+/**
+ * Resolve the master key, creating one on first use.
+ *
+ * Prefers the OS keychain. Falls back to a 0600 file, which is weaker — the key
+ * then sits next to the data it protects — but still strictly better than the
+ * clear-text .env it replaces, and it keeps the vault usable on Windows, in
+ * containers and over SSH sessions with no desktop keyring.
+ *
+ * @returns {{ key: Buffer, source: 'keychain'|'file' }}
+ */
+export function resolveMasterKey() {
+  // SSH_MANAGER_KEY_SOURCE=file skips the OS keychain entirely. Needed wherever
+  // there is no desktop session to prompt — CI, containers, a plain SSH login —
+  // and it is what makes the vault testable without touching the developer's
+  // real keychain.
+  const forceFile = process.env.SSH_MANAGER_KEY_SOURCE === 'file';
+
+  const fromKeychain = forceFile ? null : readKeyFromKeychain();
+  if (fromKeychain && fromKeychain.length === KEY_BYTES) {
+    return { key: fromKeychain, source: 'keychain' };
+  }
+
+  const keyFile = fallbackKeyPath();
+  if (fs.existsSync(keyFile)) {
+    const key = Buffer.from(fs.readFileSync(keyFile, 'utf8').trim(), 'base64');
+    if (key.length === KEY_BYTES) return { key, source: 'file' };
+  }
+
+  // First use: mint a key and try to put it somewhere safe.
+  const key = crypto.randomBytes(KEY_BYTES);
+  if (!forceFile && writeKeyToKeychain(key)) {
+    return { key, source: 'keychain' };
+  }
+
+  fs.mkdirSync(path.dirname(keyFile), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(keyFile, key.toString('base64'), { mode: 0o600 });
+  logger.warn('Vault key stored in a file: no OS keychain available', { keyFile });
+  return { key, source: 'file' };
+}
+
+/**
+ * Encrypt one secret value.
+ * @param {string} plaintext - Value to encrypt
+ * @param {Buffer} key - Master key
+ * @returns {string} `v1:<iv>:<tag>:<ciphertext>`, all base64
+ */
+export function encryptValue(plaintext, key) {
+  const iv = crypto.randomBytes(IV_BYTES);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1:${iv.toString('base64')}:${tag.toString('base64')}:${ciphertext.toString('base64')}`;
+}
+
+/**
+ * Decrypt one secret value.
+ *
+ * GCM authenticates as well as encrypts: a tampered vault throws here rather
+ * than silently yielding a wrong password that would then be sent to a server.
+ *
+ * @param {string} encoded - Value produced by encryptValue
+ * @param {Buffer} key - Master key
+ * @returns {string} The plaintext
+ */
+export function decryptValue(encoded, key) {
+  const parts = String(encoded).split(':');
+  if (parts.length !== 4 || parts[0] !== 'v1') {
+    throw new Error('Malformed encrypted value');
+  }
+  const [, iv, tag, ciphertext] = parts;
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(tag, 'base64'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(ciphertext, 'base64')),
+    decipher.final()
+  ]).toString('utf8');
+}
+
+/**
+ * An encrypted, file-backed store of server definitions.
+ *
+ * Every method reads and writes the file immediately: there is no in-memory
+ * cache to go stale when the CLI and the MCP server are both running.
+ */
+export class SecretStore {
+  /**
+   * @param {string} [vaultPath] - Vault file location; defaults to defaultVaultPath()
+   */
+  constructor(vaultPath = defaultVaultPath()) {
+    this.vaultPath = vaultPath;
+    /** @type {Buffer|null} */
+    this.key = null;
+    /** @type {'keychain'|'file'|null} */
+    this.keySource = null;
+  }
+
+  /** @returns {boolean} True when a vault file exists on disk */
+  exists() {
+    return fs.existsSync(this.vaultPath);
+  }
+
+  /** Load (or create) the master key. Idempotent. */
+  unlock() {
+    if (this.key) return;
+    const { key, source } = resolveMasterKey();
+    this.key = key;
+    this.keySource = source;
+  }
+
+  /**
+   * Read the raw vault file.
+   * @returns {{ version: number, servers: Record<string, any> }}
+   */
+  read() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.vaultPath, 'utf8'));
+      if (parsed.version !== VAULT_VERSION) {
+        throw new Error(`Unsupported vault version ${parsed.version}`);
+      }
+      return parsed;
+    } catch (error) {
+      if (error.code === 'ENOENT') return { version: VAULT_VERSION, servers: {} };
+      throw error;
+    }
+  }
+
+  /**
+   * Write the vault, owner-readable only.
+   * @param {{ version: number, servers: Record<string, any> }} data - Vault contents
+   */
+  write(data) {
+    fs.mkdirSync(path.dirname(this.vaultPath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(this.vaultPath, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+  }
+
+  /**
+   * Add or replace a server. Secret fields are encrypted; everything else is
+   * stored as-is so the file stays readable.
+   *
+   * @param {string} name - Server name (normalised to lowercase, as elsewhere)
+   * @param {Record<string, any>} config - Server config in loader (camelCase) shape
+   */
+  setServer(name, config) {
+    this.unlock();
+    const data = this.read();
+    /** @type {Record<string, any>} */
+    const stored = {};
+    for (const [field, value] of Object.entries(config)) {
+      if (value === undefined || value === null) continue;
+      stored[field] = SECRET_FIELDS.includes(field)
+        ? encryptValue(value, /** @type {Buffer} */ (this.key))
+        : value;
+    }
+    data.servers[name.toLowerCase()] = stored;
+    this.write(data);
+  }
+
+  /**
+   * Remove a server.
+   * @param {string} name - Server name
+   * @returns {boolean} True when a server was actually removed
+   */
+  removeServer(name) {
+    const data = this.read();
+    const key = name.toLowerCase();
+    if (!(key in data.servers)) return false;
+    delete data.servers[key];
+    this.write(data);
+    return true;
+  }
+
+  /**
+   * Server names held in the vault. Does not need the key — listing what exists
+   * should not require unlocking anything.
+   * @returns {string[]} Sorted names
+   */
+  listServers() {
+    return Object.keys(this.read().servers).sort();
+  }
+
+  /**
+   * All servers with their secrets decrypted, in the shape the loader expects.
+   * @returns {Record<string, any>} Server configs keyed by lowercase name
+   */
+  getAllDecrypted() {
+    const data = this.read();
+    if (Object.keys(data.servers).length === 0) return {};
+    this.unlock();
+
+    /** @type {Record<string, any>} */
+    const out = {};
+    for (const [name, stored] of Object.entries(data.servers)) {
+      /** @type {Record<string, any>} */
+      const config = {};
+      for (const [field, value] of Object.entries(stored)) {
+        if (SECRET_FIELDS.includes(field)) {
+          try {
+            config[field] = decryptValue(value, /** @type {Buffer} */ (this.key));
+          } catch (error) {
+            // One unreadable secret must not take the whole vault down: report
+            // it and leave the field unset, so the other servers still work.
+            logger.error(`Cannot decrypt ${field} for server "${name}"`, { error: error.message });
+          }
+        } else {
+          config[field] = value;
+        }
+      }
+      out[name] = config;
+    }
+    return out;
+  }
+}

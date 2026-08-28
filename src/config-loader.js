@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import { logger } from './logger.js';
 import { VALID_MODES } from './policy.js';
+import { SecretStore, defaultVaultPath } from './secret-store.js';
 
 /**
  * A resolved SSH server configuration, as produced by this loader and consumed
@@ -128,11 +129,39 @@ export class ConfigLoader {
       }
     }
 
+    // Load the encrypted vault (v4). It sits above the files and below the
+    // process environment: a credential the user deliberately stored in the
+    // vault should win over one left in a .env, but an operator overriding
+    // things from the environment for one run must still win over both.
+    // Absent vault → this is a no-op, and behaviour is exactly as before.
+    let loadedFromVault = false;
+    const vaultPath = options.vaultPath || defaultVaultPath();
+    const store = new SecretStore(vaultPath);
+    if (store.exists()) {
+      try {
+        const vaultServers = store.getAllDecrypted();
+        for (const [name, config] of Object.entries(vaultServers)) {
+          const existing = this.servers.get(name);
+          this.servers.set(name, { ...(existing || {}), ...config, name });
+        }
+        loadedFromVault = Object.keys(vaultServers).length > 0;
+        if (loadedFromVault) {
+          logger.info(`Loaded ${Object.keys(vaultServers).length} server(s) from the encrypted vault`);
+        }
+      } catch (error) {
+        // A broken vault must never make the server unusable: the .env and TOML
+        // definitions already loaded above still stand.
+        logger.error(`Failed to read the vault at ${vaultPath}`, { error: error.message });
+      }
+    }
+
     // Load from environment variables (highest priority, overwrites everything)
     this.loadEnvironmentVariables();
 
     // Determine primary config source
-    if (loadedFromEnv) {
+    if (loadedFromVault) {
+      this.configSource = 'vault';
+    } else if (loadedFromEnv) {
       this.configSource = 'env';
     } else if (loadedFromToml) {
       this.configSource = 'toml';
