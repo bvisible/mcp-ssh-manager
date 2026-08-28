@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSH Manager — control plane</title>
+<style>
+  :root {
+    --ground: #f6f7f9; --surface: #fff; --sunk: #edeff3;
+    --line: #d8dde5; --line-soft: #e6eaf0;
+    --ink: #171c24; --ink-soft: #48525f; --ink-faint: #74808f;
+    --accent: #22637f; --accent-soft: #e2edf2;
+    --danger: #a2453b; --danger-soft: #f6e7e5;
+    --ok: #3f6e52; --ok-soft: #e6efe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #10141a; --surface: #171c24; --sunk: #1d232c;
+      --line: #2c3542; --line-soft: #232a34;
+      --ink: #e7ecf2; --ink-soft: #a8b3c1; --ink-faint: #778391;
+      --accent: #6fb4d4; --accent-soft: #1b2b35;
+      --danger: #d9776b; --danger-soft: #2c1e1c;
+      --ok: #7fb394; --ok-soft: #1b2620;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  header {
+    padding: 20px 28px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    background: var(--surface);
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+  .live {
+    font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-faint);
+    display: flex; align-items: center; gap: 7px; margin-left: auto;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .dot.off { background: var(--danger); }
+
+  main { max-width: 1000px; margin: 0 auto; padding: 26px 28px 80px; }
+
+  h2 {
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 14px;
+    font-family: ui-monospace, monospace; font-weight: 500;
+  }
+  section { margin-bottom: 40px; }
+
+  .empty {
+    color: var(--ink-faint); font-size: 14px; padding: 20px 0;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  /* pending approvals */
+  .req {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px; padding: 18px 20px; margin-bottom: 12px;
+  }
+  .req.destructive { border-left-color: var(--danger); background: var(--danger-soft); }
+  .req-head {
+    display: flex; align-items: baseline; gap: 10px;
+    flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .tool { font-weight: 600; font-size: 15px; }
+  .target { color: var(--ink-soft); font-size: 14px; }
+  .badge {
+    font-family: ui-monospace, monospace; font-size: 10px;
+    letter-spacing: .07em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 3px;
+    background: var(--danger); color: var(--surface); font-weight: 700;
+  }
+  .waiting { margin-left: auto; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .cmd {
+    background: var(--sunk); border-radius: 3px; padding: 11px 13px;
+    font-family: ui-monospace, monospace; font-size: 13px;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+    margin-bottom: 14px;
+  }
+  details { margin-bottom: 14px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--ink-faint); }
+  details pre {
+    margin: 10px 0 0; background: var(--sunk); border-radius: 3px;
+    padding: 11px 13px; font-size: 12px; overflow-x: auto;
+  }
+  .actions { display: flex; gap: 10px; }
+  button {
+    font: inherit; font-size: 14px; font-weight: 600;
+    padding: 8px 18px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  }
+  button:hover { border-color: var(--ink-faint); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.allow { background: var(--ok); border-color: var(--ok); color: #fff; }
+  button.deny { background: var(--danger); border-color: var(--danger); color: #fff; }
+  button[disabled] { opacity: .5; cursor: default; }
+
+  /* timeline */
+  .row {
+    display: grid; grid-template-columns: 74px 1fr auto;
+    gap: 14px; padding: 9px 0; align-items: baseline;
+    border-bottom: 1px solid var(--line-soft); font-size: 14px;
+  }
+  .time { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .what { min-width: 0; }
+  .what .server { color: var(--ink-faint); font-size: 13px; }
+  .what .detail {
+    font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--ink-soft);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .verdict {
+    font-family: ui-monospace, monospace; font-size: 11px;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px; white-space: nowrap;
+  }
+  .verdict.allowed { background: var(--ok-soft); color: var(--ok); }
+  .verdict.denied { background: var(--danger-soft); color: var(--danger); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SSH Manager — control plane</h1>
+  <span class="live"><span class="dot" id="dot"></span><span id="conn">connecting</span></span>
+</header>
+
+<main>
+  <section>
+    <h2>Waiting for you</h2>
+    <div id="pending"></div>
+  </section>
+
+  <section>
+    <h2>What your agents did</h2>
+    <div id="timeline"></div>
+  </section>
+</main>
+
+<script>
+  const token = new URLSearchParams(location.search).get('token');
+  const pendingEl = document.getElementById('pending');
+  const timelineEl = document.getElementById('timeline');
+  const dot = document.getElementById('dot');
+  const conn = document.getElementById('conn');
+
+  const pending = new Map();
+  let timeline = [];
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const clock = ts => {
+    const d = new Date(ts);
+    return isNaN(d) ? '' : d.toTimeString().slice(0, 8);
+  };
+
+  function renderPending() {
+    if (pending.size === 0) {
+      pendingEl.innerHTML = '<p class="empty">Nothing waiting. Actions that need approval will appear here and stay until you decide.</p>';
+      return;
+    }
+    pendingEl.innerHTML = [...pending.values()].map(r => `
+      <div class="req ${r.destructive ? 'destructive' : ''}">
+        <div class="req-head">
+          <span class="tool">${esc(r.tool)}</span>
+          <span class="target">${esc(r.user || '')}@${esc(r.host || '')} · ${esc(r.server)}</span>
+          ${r.destructive ? '<span class="badge">destructive</span>' : ''}
+          <span class="waiting" data-since="${r.receivedAt}">waiting</span>
+        </div>
+        ${r.command ? `<div class="cmd">${esc(r.command)}</div>` : ''}
+        <details><summary>Arguments</summary><pre>${esc(JSON.stringify(r.args, null, 2))}</pre></details>
+        <div class="actions">
+          <button class="deny" data-id="${esc(r.id)}" data-decision="deny">Refuse</button>
+          <button class="allow" data-id="${esc(r.id)}" data-decision="allow">Approve</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function renderTimeline() {
+    if (timeline.length === 0) {
+      timelineEl.innerHTML = '<p class="empty">Nothing yet. Approvals show up here, and so does every audited action once a server has AUDIT_LOG set.</p>';
+      return;
+    }
+    timelineEl.innerHTML = timeline.slice().reverse().slice(0, 200).map(e => {
+      const detail = e.command || (e.args ? JSON.stringify(e.args) : '');
+      return `<div class="row">
+        <span class="time">${esc(clock(e.ts))}</span>
+        <span class="what">
+          <strong>${esc(e.tool || '—')}</strong> <span class="server">${esc(e.server || '')}</span>
+          ${detail ? `<div class="detail">${esc(detail)}</div>` : ''}
+        </span>
+        <span class="verdict ${e.allowed ? 'allowed' : 'denied'}">${e.allowed ? 'ran' : 'refused'}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Live "waiting 12s" counters, so a request that has been sitting there looks
+  // like it has been sitting there.
+  setInterval(() => {
+    for (const el of document.querySelectorAll('.waiting[data-since]')) {
+      const s = Math.round((Date.now() - Number(el.dataset.since)) / 1000);
+      el.textContent = `waiting ${s}s`;
+    }
+  }, 1000);
+
+  pendingEl.addEventListener('click', async event => {
+    const button = event.target.closest('button[data-id]');
+    if (!button) return;
+    for (const b of button.parentElement.querySelectorAll('button')) b.disabled = true;
+    try {
+      await fetch(`/api/decide?token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: button.dataset.id, decision: button.dataset.decision }),
+      });
+    } catch {
+      for (const b of button.parentElement.querySelectorAll('button')) b.disabled = false;
+    }
+  });
+
+  async function load() {
+    const res = await fetch(`/api/state?token=${encodeURIComponent(token)}`);
+    const state = await res.json();
+    pending.clear();
+    for (const r of state.pending) pending.set(r.id, { ...r, receivedAt: Date.now() - (r.waitingMs || 0) });
+    timeline = state.timeline || [];
+    renderPending();
+    renderTimeline();
+  }
+
+  function connect() {
+    const source = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+    source.onopen = () => { dot.classList.remove('off'); conn.textContent = 'live'; };
+    source.onerror = () => { dot.classList.add('off'); conn.textContent = 'reconnecting'; };
+    source.onmessage = event => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'pending') {
+        pending.set(msg.request.id, { ...msg.request, receivedAt: Date.now() });
+        renderPending();
+      } else if (msg.type === 'resolved' || msg.type === 'expired') {
+        pending.delete(msg.id);
+        renderPending();
+      } else if (msg.type === 'timeline') {
+        timeline.push(msg.entry);
+        renderTimeline();
+      }
+    };
+  }
+
+  load().then(connect).catch(() => { conn.textContent = 'failed'; dot.classList.add('off'); });
+</script>
+</body>
+</html>

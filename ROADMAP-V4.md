@@ -25,8 +25,8 @@ optional and never required for the engine to run.
 | **`ssh-manager vault`** (`cli/vault.js`) | **done** — list, add, remove, import, status |
 | Loader integration | **done** — vault sits above files, below the process environment |
 | **Approval broker** (`src/approval.js`) | **done** — pause an action, ask a human, deny on any failure |
-| Control plane UI | next |
-| Homebrew formula | after that |
+| **Control plane** (`src/control-plane.js`, `cli/control.js`) | **done** — approval queue + timeline, no dependency |
+| Homebrew formula | next |
 
 ## Done: the vault
 
@@ -95,18 +95,49 @@ Found while testing end to end, both now guarded:
   where nothing is listening** — an hour of confusion. `isControlPlaneListening`
   now checks the length and says what is wrong.
 
-## Next: the interface
+## Done: the control plane
 
-Two screens, and only two, until they prove their worth:
+```bash
+ssh-manager control      # prints a tokenised localhost URL, runs in the foreground
+```
 
-- **The timeline** — what the agents did. The audit log is already JSONL; this is
-  a reader, not a new data source.
-- **The approval queue** — what is waiting, on which machine, what it will do.
+Two screens, as planned, and nothing else: **what is waiting for you**, and
+**what your agents did**. No terminal, no SFTP browser — that market has an
+incumbent with nine months' head start, and a control plane that opens on a
+terminal is just a late SSH client.
 
-Explicitly **not** in the first version: terminal, SFTP browser, file editor.
-That market has an incumbent with nine months' head start and a release every
-five days. A control plane that opens on a terminal is just a late SSH client.
-The first screen has to be the one nobody else shows.
+Not an Electron app, and **no new dependency**: Node's `http` and `net` plus one
+HTML file. It therefore runs anywhere the engine runs, including on a server
+reached through the tunnels this project already manages, and it can be wrapped
+in a desktop shell later without rewriting anything.
+
+### The token is not decoration
+
+This process approves root shell commands, and an unauthenticated HTTP server on
+localhost is reachable by every process on the machine **and by any web page the
+user has open** — a page can POST to 127.0.0.1. Without a secret, a visited
+website could approve an agent's `rm -rf`. Hence, all tested:
+
+- a random token on every request, compared in constant time;
+- the `Host` header must be a loopback literal, which is what stops DNS
+  rebinding (a hostile domain resolving to 127.0.0.1);
+- the listener binds `127.0.0.1`, never `0.0.0.0`;
+- the page is served `no-store` under a CSP of `default-src 'none'`, and loads
+  nothing from the network.
+
+### Behaviours that matter
+
+- **Closing the control plane refuses what is pending** rather than leaving
+  agents to hit their own timeouts.
+- **Deciding twice returns 409** instead of writing to a closed socket — two
+  browser tabs, two clicks.
+- **The timeline follows the audit log**, so it shows actions that never needed
+  approval, and survives a malformed line.
+- The engine giving up first removes the entry, so the UI never offers a
+  decision nobody is waiting for.
+
+Found by the test: an audit file that is empty when the control plane starts had
+its offset left unset, so every later line was skipped as history.
 
 ## Non-negotiables
 

@@ -373,6 +373,10 @@ main() {
         tools)
             cmd_tools "$@"
             ;;
+        control)
+            # v4 control plane: approval socket + local page.
+            node "$SCRIPT_DIR/control.js" "$@"
+            ;;
         vault)
             # v4 encrypted credential store. Implemented in Node because it uses
             # the same SecretStore the MCP server reads from — one code path for
