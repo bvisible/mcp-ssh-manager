@@ -9,20 +9,19 @@ import { state } from '@/lib/api';
 
 export function App() {
   const { view, sessions, activeId, setPendingCount } = useWorkspace();
-  const session = sessions.find(s => s.id === activeId);
 
   // The pending count belongs on the rail, so it is fetched once here rather
   // than by whichever screen happens to be open.
   useEffect(() => {
     let cancelled = false;
-    state
-      .get()
-      .then(current => !cancelled && setPendingCount(current.pending.length))
-      .catch(() => { /* the badge is not worth an error banner */ });
+    const refresh = () =>
+      state
+        .get()
+        .then(current => !cancelled && setPendingCount(current.pending.length))
+        .catch(() => { /* the badge is not worth an error banner */ });
+    void refresh();
     const stop = state.subscribe(event => {
-      if (event.type === 'state' || event.type === 'pending') {
-        state.get().then(current => setPendingCount(current.pending.length)).catch(() => {});
-      }
+      if (event.type === 'state' || event.type === 'pending') void refresh();
     });
     return () => { cancelled = true; stop(); };
   }, [setPendingCount]);
@@ -30,17 +29,34 @@ export function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {session ? (
-          session.kind === 'shell' ? (
-            <ShellPage key={session.id} server={session.server} />
-          ) : (
-            <FilesPage key={session.id} server={session.server} />
-          )
-        ) : view === 'servers' ? (
-          <ServersPage />
-        ) : (
-          <Placeholder view={view} />
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Sessions stay mounted and are hidden rather than unmounted. Two
+            reasons, and the second is not cosmetic: switching away would lose
+            the directory you had navigated to, and it would *close the shell* —
+            its cleanup disposes the connection. A tab you can click away from
+            and come back to is the whole point of having tabs. */}
+        {sessions.map(session => (
+          <div
+            key={session.id}
+            className="absolute inset-0 flex flex-col"
+            style={{ display: activeId === session.id ? 'flex' : 'none' }}
+            // Hidden panes are not reachable by keyboard or screen reader; the
+            // active one is a normal part of the page.
+            aria-hidden={activeId !== session.id}
+            inert={activeId !== session.id}
+          >
+            {session.kind === 'shell' ? (
+              <ShellPage server={session.server} hidden={activeId !== session.id} />
+            ) : (
+              <FilesPage server={session.server} />
+            )}
+          </div>
+        ))}
+
+        {activeId === null && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {view === 'servers' ? <ServersPage /> : <Placeholder view={view} />}
+          </div>
         )}
       </main>
     </div>
