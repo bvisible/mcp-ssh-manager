@@ -39,7 +39,7 @@ export const VALID_APPROVAL_MODES = new Set([ASK_NEVER, ASK_DESTRUCTIVE, ASK_ALW
 
 // sun_path limit for Unix domain sockets: 104 bytes on macOS/BSD, 108 on Linux.
 // Take the smaller so a path that works on one platform works on both.
-const MAX_SOCKET_PATH = 104;
+export const MAX_SOCKET_PATH = 104;
 
 // Commands that destroy data or take a service down. Deliberately short: this
 // decides what interrupts a human, and a list that cries wolf gets clicked

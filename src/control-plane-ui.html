@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SSH Manager — control plane</title>
+<!-- Inlined rather than served from a route: the browser requests a favicon
+     without the token, which would be refused 401 and log an error on every
+     load. A data URI costs no request at all. -->
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzExMTQxOCIvPjxwYXRoIGQ9Ik04IDExbDUgNS01IDUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzNkZGM4NCIgc3Ryb2tlLXdpZHRoPSIyLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xNyAyMWg3IiBzdHJva2U9IiM4YjkzYTEiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4=">
+<link rel="stylesheet" href="/vendor/xterm.css">
 <style>
   :root {
     --ground: #f6f7f9; --surface: #fff; --sunk: #edeff3;
@@ -235,6 +240,16 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
+  /* terminal */
+  .term-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .term-bar select { width: auto; min-width: 180px; }
+  .term-note { font-size: 13px; color: var(--ink-faint); }
+  #termHost {
+    background: #000; border: 1px solid var(--line); border-radius: 4px;
+    padding: 10px; min-height: 420px;
+  }
+  #termHost[hidden] { display: none; }
+
   /* timeline */
   .row {
     display: grid; grid-template-columns: 74px 1fr auto;
@@ -267,6 +282,7 @@
     <button role="tab" data-panel="health" aria-selected="false">Health</button>
     <button role="tab" data-panel="live" aria-selected="false">Live<span class="count" id="liveCount" hidden>0</span></button>
     <button role="tab" data-panel="activity" aria-selected="false">Activity</button>
+    <button role="tab" data-panel="terminal" aria-selected="false">Terminal</button>
     <button role="tab" data-panel="options" aria-selected="false">Options</button>
   </nav>
   <span class="live"><span class="dot" id="dot"></span><span id="conn">connecting</span></span>
@@ -326,6 +342,19 @@
     <section>
       <h2>What your agents are running, as it happens</h2>
       <div id="streams"></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-terminal" hidden>
+    <section>
+      <h2>Take the keyboard</h2>
+      <div class="term-bar">
+        <select id="termServer"><option value="">Choose a server…</option></select>
+        <button id="termOpen" class="small allow">Open a shell</button>
+        <button id="termClose" class="small deny" hidden>Close</button>
+        <span class="term-note" id="termNote">A real shell, with colours and full-screen programs. The security modes do not apply here — they constrain agents, and this is you.</span>
+      </div>
+      <div id="termHost" hidden></div>
     </section>
   </div>
 
@@ -461,6 +490,7 @@
   let servers = [];
 
   function renderServers() {
+    fillTerminalServers();
     if (servers.length === 0) {
       serversEl.innerHTML = '<p class="empty">No server in the vault yet. Add one above, or run <code>ssh-manager vault import</code> to bring over what is already in your .env.</p>';
       return;
@@ -558,6 +588,119 @@
     servers = data.servers || [];
     renderServers();
   }
+
+  // --- terminal ---
+  const termServer = document.getElementById('termServer');
+
+  /**
+   * Keep the shell picker in step with the vault. Called from renderServers so
+   * a server added on the Servers screen is immediately openable here, and one
+   * just deleted stops being offered.
+   */
+  function fillTerminalServers() {
+    const select = document.getElementById('termServer');
+    const previous = select.value;
+    select.innerHTML = '<option value="">Choose a server…</option>'
+      + servers.map(s => `<option value="${esc(s.name)}">${esc(s.name)} — ${esc(s.user || '')}@${esc(s.host)}</option>`).join('');
+    if (servers.some(s => s.name === previous)) select.value = previous;
+  }
+  const termOpen = document.getElementById('termOpen');
+  const termClose = document.getElementById('termClose');
+  const termNote = document.getElementById('termNote');
+  const termHost = document.getElementById('termHost');
+  let term = null;
+  let termId = null;
+  let termSource = null;
+
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+  const toB64 = str => btoa(String.fromCharCode(...enc.encode(str)));
+  const fromB64 = b64 => dec.decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+
+  function fitTerminal() {
+    if (!term) return;
+    // Measure a character and derive the grid, rather than pulling in the fit
+    // addon for the one number it computes.
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;font-family:monospace;font-size:13px';
+    probe.textContent = '0'.repeat(80);
+    termHost.appendChild(probe);
+    const charWidth = probe.getBoundingClientRect().width / 80;
+    probe.remove();
+    const cols = Math.max(20, Math.floor((termHost.clientWidth - 20) / charWidth));
+    const rows = Math.max(10, Math.floor((termHost.clientHeight - 20) / 17));
+    term.resize(cols, rows);
+    if (termId) {
+      fetch(`/api/terminal/resize?token=${encodeURIComponent(token)}&id=${encodeURIComponent(termId)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cols, rows }),
+      }).catch(() => {});
+    }
+  }
+
+  async function openTerminal() {
+    const server = termServer.value;
+    if (!server) { termNote.textContent = 'Choose a server first.'; return; }
+    termOpen.disabled = true;
+    termNote.textContent = `Connecting to ${server}…`;
+
+    try {
+      const res = await fetch(`/api/terminal?token=${encodeURIComponent(token)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ server, cols: 100, rows: 30 }),
+      });
+      const body = await res.json();
+      if (!res.ok) { termNote.textContent = `Could not open a shell: ${body.error}`; termOpen.disabled = false; return; }
+
+      termId = body.id;
+      termHost.hidden = false;
+      termHost.innerHTML = '';
+      term = new Terminal({
+        fontFamily: 'ui-monospace, Menlo, monospace',
+        fontSize: 13,
+        cursorBlink: true,
+        theme: { background: '#000000' },
+      });
+      term.open(termHost);
+      term.onData(data => {
+        fetch(`/api/terminal/input?token=${encodeURIComponent(token)}&id=${encodeURIComponent(termId)}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ data: toB64(data) }),
+        }).catch(() => {});
+      });
+
+      termSource = new EventSource(`/api/terminal/stream?token=${encodeURIComponent(token)}&id=${encodeURIComponent(termId)}`);
+      termSource.onmessage = event => {
+        const msg = JSON.parse(event.data);
+        term.write(fromB64(msg.chunk));
+      };
+
+      fitTerminal();
+      window.addEventListener('resize', fitTerminal);
+      term.focus();
+      termNote.textContent = `Connected to ${server}.`;
+      termClose.hidden = false;
+    } catch (error) {
+      termNote.textContent = `Could not open a shell: ${error.message}`;
+      termOpen.disabled = false;
+    }
+  }
+
+  async function closeTerminal() {
+    if (termId) {
+      await fetch(`/api/terminal?token=${encodeURIComponent(token)}&id=${encodeURIComponent(termId)}`, { method: 'DELETE' }).catch(() => {});
+    }
+    termSource?.close();
+    term?.dispose();
+    term = null; termId = null; termSource = null;
+    termHost.hidden = true;
+    termClose.hidden = true;
+    termOpen.disabled = false;
+    termNote.textContent = 'Shell closed.';
+  }
+
+  termOpen.addEventListener('click', openTerminal);
+  termClose.addEventListener('click', closeTerminal);
 
   // --- options: groups and host keys ---
   const groupsEl = document.getElementById('groups');
@@ -825,5 +968,6 @@
 
   load().then(connect).catch(() => { conn.textContent = 'failed'; dot.classList.add('off'); });
 </script>
+<script src="/vendor/xterm.js"></script>
 </body>
 </html>

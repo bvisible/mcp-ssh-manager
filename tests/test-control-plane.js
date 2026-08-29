@@ -9,7 +9,6 @@
 // actually unblocks the engine waiting on the socket.
 import assert from 'assert';
 import fs from 'fs';
-import net from 'net';
 import os from 'os';
 import path from 'path';
 import http from 'http';
@@ -101,7 +100,7 @@ async function testTokenIsRequired() {
 }
 
 async function testDnsRebindingIsBlocked() {
-  const { plane, base } = await startPlane();
+  const { plane } = await startPlane();
 
   // A hostile page can point its own domain at 127.0.0.1 and reach this server
   // with the browser's cooperation. The Host header is what separates that from
@@ -248,7 +247,7 @@ async function testUiIsServedWithoutExternalResources() {
   assert.match(res.headers.get('cache-control') || '', /no-store/);
   assert.ok(!/(src|href)\s*=\s*["']https?:/i.test(html),
     'the page must not load anything from the network');
-  assert.ok(res.headers.get('content-security-policy')?.includes("default-src 'none'"),
+  assert.ok(res.headers.get('content-security-policy')?.includes('default-src \'none\''),
     'a restrictive CSP must be set');
   ok('the page is served no-store, with a strict CSP and no external resources');
 }

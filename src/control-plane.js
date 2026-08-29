@@ -33,6 +33,7 @@ import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
 import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
+import { MAX_SOCKET_PATH } from './approval.js';
 import SSHManager from './ssh-manager.js';
 import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck } from './health-monitor.js';
 import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
@@ -55,6 +56,12 @@ const TIMELINE_LIMIT = 500;
  * @property {number} receivedAt - Epoch ms, for showing how long it has waited
  */
 
+/**
+ * How much terminal output is replayed to a screen that attaches late. Enough
+ * for a login banner and a screenful, small enough that idle shells cost little.
+ */
+const TERMINAL_BACKLOG_BYTES = 64 * 1024;
+
 export class ControlPlane {
   /**
    * @param {Object} options - Configuration
@@ -72,6 +79,9 @@ export class ControlPlane {
     // window opened mid-command still shows what came before.
     this.streams = new StreamRegistry();
     this.streamServer = null;
+    // Interactive shells opened from the terminal screen, keyed by id.
+    /** @type {Map<string, {ssh: any, stream: any, server: string, subscribers: Set<import('http').ServerResponse>, backlog: string[], backlogBytes: number}>} */
+    this.terminals = new Map();
     this.token = crypto.randomBytes(24).toString('hex');
 
     /** @type {Map<string, PendingRequest>} */
@@ -93,6 +103,19 @@ export class ControlPlane {
    * @returns {Promise<{url: string, socketPath: string}>} Where to point a browser
    */
   async start() {
+    // Checked before binding, because bind() reports an over-long path as
+    // EADDRINUSE — an error that sends you looking for a process that does not
+    // exist, on a socket file that is not there. macOS/BSD cap sun_path at 104
+    // bytes, and a project checked out under a long path reaches that easily.
+    for (const [label, socket] of [['approval', this.socketPath], ['stream', streamSocketPath()]]) {
+      const size = Buffer.byteLength(socket);
+      if (size > MAX_SOCKET_PATH) {
+        throw new Error(
+          `The ${label} socket path is ${size} bytes, over the ${MAX_SOCKET_PATH}-byte limit for Unix sockets: `
+          + `${socket}\nSet SSH_MANAGER_HOME to a shorter directory.`
+        );
+      }
+    }
     await this.#startSocketServer();
     await this.#startStreamServer();
     const url = await this.#startHttpServer();
@@ -119,6 +142,10 @@ export class ControlPlane {
       entry.settle('deny', 'Control plane shutting down');
     }
     this.pending.clear();
+
+    // Interactive shells hold an SSH connection each; leaving them would leak
+    // a session per terminal ever opened.
+    for (const id of [...this.terminals.keys()]) this.#disposeTerminal(id);
 
     await Promise.all([
       new Promise(resolve => (this.socketServer ? this.socketServer.close(() => resolve(undefined)) : resolve(undefined))),
@@ -248,6 +275,12 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
     if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
     if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
+    if (req.method === 'GET' && url.pathname.startsWith('/vendor/')) return this.#serveVendor(url.pathname, res);
+    if (req.method === 'POST' && url.pathname === '/api/terminal') return this.#openTerminal(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/terminal/stream') return this.#streamTerminal(url.searchParams.get('id'), res);
+    if (req.method === 'POST' && url.pathname === '/api/terminal/input') return this.#terminalInput(url.searchParams.get('id'), req, res);
+    if (req.method === 'POST' && url.pathname === '/api/terminal/resize') return this.#terminalResize(url.searchParams.get('id'), req, res);
+    if (req.method === 'DELETE' && url.pathname === '/api/terminal') return this.#closeTerminal(url.searchParams.get('id'), res);
     if (req.method === 'GET' && url.pathname === '/api/options') return this.#serveOptions(res);
     if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
       return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
@@ -284,14 +317,22 @@ export class ControlPlane {
 
   /** @param {import('http').ServerResponse} res - Response */
   #serveUi(res) {
-    const html = fs.readFileSync(path.join(__dirname, 'control-plane-ui.html'), 'utf8');
+    // The token is stamped into the asset URLs here rather than left to the
+    // page: a <link> or <script> tag cannot add a header or read the query
+    // string before the browser fetches it, so a plain /vendor/… href would be
+    // refused 401 and the terminal would silently render as a blank box.
+    const html = fs.readFileSync(path.join(__dirname, 'control-plane-ui.html'), 'utf8')
+      .replace(/"\/vendor\/([a-z0-9.-]+)"/g, (_, file) => `"/vendor/${file}?token=${this.token}"`);
     res.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
       // This page holds a token that approves root commands: never cached, and
-      // no resource may be loaded from anywhere else.
+      // no resource may be loaded from anywhere but this server. 'self' covers
+      // the vendored xterm.js and its stylesheet; nothing external is ever
+      // fetched, which the tests assert.
       'cache-control': 'no-store',
       'content-security-policy':
-        'default-src \'none\'; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; connect-src \'self\'',
+        'default-src \'none\'; style-src \'self\' \'unsafe-inline\'; '
+        + 'script-src \'self\' \'unsafe-inline\'; connect-src \'self\'; img-src \'self\' data:',
     });
     res.end(html);
   }
@@ -491,6 +532,196 @@ export class ControlPlane {
   #json(res, status, payload) {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify(payload));
+  }
+
+  /**
+   * Serve the vendored browser assets (xterm.js and its stylesheet).
+   *
+   * Vendored rather than a dependency: the engine has no runtime dependencies,
+   * and pushing a 477 KB browser library onto everyone who installs the MCP
+   * server — including those who never open a window — would spend that for
+   * nothing.
+   *
+   * @param {string} pathname - Requested path
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveVendor(pathname, res) {
+    // Only these two files, matched exactly: this is the one route serving from
+    // disk, and a path taken from a URL is how directory traversal happens.
+    const allowed = {
+      '/vendor/xterm.js': { file: 'xterm.js', type: 'text/javascript' },
+      '/vendor/xterm.css': { file: 'xterm.css', type: 'text/css' },
+    };
+    const asset = allowed[pathname];
+    if (!asset) {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('Not found\n');
+      return;
+    }
+    try {
+      const body = fs.readFileSync(path.join(__dirname, '..', 'vendor', 'xterm', asset.file));
+      res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-store' });
+      res.end(body);
+    } catch (error) {
+      res.writeHead(500, { 'content-type': 'text/plain' });
+      res.end(`Cannot read ${asset.file}\n`);
+    }
+  }
+
+  /**
+   * Open an interactive shell on a server.
+   *
+   * `ssh2` allocates the remote pseudo-terminal itself, so this needs no native
+   * module: colours, `top`, `vim`, Ctrl-C and window resizing all work because
+   * the remote side believes it is talking to a real terminal.
+   *
+   * Deliberately not subject to the readonly/restricted modes: those exist to
+   * constrain an *agent*, and whoever holds this token is the operator who
+   * configured them and already has the credentials. Constraining them here
+   * would be theatre.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #openTerminal(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.server || '').toLowerCase();
+      /** @type {Record<string, any>} */
+      let servers = {};
+      try {
+        servers = this.store.getAllDecrypted();
+      } catch (error) {
+        return this.#json(res, 500, { error: `Cannot read the vault: ${error.message}` });
+      }
+      if (!servers[name]) return this.#json(res, 404, { error: 'No such server in the vault' });
+
+      const id = crypto.randomUUID();
+      const ssh = new SSHManager({ ...servers[name], name });
+
+      try {
+        await ssh.connect({ readyTimeout: 15000 });
+        const stream = await new Promise((resolve, reject) => {
+          ssh.client.shell(
+            { term: 'xterm-256color', cols: payload.cols || 80, rows: payload.rows || 24 },
+            (error, channel) => (error ? reject(error) : resolve(channel))
+          );
+        });
+
+        const entry = { ssh, stream, server: name, subscribers: new Set(), backlog: [], backlogBytes: 0 };
+        this.terminals.set(id, entry);
+
+        const push = (channel, chunk) => {
+          const payloadLine = `data: ${JSON.stringify({ channel, chunk: chunk.toString('base64') })}\n\n`;
+          // Kept so a screen that attaches after the shell opened still shows
+          // the login banner and the first prompt, which arrive in the gap
+          // between the shell opening and the browser subscribing. Bounded, or
+          // a `tail -f` left running would grow the process without limit.
+          entry.backlog.push(payloadLine);
+          entry.backlogBytes += payloadLine.length;
+          while (entry.backlogBytes > TERMINAL_BACKLOG_BYTES && entry.backlog.length > 1) {
+            entry.backlogBytes -= entry.backlog.shift().length;
+          }
+          for (const subscriber of entry.subscribers) {
+            try { subscriber.write(payloadLine); } catch { entry.subscribers.delete(subscriber); }
+          }
+        };
+        // Base64 because terminal output is bytes, not text: escape sequences
+        // and partial UTF-8 do not survive a round trip through JSON strings.
+        stream.on('data', chunk => push('stdout', chunk));
+        stream.stderr?.on('data', chunk => push('stderr', chunk));
+        stream.on('close', () => this.#disposeTerminal(id));
+
+        logger.info('Interactive shell opened', { server: name });
+        return this.#json(res, 200, { id, server: name });
+      } catch (error) {
+        try { ssh.dispose(); } catch { /* best effort */ }
+        return this.#json(res, 502, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #streamTerminal(id, res) {
+    const entry = id ? this.terminals.get(id) : null;
+    if (!entry) return this.#json(res, 404, { error: 'No such terminal' });
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+    });
+    res.write(': connected\n\n');
+    for (const line of entry.backlog) {
+      try { res.write(line); } catch { break; }
+    }
+    entry.subscribers.add(res);
+    res.on('close', () => entry.subscribers.delete(res));
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #terminalInput(id, req, res) {
+    const entry = id ? this.terminals.get(id) : null;
+    if (!entry) return this.#json(res, 404, { error: 'No such terminal' });
+    this.#readJsonBody(req, res, payload => {
+      try {
+        entry.stream.write(Buffer.from(String(payload.data || ''), 'base64'));
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #terminalResize(id, req, res) {
+    const entry = id ? this.terminals.get(id) : null;
+    if (!entry) return this.#json(res, 404, { error: 'No such terminal' });
+    this.#readJsonBody(req, res, payload => {
+      try {
+        // Without this, a full-screen program draws for the wrong window size
+        // and the display is garbled the moment anyone resizes.
+        entry.stream.setWindow(payload.rows || 24, payload.cols || 80, 0, 0);
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #closeTerminal(id, res) {
+    if (!id || !this.terminals.has(id)) return this.#json(res, 404, { error: 'No such terminal' });
+    this.#disposeTerminal(id);
+    return this.#json(res, 200, { ok: true });
+  }
+
+  /**
+   * Close a shell and release its SSH connection.
+   * @param {string} id - Terminal id
+   */
+  #disposeTerminal(id) {
+    const entry = this.terminals.get(id);
+    if (!entry) return;
+    this.terminals.delete(id);
+    for (const subscriber of entry.subscribers) {
+      try { subscriber.end(); } catch { /* already gone */ }
+    }
+    try { entry.stream.end(); } catch { /* already closed */ }
+    try { entry.ssh.dispose(); } catch { /* best effort */ }
+    logger.info('Interactive shell closed', { server: entry.server });
   }
 
   /**
