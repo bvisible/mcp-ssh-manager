@@ -126,7 +126,12 @@ function fallbackKeyPath() {
  * clear-text .env it replaces, and it keeps the vault usable on Windows, in
  * containers and over SSH sessions with no desktop keyring.
  *
- * @returns {{ key: Buffer, source: 'keychain'|'file' }}
+ * `minted` says the key did not exist and was created here. The caller needs
+ * that: a fresh key against an existing vault means every secret in it is
+ * unreadable, and generating one silently is how an operator finds out weeks
+ * later, from a failed deploy, that their credentials are gone.
+ *
+ * @returns {{ key: Buffer, source: 'keychain'|'file', minted: boolean }}
  */
 export function resolveMasterKey() {
   // SSH_MANAGER_KEY_SOURCE=file skips the OS keychain entirely. Needed wherever
@@ -137,25 +142,25 @@ export function resolveMasterKey() {
 
   const fromKeychain = forceFile ? null : readKeyFromKeychain();
   if (fromKeychain && fromKeychain.length === KEY_BYTES) {
-    return { key: fromKeychain, source: 'keychain' };
+    return { key: fromKeychain, source: 'keychain', minted: false };
   }
 
   const keyFile = fallbackKeyPath();
   if (fs.existsSync(keyFile)) {
     const key = Buffer.from(fs.readFileSync(keyFile, 'utf8').trim(), 'base64');
-    if (key.length === KEY_BYTES) return { key, source: 'file' };
+    if (key.length === KEY_BYTES) return { key, source: 'file', minted: false };
   }
 
   // First use: mint a key and try to put it somewhere safe.
   const key = crypto.randomBytes(KEY_BYTES);
   if (!forceFile && writeKeyToKeychain(key)) {
-    return { key, source: 'keychain' };
+    return { key, source: 'keychain', minted: true };
   }
 
   fs.mkdirSync(path.dirname(keyFile), { recursive: true, mode: 0o700 });
   fs.writeFileSync(keyFile, key.toString('base64'), { mode: 0o600 });
   logger.warn('Vault key stored in a file: no OS keychain available', { keyFile });
-  return { key, source: 'file' };
+  return { key, source: 'file', minted: true };
 }
 
 /**
@@ -214,15 +219,112 @@ export class SecretStore {
     this.keySource = null;
   }
 
+  /**
+   * Whether the vault on disk holds anything encrypted. Read straight from the
+   * file rather than through the store, because this runs before a key exists.
+   *
+   * @returns {boolean}
+   */
+  #vaultHoldsSecrets() {
+    if (!fs.existsSync(this.vaultPath)) return false;
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.vaultPath, 'utf8'));
+      return Object.values(raw.servers || {}).some(server =>
+        SECRET_FIELDS.some(field => typeof (/** @type {any} */ (server))[field] === 'string'
+          && (/** @type {any} */ (server))[field].startsWith('v1:')));
+    } catch {
+      // An unreadable vault is a different problem, reported where it is read.
+      return false;
+    }
+  }
+
+
+  /**
+   * Can this machine's key actually open what is in the vault?
+   *
+   * Separate from unlock() because the commands that reassure an operator —
+   * `vault list`, `vault status` — read the file without ever decrypting a
+   * value, and so reported "3 servers, encrypted: password" for a vault whose
+   * key was gone. Something that looks like confirmation has to be
+   * confirmation.
+   *
+   * @returns {{ ok: boolean, reason?: string, checked: number }}
+   */
+  checkKey() {
+    if (!fs.existsSync(this.vaultPath)) return { ok: true, checked: 0 };
+
+    /** @type {any} */
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(this.vaultPath, 'utf8'));
+    } catch (error) {
+      return { ok: false, reason: `The vault file is unreadable: ${error.message}`, checked: 0 };
+    }
+
+    /** @type {string[]} */
+    const encrypted = [];
+    for (const server of Object.values(raw.servers || {})) {
+      for (const field of SECRET_FIELDS) {
+        const value = (/** @type {any} */ (server))[field];
+        if (typeof value === 'string' && value.startsWith('v1:')) encrypted.push(value);
+      }
+    }
+    if (encrypted.length === 0) return { ok: true, checked: 0 };
+
+    try {
+      this.unlock();
+    } catch (error) {
+      return { ok: false, reason: error.message, checked: 0 };
+    }
+
+    // One value is enough: they share a key, so either all of them open or
+    // none do.
+    try {
+      decryptValue(encrypted[0], /** @type {Buffer} */ (this.key));
+      return { ok: true, checked: encrypted.length };
+    } catch {
+      return {
+        ok: false,
+        checked: encrypted.length,
+        reason: `The key on this machine does not decrypt ${this.vaultPath}.\n`
+          + 'Restore from a recovery file (ssh-manager vault restore <file>), '
+          + 're-import from a .env, or move the vault aside and start again.',
+      };
+    }
+  }
+
   /** @returns {boolean} True when a vault file exists on disk */
   exists() {
     return fs.existsSync(this.vaultPath);
   }
 
-  /** Load (or create) the master key. Idempotent. */
+  /**
+   * Load (or create) the master key. Idempotent.
+   *
+   * Refuses one specific pairing: a key that was just minted against a vault
+   * that already holds encrypted values. That combination has exactly one
+   * cause — the real key is gone (a new machine, a wiped keychain, a deleted
+   * key file) — and exactly one honest response, which is to say so. Carrying
+   * on would re-encrypt new secrets under the new key while the old ones stay
+   * unreadable, and nothing would look wrong until a connection failed.
+   *
+   * @throws {Error} when the key cannot open the vault that is there
+   */
   unlock() {
     if (this.key) return;
-    const { key, source } = resolveMasterKey();
+    const { key, source, minted } = resolveMasterKey();
+    if (minted && this.#vaultHoldsSecrets()) {
+      throw Object.assign(
+        new Error(
+          `The vault at ${this.vaultPath} is encrypted with a key this machine no longer has.\n`
+          + 'A new key was generated, which cannot read it. Nothing has been overwritten.\n\n'
+          + 'If you have a recovery file: ssh-manager vault restore <file>\n'
+          + 'If the servers are still in a .env: delete the vault and run ssh-manager vault import\n'
+          + `Otherwise the secrets in it are unrecoverable — move ${this.vaultPath} aside and start again.`
+        ),
+        { code: 'VAULT_KEY_MISMATCH' }
+      );
+    }
     this.key = key;
     this.keySource = source;
   }
