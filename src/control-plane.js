@@ -33,6 +33,7 @@ import { execFile } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { safeInteger } from './shell-quote.js';
 import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
 import { ConfigLoader } from './config-loader.js';
 import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
@@ -40,7 +41,7 @@ import { MAX_SOCKET_PATH } from './approval.js';
 import SSHManager from './ssh-manager.js';
 import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck } from './health-monitor.js';
 import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
-import { listGroups, setServerConfigProvider } from './server-groups.js';
+import { listGroups, getGroup, createGroup, updateGroup, deleteGroup, executeOnGroup, setServerConfigProvider } from './server-groups.js';
 import { readPublishedTunnels } from './tunnel-manager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +95,24 @@ function withTimeout(work, ms = 15000) {
     new Promise((_, reject) =>
       setTimeout(() => reject(new Error('The server stopped answering')), ms).unref()),
   ]);
+}
+
+
+/**
+ * Whether a group exists, without the exception.
+ *
+ * `getGroup` throws for an unknown name — reasonable for a tool call, wrong as
+ * a test, and using it as one made every "create" report the group missing.
+ *
+ * @param {string} name - Group name
+ * @returns {any|null}
+ */
+function findGroup(name) {
+  try {
+    return getGroup(name);
+  } catch {
+    return null;
+  }
 }
 
 /** @param {any} sftp - SFTP session @param {string} dir - Path to resolve */
@@ -187,6 +206,22 @@ export class ControlPlane {
    * @returns {Promise<{url: string, socketPath: string}>} Where to point a browser
    */
   async start() {
+    // Groups are the union of .server-groups.json and the per-server `group`
+    // field, so the group layer needs to know what servers exist. Wired here
+    // rather than inside the options handler: the write routes need it too, and
+    // without it they cannot tell a config-derived group from an unknown one.
+    setServerConfigProvider(() => {
+      try {
+        const raw = this.store.read();
+        return Object.fromEntries(
+          Object.entries(raw.servers).map(([name, config]) => [name, { ...config, name }])
+        );
+      } catch {
+        // An unreadable vault means no config-derived groups, not a failure.
+        return {};
+      }
+    });
+
     // Checked before binding, because bind() reports an over-long path as
     // EADDRINUSE — an error that sends you looking for a process that does not
     // exist, on a socket file that is not there. macOS/BSD cap sun_path at 104
@@ -403,6 +438,9 @@ export class ControlPlane {
     }
     if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
     if (req.method === 'GET' && url.pathname === '/api/migration') return this.#migrationState(res);
+    if (req.method === 'POST' && url.pathname === '/api/groups') return this.#saveGroup(req, res);
+    if (req.method === 'DELETE' && url.pathname === '/api/groups') return this.#deleteGroup(url.searchParams.get('name'), res);
+    if (req.method === 'POST' && url.pathname === '/api/groups/run') return this.#runOnGroup(req, res);
     if (req.method === 'POST' && url.pathname === '/api/migration') return this.#runMigration(req, res);
     if (req.method === 'POST' && url.pathname === '/api/servers') return this.#saveServer(req, res);
     if (req.method === 'DELETE' && url.pathname === '/api/servers') {
@@ -555,6 +593,129 @@ export class ControlPlane {
     res.end(JSON.stringify({ servers, vaultPath: this.store.vaultPath }));
   }
 
+
+
+  /**
+   * Create or edit a group.
+   *
+   * Groups come from two places: explicit lists in `.server-groups.json`, and
+   * the per-server `group` field of the config. The second kind is derived at
+   * read time and cannot be edited here — writing it back would duplicate into
+   * a file what the config already says, and the two would drift.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #saveGroup(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      const name = String(payload.name || '').trim();
+      if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+        return this.#json(res, 400, { error: 'Name must use letters, digits, dashes and underscores' });
+      }
+      const servers = Array.isArray(payload.servers) ? payload.servers.map(String) : [];
+      const options = {
+        description: payload.description ? String(payload.description) : undefined,
+        strategy: payload.strategy === 'sequential' ? 'sequential' : 'parallel',
+        delay: safeInteger(payload.delay, 0),
+        stopOnError: Boolean(payload.stopOnError),
+      };
+
+      try {
+        const existing = findGroup(name);
+        // A config-derived group has no entry to update; saving one would write
+        // a shadow copy that stops following the config.
+        if (existing?.fromConfig && !existing.explicit) {
+          return this.#json(res, 409, {
+            error: `"${name}" comes from the servers' own group field. Edit it there, or pick another name.`,
+          });
+        }
+        if (existing) updateGroup(name, { servers, ...options });
+        else createGroup(name, servers, options);
+        this.#broadcast({ type: 'options' });
+        return this.#json(res, 200, { ok: true, name });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * @param {string|null} name - Group to delete
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #deleteGroup(name, res) {
+    if (!name) return this.#json(res, 400, { error: 'Which group?' });
+    try {
+      const existing = findGroup(name);
+      if (existing?.fromConfig && !existing.explicit) {
+        return this.#json(res, 409, {
+          error: `"${name}" is derived from the servers' group field — remove it there instead.`,
+        });
+      }
+      deleteGroup(name);
+      this.#broadcast({ type: 'options' });
+      return this.#json(res, 200, { ok: true });
+    } catch (error) {
+      return this.#json(res, 400, { error: error.message });
+    }
+  }
+
+  /**
+   * Run one command across a group.
+   *
+   * Answered immediately and reported on the event stream, like transfers: a
+   * command across twenty machines takes as long as the slowest one, and a
+   * request held open that long times out somewhere in between.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #runOnGroup(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.group || '');
+      const command = String(payload.command || '');
+      if (!command.trim()) return this.#json(res, 400, { error: 'A command is required' });
+
+      const group = findGroup(name);
+      if (!group) return this.#json(res, 404, { error: 'No such group' });
+
+      const id = crypto.randomUUID();
+      this.#json(res, 200, { id, servers: group.servers.length });
+
+      /** @type {Record<string, any>} */
+      let vault = {};
+      try {
+        vault = this.store.getAllDecrypted();
+      } catch (error) {
+        this.#broadcast({ type: 'group-run', id, state: 'failed', error: error.message });
+        return;
+      }
+
+      this.#broadcast({ type: 'group-run', id, group: name, command, state: 'started', total: group.servers.length });
+      let done = 0;
+
+      await executeOnGroup(name, async serverName => {
+        const config = vault[serverName];
+        if (!config) throw new Error(`${serverName} is not in the vault`);
+        const ssh = new SSHManager({ ...config, name: serverName });
+        try {
+          await ssh.connect({ readyTimeout: 15000 });
+          const result = await ssh.execCommand(command, { timeout: 120000 });
+          done++;
+          this.#broadcast({
+            type: 'group-run', id, state: 'progress', done, server: serverName,
+            code: result.code, stdout: result.stdout, stderr: result.stderr,
+          });
+          return result;
+        } finally {
+          try { ssh.dispose(); } catch { /* best effort */ }
+        }
+      }).then(
+        () => this.#broadcast({ type: 'group-run', id, state: 'done', done }),
+        error => this.#broadcast({ type: 'group-run', id, state: 'failed', error: error.message })
+      );
+    });
+  }
 
   /**
    * What is still living in a .env rather than in the vault.
@@ -1345,15 +1506,6 @@ export class ControlPlane {
    * @param {import('http').ServerResponse} res - Response
    */
   #serveOptions(res) {
-    // Groups are the union of .server-groups.json and the per-server `group`
-    // field, so the group layer needs to know what servers exist.
-    try {
-      setServerConfigProvider(() => {
-        const raw = this.store.read();
-        return Object.fromEntries(Object.entries(raw.servers).map(([name, config]) => [name, { ...config, name }]));
-      });
-    } catch { /* an unreadable vault just means no config-derived groups */ }
-
     /** @type {any[]} */
     let groups = [];
     try {

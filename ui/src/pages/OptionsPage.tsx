@@ -7,18 +7,37 @@
  * one publishes. Showing a stale list would be worse than saying so.
  */
 import { useEffect, useState } from 'react';
-import { KeyRound, Layers, Loader2, Network, Trash2 } from 'lucide-react';
+import { KeyRound, Layers, Loader2, Network, Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { state, hostKeys, type Options } from '@/lib/api';
+import { state, hostKeys, groups as groupsApi, type Options, type Group, type GroupRunEvent } from '@/lib/api';
+import { GroupDialog } from '@/components/servers/GroupDialog';
+import { useServersStore } from '@/stores/servers.store';
 
 export function OptionsPage() {
   const [options, setOptions] = useState<Options | null>(null);
   const [filter, setFilter] = useState('');
   const [forgetting, setForgetting] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Group | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [run, setRun] = useState<GroupRunEvent | null>(null);
+  const [output, setOutput] = useState<GroupRunEvent[]>([]);
+  const loadServers = useServersStore(s => s.load);
 
   const reload = () => state.options().then(setOptions).catch(() => {});
-  useEffect(() => { void reload(); }, []);
+  useEffect(() => {
+    void reload();
+    // The server list feeds the group form's picker.
+    void loadServers();
+    return state.subscribe(event => {
+      if (event.type === 'options') void reload();
+      if (event.type !== 'group-run') return;
+      const progress = event as unknown as GroupRunEvent;
+      setRun(progress.state === 'done' || progress.state === 'failed' ? null : progress);
+      if (progress.state === 'progress') setOutput(current => [...current, progress]);
+      if (progress.state === 'started') setOutput([]);
+    });
+  }, [loadServers]);
 
   if (!options) {
     return (
@@ -40,21 +59,98 @@ export function OptionsPage() {
 
       <div className="min-h-0 flex-1 space-y-8 overflow-y-auto p-6">
         <section>
-          <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-            <Layers className="h-3.5 w-3.5" />
-            Groups
-            <span className="text-muted-foreground">({options.groups.length})</span>
-          </h2>
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
+              <Layers className="h-3.5 w-3.5" />
+              Groups
+              <span className="text-muted-foreground">({options.groups.length})</span>
+            </h2>
+            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              New group
+            </Button>
+          </div>
+
+          {run && (
+            <div className="mb-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs">
+              Running on {run.group} — {run.done ?? 0} of {run.total ?? 0}
+              {run.server && <span className="ml-2 font-mono">{run.server}</span>}
+            </div>
+          )}
+          {output.length > 0 && (
+            <div className="mb-3 overflow-hidden rounded-md border border-border">
+              <div className="flex items-center gap-2 border-b border-border bg-muted px-3 py-1.5">
+                <span className="text-xs font-medium">Results</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {output.filter(e => e.code === 0).length} of {output.length} succeeded
+                </span>
+                <button className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
+                  onClick={() => setOutput([])}>
+                  clear
+                </button>
+              </div>
+              <div className="max-h-64 overflow-auto">
+              {output.map((entry, index) => (
+                <div key={index} className="border-b border-border-subtle p-2 last:border-b-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium">{entry.server}</span>
+                    <Badge variant={entry.code === 0 ? 'outline' : 'destructive'}>exit {entry.code}</Badge>
+                  </div>
+                  {(entry.stdout || entry.stderr) && (
+                    <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
+                      {entry.stdout}{entry.stderr}
+                    </pre>
+                  )}
+                </div>
+              ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
             {options.groups.map(group => (
-              <div key={group.name} className="rounded-lg border border-border bg-card p-3">
+              <div key={group.name} className="group/card rounded-lg border border-border bg-card p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{group.name}</span>
                   {group.dynamic && <Badge variant="secondary">dynamic</Badge>}
                   {group.fromConfig && <Badge variant="outline">from config</Badge>}
-                  <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                    {group.serverCount}
-                  </span>
+                  <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover/card:opacity-100">
+                    <Button
+                      variant="ghost" size="icon" aria-label={`Run a command on ${group.name}`}
+                      disabled={group.serverCount === 0 || Boolean(run)}
+                      onClick={() => {
+                        const command = window.prompt(`Run on ${group.serverCount} server(s) in "${group.name}"`);
+                        if (command?.trim()) void groupsApi.run(group.name, command);
+                      }}
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                    </Button>
+                    {/* A config-derived group follows the servers' own field;
+                        editing it here would create a copy that stops
+                        following it. */}
+                    {!group.dynamic && (
+                      <>
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${group.name}`}
+                          onClick={() => setEditing(group)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" aria-label={`Delete ${group.name}`}
+                          onClick={async () => {
+                            if (!window.confirm(`Delete the group "${group.name}"? The servers are untouched.`)) return;
+                            try {
+                              await groupsApi.remove(group.name);
+                              void reload();
+                            } catch (e) {
+                              window.alert((e as Error).message);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground tabular-nums">{group.serverCount}</span>
                 </div>
                 {group.description && (
                   <p className="mt-0.5 text-xs text-muted-foreground">{group.description}</p>
@@ -151,6 +247,14 @@ export function OptionsPage() {
           </div>
         </section>
       </div>
+
+      {(creating || editing) && (
+        <GroupDialog
+          group={editing}
+          onClose={() => { setCreating(false); setEditing(null); }}
+          onSaved={() => { setCreating(false); setEditing(null); void reload(); }}
+        />
+      )}
     </div>
   );
 }

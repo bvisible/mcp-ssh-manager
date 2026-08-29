@@ -403,15 +403,53 @@ export interface LiveStream {
   ts: string;
 }
 
+export interface Group {
+  name: string;
+  description?: string;
+  servers: string[];
+  strategy?: 'parallel' | 'sequential';
+  delay?: number;
+  stopOnError?: boolean;
+  /** Built from the servers' own `group` field rather than named in a file. */
+  dynamic?: boolean;
+  fromConfig?: boolean;
+  explicit?: boolean;
+  serverCount: number;
+}
+
+export interface GroupRunEvent {
+  type: 'group-run';
+  id: string;
+  group?: string;
+  command?: string;
+  state: 'started' | 'progress' | 'done' | 'failed';
+  total?: number;
+  done?: number;
+  server?: string;
+  code?: number;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+}
+
+export const groups = {
+  save: (group: Omit<Group, 'serverCount'>) => post<{ ok: true; name: string }>('/api/groups', group),
+
+  remove: async (name: string) => {
+    const response = await fetch(url('/api/groups', { name }), { method: 'DELETE' });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? response.statusText);
+  },
+
+  /**
+   * Answered immediately; results arrive on the event stream. A command across
+   * twenty machines takes as long as the slowest one.
+   */
+  run: (group: string, command: string) =>
+    post<{ id: string; servers: number }>('/api/groups/run', { group, command }),
+};
+
 export interface Options {
-  groups: {
-    name: string;
-    description?: string;
-    servers: string[];
-    dynamic?: boolean;
-    fromConfig?: boolean;
-    serverCount: number;
-  }[];
+  groups: Group[];
   hostKeys: {
     host: string;
     port: number;
@@ -458,5 +496,5 @@ export const state = {
   },
 };
 
-export const api = { servers, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
+export const api = { servers, groups, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
 export type Api = typeof api;
