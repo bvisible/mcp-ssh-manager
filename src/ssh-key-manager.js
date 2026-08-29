@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'child_process';
+import { execSync, execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -135,18 +135,31 @@ export function getCurrentHostKey(host, port = 22) {
  * Remove a host from known_hosts
  */
 export function removeHostKey(host, port = 22) {
+  const hostEntry = port === 22 ? host : `[${host}]:${port}`;
+
+  // Was it there to begin with? ssh-keygen -R succeeds either way, so without
+  // this the function would report success for a host it never touched — and a
+  // control plane would tell an operator it forgot a key that is still there.
+  const wasKnown = isHostKnown(host, port);
+
   try {
-    const hostEntry = port === 22 ? host : `[${host}]:${port}`;
-
-    // Use ssh-keygen to remove the host
-    execSync(`ssh-keygen -R "${hostEntry}"`, { stdio: 'ignore' });
-
-    logger.info('Host key removed', { host, port });
-    return true;
+    // execFileSync, not execSync: arguments are passed to the process directly
+    // instead of through a shell. `host` comes from a server config, which an
+    // operator (or the control plane's own form) can set to anything, so a
+    // value containing a quote or $(...) used to be a command injection here —
+    // the same class of bug fixed across the database and backup builders.
+    execFileSync('ssh-keygen', ['-R', hostEntry], { stdio: 'ignore' });
   } catch (error) {
     logger.error('Failed to remove host key', { host, port, error: error.message });
     throw new Error(`Failed to remove host key: ${error.message}`);
   }
+
+  if (!wasKnown) {
+    logger.info('No host key to remove', { host, port });
+    return false;
+  }
+  logger.info('Host key removed', { host, port });
+  return true;
 }
 
 /**

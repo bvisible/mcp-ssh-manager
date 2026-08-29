@@ -30,6 +30,7 @@ optional and never required for the engine to run.
 | **Desktop app** (`desktop/`) | **done** — native macOS window, 104 KB |
 | **Live command streaming** (`src/live-stream.js`) | **done** — watch the agent work, as it happens |
 | **Server health** | **done** — on-demand probes, never in the background |
+| **Options** (groups, host keys) | **done** — tunnels deliberately absent, see below |
 
 ## Done: the vault
 
@@ -278,6 +279,36 @@ And one real fix the test forced: `readyTimeout` was hard-coded at 60 seconds,
 so checking two unreachable servers took a full minute. Callers can now shorten
 it, and the probe uses 8 seconds — a machine that has not answered by then is
 unreachable as far as a screen is concerned.
+
+## Done: the options screen
+
+Groups and known host keys, both of which live in files this process can read.
+
+**Forgetting a host key** is the one action here, and it earns its place: when a
+machine is rebuilt its host key changes, every connection then fails, and the
+fix is deleting a line from `~/.ssh/known_hosts` identified by a number in an
+error message. Two clicks, like deleting a server — silencing a
+machine-in-the-middle warning should not be one slip.
+
+### Tunnels are deliberately not here
+
+`tunnel-manager.js` keeps open tunnels in a `Map` **inside the MCP server's
+process**, which this process cannot see. Showing an empty or stale tunnel list
+would be worse than showing none, so the screen says where to look instead.
+Fixing it properly means sharing that state across processes — a real design
+question, not a screen.
+
+### A security bug found while wiring it
+
+`removeHostKey()` ran `ssh-keygen -R "${hostEntry}"` **through a shell**, with
+`host` coming from a server config — which an operator, or the control plane's
+own form, can set to anything. Same class as the three advisories fixed on
+2026-08-28, in a file that fix never touched. Now `execFileSync` with arguments
+passed directly, and guarded in the injection test.
+
+It also always returned `true`: `ssh-keygen -R` succeeds whether or not the host
+was there, so the control plane would have told an operator it forgot a key that
+is still in the file. It now checks first and answers honestly.
 
 ## Non-negotiables
 

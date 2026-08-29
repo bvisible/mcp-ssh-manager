@@ -35,6 +35,8 @@ import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js'
 import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
 import SSHManager from './ssh-manager.js';
 import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck } from './health-monitor.js';
+import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
+import { listGroups, setServerConfigProvider } from './server-groups.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -245,6 +247,10 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
     if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
     if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/options') return this.#serveOptions(res);
+    if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
+      return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
+    }
     if (req.method === 'POST' && url.pathname === '/api/health') {
       return this.#probeHealth(url.searchParams.get('name'), res);
     }
@@ -484,6 +490,70 @@ export class ControlPlane {
   #json(res, status, payload) {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify(payload));
+  }
+
+  /**
+   * Groups and known host keys — the two pieces of state that live in files and
+   * are therefore readable from here.
+   *
+   * Tunnels are deliberately absent: tunnel-manager keeps them in a Map inside
+   * the MCP server's process, so this process cannot see them. Showing an empty
+   * or stale tunnel list would be worse than showing none.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveOptions(res) {
+    // Groups are the union of .server-groups.json and the per-server `group`
+    // field, so the group layer needs to know what servers exist.
+    try {
+      setServerConfigProvider(() => {
+        const raw = this.store.read();
+        return Object.fromEntries(Object.entries(raw.servers).map(([name, config]) => [name, { ...config, name }]));
+      });
+    } catch { /* an unreadable vault just means no config-derived groups */ }
+
+    /** @type {any[]} */
+    let groups = [];
+    try {
+      groups = listGroups();
+    } catch (error) {
+      logger.warn('Cannot list groups', { error: error.message });
+    }
+
+    /** @type {any[]} */
+    let hostKeys = [];
+    try {
+      hostKeys = listKnownHosts();
+    } catch (error) {
+      logger.warn('Cannot read known_hosts', { error: error.message });
+    }
+
+    this.#json(res, 200, { groups, hostKeys });
+  }
+
+  /**
+   * Forget a host key.
+   *
+   * The reason this belongs in a control plane: when a server is rebuilt its
+   * host key changes, every connection then fails with a warning, and the fix
+   * is to remove the stale entry. Doing that by hand means editing
+   * ~/.ssh/known_hosts with a line number from an error message.
+   *
+   * @param {string|null} host - Host to forget
+   * @param {string|null} port - Port, defaults to 22
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #forgetHostKey(host, port, res) {
+    if (!host) return this.#json(res, 400, { error: 'No host named' });
+    try {
+      const removed = removeHostKey(host, Number(port) || 22);
+      if (!removed) return this.#json(res, 404, { error: 'No such host key' });
+      logger.info('Host key forgotten from the control plane', { host, port });
+      this.#broadcast({ type: 'options' });
+      return this.#json(res, 200, { ok: true });
+    } catch (error) {
+      return this.#json(res, 500, { error: error.message });
+    }
   }
 
   /**

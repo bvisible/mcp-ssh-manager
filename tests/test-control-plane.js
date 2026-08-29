@@ -378,6 +378,32 @@ async function testHealthProbe() {
   ok('health probing requires the token');
 }
 
+async function testOptionsAndHostKeys() {
+  const { plane, base } = await startPlane({ vaultPath: path.join(scratch, 'opts.json') });
+  const q = `token=${plane.token}`;
+
+  const res = await call(base, `/api/options?${q}`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.ok(Array.isArray(body.groups), 'groups must be an array even when there are none');
+  assert.ok(Array.isArray(body.hostKeys), 'hostKeys must be an array even when known_hosts is absent');
+  ok('options are served, with empty arrays rather than errors when nothing exists');
+
+  // Forgetting a host key is how a changed-key warning gets silenced, so it
+  // must be honest about whether it did anything.
+  const missing = await call(base, `/api/hostkey?${q}&host=nothing.invalid&port=22`, { method: 'DELETE' });
+  assert.strictEqual(missing.status, 404, 'forgetting an unknown host must 404, not pretend');
+  const noHost = await call(base, `/api/hostkey?${q}`, { method: 'DELETE' });
+  assert.strictEqual(noHost.status, 400, 'no host named must be rejected');
+  ok('forgetting a host key is honest about unknown and missing hosts');
+
+  const noToken = await call(base, '/api/options');
+  assert.strictEqual(noToken.status, 401);
+  const delNoToken = await call(base, '/api/hostkey?host=x', { method: 'DELETE' });
+  assert.strictEqual(delNoToken.status, 401, 'forgetting a host key without the token must be refused');
+  ok('options and host-key removal require the token');
+}
+
 async function main() {
   try {
     await testTokenIsRequired();
@@ -391,6 +417,7 @@ async function main() {
     await testUiIsServedWithoutExternalResources();
     await testServerManagement();
     await testHealthProbe();
+    await testOptionsAndHostKeys();
     console.log(`\n✅ control plane tests passed (${passed} checks)`);
   } finally {
     for (const plane of planes) {

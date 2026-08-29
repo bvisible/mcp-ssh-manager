@@ -218,6 +218,23 @@
   .gauge i.crit { background: var(--danger); }
   .hcard .err { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--danger); }
 
+  /* options */
+  .opt-group { margin-bottom: 30px; }
+  .opt-group h3 { margin: 0 0 4px; font-size: 15px; }
+  .opt-group .sub { font-size: 13px; color: var(--ink-faint); margin: 0 0 14px; }
+  .grp, .hk {
+    display: grid; grid-template-columns: 1fr auto; gap: 14px;
+    padding: 11px 0; border-bottom: 1px solid var(--line-soft); align-items: center;
+  }
+  .grp .gname, .hk .hkhost { font-weight: 600; font-size: 14px; }
+  .grp .members, .hk .hkalgo {
+    font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--ink-soft);
+  }
+  .hk .fp {
+    font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--ink-faint);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
   /* timeline */
   .row {
     display: grid; grid-template-columns: 74px 1fr auto;
@@ -250,6 +267,7 @@
     <button role="tab" data-panel="health" aria-selected="false">Health</button>
     <button role="tab" data-panel="live" aria-selected="false">Live<span class="count" id="liveCount" hidden>0</span></button>
     <button role="tab" data-panel="activity" aria-selected="false">Activity</button>
+    <button role="tab" data-panel="options" aria-selected="false">Options</button>
   </nav>
   <span class="live"><span class="dot" id="dot"></span><span id="conn">connecting</span></span>
 </header>
@@ -308,6 +326,26 @@
     <section>
       <h2>What your agents are running, as it happens</h2>
       <div id="streams"></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-options" hidden>
+    <section>
+      <h2>Groups and host keys</h2>
+      <div class="opt-group">
+        <h3>Server groups</h3>
+        <p class="sub">Membership is the union of <code>.server-groups.json</code> and each server's <code>group</code> field.</p>
+        <div id="groups"></div>
+      </div>
+      <div class="opt-group">
+        <h3>Known host keys</h3>
+        <p class="sub">When a machine is rebuilt its host key changes and every connection fails. Forgetting the old entry is the fix.</p>
+        <div id="hostkeys"></div>
+      </div>
+      <div class="opt-group">
+        <h3>Tunnels</h3>
+        <p class="sub">Not shown here: open tunnels live inside the MCP server's own process, which this one cannot see. Use <code>ssh_tunnel_list</code> from your agent.</p>
+      </div>
     </section>
   </div>
 
@@ -520,6 +558,55 @@
     renderServers();
   }
 
+  // --- options: groups and host keys ---
+  const groupsEl = document.getElementById('groups');
+  const hostKeysEl = document.getElementById('hostkeys');
+
+  function renderOptions(data) {
+    const groups = data.groups || [];
+    groupsEl.innerHTML = groups.length === 0
+      ? '<p class="empty">No group. Tag a server with a <code>group</code> field, or create one with <code>ssh_group_manage</code>.</p>'
+      : groups.map(g => `<div class="grp">
+          <div>
+            <div class="gname">${esc(g.name)}</div>
+            <div class="members">${esc((g.servers || []).join(', ') || 'no member')}</div>
+          </div>
+          <span class="tag">${esc(String(g.source || 'file'))}</span>
+        </div>`).join('');
+
+    const keys = data.hostKeys || [];
+    hostKeysEl.innerHTML = keys.length === 0
+      ? '<p class="empty">No known host yet. Entries appear the first time you connect to a machine.</p>'
+      : keys.map(k => `<div class="hk">
+          <div>
+            <div class="hkhost">${esc(k.host)}${k.port && k.port !== 22 ? `:${esc(k.port)}` : ''}</div>
+            <div class="hkalgo">${esc(k.type || k.algorithm || 'unknown')}</div>
+            ${k.fingerprint ? `<div class="fp">${esc(k.fingerprint)}</div>` : ''}
+          </div>
+          <button class="small deny" data-forget="${esc(k.host)}" data-port="${esc(k.port || 22)}">Forget</button>
+        </div>`).join('');
+  }
+
+  hostKeysEl.addEventListener('click', async event => {
+    const button = event.target.closest('button[data-forget]');
+    if (!button) return;
+    // Two clicks, like deleting a server: forgetting a host key is how a
+    // machine-in-the-middle warning gets silenced, so it should not be one slip.
+    if (button.dataset.armed !== 'yes') {
+      button.dataset.armed = 'yes';
+      button.textContent = 'Really forget?';
+      setTimeout(() => { button.dataset.armed = ''; button.textContent = 'Forget'; }, 10000);
+      return;
+    }
+    await fetch(`/api/hostkey?token=${encodeURIComponent(token)}&host=${encodeURIComponent(button.dataset.forget)}&port=${encodeURIComponent(button.dataset.port)}`, { method: 'DELETE' });
+    await loadOptions();
+  });
+
+  async function loadOptions() {
+    const res = await fetch(`/api/options?token=${encodeURIComponent(token)}`);
+    renderOptions(await res.json());
+  }
+
   // --- health ---
   const healthEl = document.getElementById('health');
   const probeAll = document.getElementById('probeAll');
@@ -678,6 +765,7 @@
     renderTimeline();
     await loadServers();
     await loadStreams();
+    await loadOptions();
     renderHealth();
   }
 
@@ -700,6 +788,8 @@
         loadServers();
       } else if (msg.type === 'stream') {
         applyStreamEvent(msg.event);
+      } else if (msg.type === 'options') {
+        loadOptions();
       }
     };
   }
