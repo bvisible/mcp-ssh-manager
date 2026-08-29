@@ -3,10 +3,14 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { ServersPage } from '@/pages/ServersPage';
 import { ShellPage } from '@/pages/ShellPage';
 import { FilesPage } from '@/pages/FilesPage';
-import { Placeholder } from '@/pages/Placeholder';
+import { WaitingPage } from '@/pages/WaitingPage';
+import { HealthPage } from '@/pages/HealthPage';
+import { LivePage } from '@/pages/LivePage';
+import { ActivityPage } from '@/pages/ActivityPage';
+import { OptionsPage } from '@/pages/OptionsPage';
 import { useWorkspace } from '@/stores/workspace';
 import { useServersStore } from '@/stores/servers.store';
-import { state } from '@/lib/api';
+import { state, QUEUE_EVENTS } from '@/lib/api';
 
 export function App() {
   const { view, tabs, activeTabId, setPendingCount } = useWorkspace();
@@ -28,7 +32,7 @@ export function App() {
         .catch(() => { /* the badge is not worth an error banner */ });
     void refresh();
     const stop = state.subscribe(event => {
-      if (event.type === 'state' || event.type === 'pending') void refresh();
+      if ((QUEUE_EVENTS as readonly string[]).includes(event.type)) void refresh();
     });
     return () => { cancelled = true; stop(); };
   }, [setPendingCount]);
@@ -64,7 +68,12 @@ export function App() {
 
         {activeTabId === null && (
           <div className="flex min-h-0 flex-1 flex-col">
-            {view === 'servers' ? <ServersPage /> : <Placeholder view={view} />}
+            {view === 'servers' && <ServersPage />}
+            {view === 'waiting' && <WaitingPage />}
+            {view === 'health' && <HealthPage />}
+            {view === 'live' && <LivePage />}
+            {view === 'activity' && <ActivityPage />}
+            {view === 'options' && <OptionsPage />}
           </div>
         )}
       </main>

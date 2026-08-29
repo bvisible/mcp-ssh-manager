@@ -28,9 +28,15 @@ cd ui && npm run dev    # or iterate with hot reload
 ```
 
 **The output in `../dist/ui` is committed.** `npm install mcp-ssh-manager` must
-never compile anything — the same bargain as the vendored xterm.js. Nothing in
-this directory is a dependency of the published package: `ui/` has its own
-`package.json` precisely so React never appears in the engine's tree.
+never compile anything. Nothing in this directory is a dependency of the
+published package: `ui/` has its own `package.json` precisely so React never
+appears in the engine's tree.
+
+This replaced a single hand-written HTML page and a vendored copy of xterm.js.
+Both are gone: the app bundles xterm from npm, and a second implementation of
+every screen was a second implementation to keep in step — which nobody does,
+and the one that drifts is always the one nobody looks at. What remains at `/`
+when the build is missing is a page that says which command to run.
 
 Rebuild and commit `dist/ui` whenever you change anything here, or the shipped
 interface and the source drift apart.

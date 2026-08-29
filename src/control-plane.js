@@ -362,7 +362,6 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
     if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
     if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
-    if (req.method === 'GET' && url.pathname.startsWith('/vendor/')) return this.#serveVendor(url.pathname, res);
     if (req.method === 'POST' && url.pathname === '/api/terminal') return this.#openTerminal(req, res);
     if (req.method === 'GET' && url.pathname === '/api/terminal/stream') return this.#streamTerminal(url.searchParams.get('id'), res);
     if (req.method === 'POST' && url.pathname === '/api/terminal/input') return this.#terminalInput(url.searchParams.get('id'), req, res);
@@ -424,26 +423,43 @@ export class ControlPlane {
     return crypto.timingSafeEqual(expected, actual);
   }
 
-  /** @param {import('http').ServerResponse} res - Response */
+  /**
+   * Shown only when the built interface is missing — a source checkout that has
+   * not run `npm run build:ui`.
+   *
+   * This used to be a second, complete implementation of every screen. Keeping
+   * two of those in step is work nobody does, and the one that drifts is always
+   * the one nobody looks at. A fallback that says what to run is more useful
+   * than a fallback that quietly behaves differently.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
   #serveUi(res) {
-    // The token is stamped into the asset URLs here rather than left to the
-    // page: a <link> or <script> tag cannot add a header or read the query
-    // string before the browser fetches it, so a plain /vendor/… href would be
-    // refused 401 and the terminal would silently render as a blank box.
-    const html = fs.readFileSync(path.join(__dirname, 'control-plane-ui.html'), 'utf8')
-      .replace(/"\/vendor\/([a-z0-9.-]+)"/g, (_, file) => `"/vendor/${file}?token=${this.token}"`);
     res.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
-      // This page holds a token that approves root commands: never cached, and
-      // no resource may be loaded from anywhere but this server. 'self' covers
-      // the vendored xterm.js and its stylesheet; nothing external is ever
-      // fetched, which the tests assert.
       'cache-control': 'no-store',
-      'content-security-policy':
-        'default-src \'none\'; style-src \'self\' \'unsafe-inline\'; '
-        + 'script-src \'self\' \'unsafe-inline\'; connect-src \'self\'; img-src \'self\' data:',
+      'content-security-policy': 'default-src \'none\'; style-src \'unsafe-inline\'',
     });
-    res.end(html);
+    res.end(`<!doctype html>
+<meta charset="utf-8">
+<title>SSH Manager — interface not built</title>
+<style>
+  body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         max-width: 34rem; margin: 20vh auto; padding: 0 1.5rem; color: #111418; }
+  code { background: #edeff3; border-radius: 4px; padding: 0.15em 0.4em; font-size: 0.9em; }
+  p { color: #4a5058; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #111418; color: #e6e8eb; } code { background: #23272e; } p { color: #99a1ab; }
+  }
+</style>
+<h1>The interface has not been built</h1>
+<p>The control plane is running and its API is answering — only the page is missing.
+   This happens in a source checkout that has not built it yet.</p>
+<p>From the repository root:</p>
+<p><code>npm run build:ui</code></p>
+<p>Then reload. An installed copy from npm ships the built interface, so this
+   page should never appear there.</p>
+`);
   }
 
   /** @param {import('http').ServerResponse} res - Response */
@@ -714,40 +730,6 @@ export class ControlPlane {
     } catch {
       res.writeHead(404, { 'content-type': 'text/plain' });
       res.end('Not found\n');
-    }
-  }
-
-  /**
-   * Serve the vendored browser assets (xterm.js and its stylesheet).
-   *
-   * Vendored rather than a dependency: the engine has no runtime dependencies,
-   * and pushing a 477 KB browser library onto everyone who installs the MCP
-   * server — including those who never open a window — would spend that for
-   * nothing.
-   *
-   * @param {string} pathname - Requested path
-   * @param {import('http').ServerResponse} res - Response
-   */
-  #serveVendor(pathname, res) {
-    // Only these two files, matched exactly: this is the one route serving from
-    // disk, and a path taken from a URL is how directory traversal happens.
-    const allowed = {
-      '/vendor/xterm.js': { file: 'xterm.js', type: 'text/javascript' },
-      '/vendor/xterm.css': { file: 'xterm.css', type: 'text/css' },
-    };
-    const asset = allowed[pathname];
-    if (!asset) {
-      res.writeHead(404, { 'content-type': 'text/plain' });
-      res.end('Not found\n');
-      return;
-    }
-    try {
-      const body = fs.readFileSync(path.join(__dirname, '..', 'vendor', 'xterm', asset.file));
-      res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-store' });
-      res.end(body);
-    } catch (error) {
-      res.writeHead(500, { 'content-type': 'text/plain' });
-      res.end(`Cannot read ${asset.file}\n`);
     }
   }
 

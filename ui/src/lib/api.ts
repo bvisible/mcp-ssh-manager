@@ -306,19 +306,121 @@ export const ssh = {
     post<{ stdout: string; stderr: string; code: number }>('/api/execute', { server, command }),
 };
 
+export interface HealthResult {
+  server: string;
+  host: string;
+  reachable: boolean;
+  tookMs: number;
+  error?: string;
+  /** The engine's own shape — snake_case in places, and `disks`, not `disk`. */
+  cpu?: { percent?: number; usage?: string; status?: string };
+  memory?: { total_mb?: number; used_mb?: number; free_mb?: number; percent?: number; status?: string };
+  disks?: { mount: string; size: string; used: string; avail: string; percent: number; status?: string }[];
+  load_average?: string;
+  /** Already reads "up 42 days" — prefixing it again is how you get "up up". */
+  uptime?: string;
+  overall_status?: 'healthy' | 'warning' | 'critical';
+}
+
 export const health = {
-  check: (server?: string) => post<{ results: unknown[] }>('/api/health', { server }),
+  /**
+   * Probed on demand, never on a timer: every probe is an SSH handshake, and a
+   * dashboard that connects to every production box on a schedule is worse
+   * than no dashboard.
+   *
+   * The server name goes in the query rather than the body — that is what the
+   * route reads, and sending it in the body silently probed everything.
+   */
+  check: (server?: string) => post<{ results: HealthResult[] }>('/api/health', undefined, { name: server }),
 };
 
+export interface ApprovalRequest {
+  id: string;
+  ts: string;
+  server: string;
+  host: string;
+  user: string;
+  mode: 'unrestricted' | 'readonly' | 'restricted';
+  tool: string;
+  command?: string;
+  destructive: boolean;
+}
+
+/**
+ * What the queue serves: the request as the engine sent it, plus the one thing
+ * the request itself cannot know — how long an agent has been blocked waiting
+ * for an answer.
+ */
+export interface PendingRequest extends ApprovalRequest {
+  waitingMs: number;
+}
+
+export interface TimelineEntry {
+  ts: string;
+  server?: string;
+  tool?: string;
+  command?: string;
+  /** Whether the action went ahead. Absent for entries that record no decision. */
+  allowed?: boolean;
+  reason?: string;
+  /** Which layer decided: the control plane, a security mode, the audit log. */
+  source?: string;
+}
+
+export interface LiveStream {
+  id: string;
+  server: string;
+  command: string;
+  /** null while the command is still running. */
+  code: number | null;
+  scrollback: string;
+  ts: string;
+}
+
+export interface Options {
+  groups: {
+    name: string;
+    description?: string;
+    servers: string[];
+    dynamic?: boolean;
+    fromConfig?: boolean;
+    serverCount: number;
+  }[];
+  hostKeys: {
+    host: string;
+    port: number;
+    /** A host can hold several keys of different types. */
+    keys: { type: string; fingerprint: string }[];
+  }[];
+  tunnels: { id: string; description?: string }[];
+  tunnelsStale: boolean;
+}
+
+export const hostKeys = {
+  forget: async (host: string, port: number) => {
+    const response = await fetch(url('/api/hostkey', { host, port }), { method: 'DELETE' });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? response.statusText);
+  },
+};
+
+/**
+ * The events that change the approval queue. Three, not one: a request appears
+ * (`pending`), is answered (`resolved`), or vanishes because the agent that
+ * asked went away (`expired`). Listening only for the first leaves a badge
+ * showing a number that is no longer true.
+ */
+export const QUEUE_EVENTS = ['pending', 'resolved', 'expired'] as const;
+
 export const state = {
-  get: () => get<{ pending: unknown[]; timeline: unknown[] }>('/api/state'),
-  streams: () => get<{ streams: unknown[] }>('/api/streams'),
-  options: () => get<{ groups: unknown[]; knownHosts: unknown[]; tunnels: unknown[] }>('/api/options'),
-  decide: (id: string, approved: boolean) => post('/api/decide', { id, approved }),
+  get: () => get<{ pending: PendingRequest[]; timeline: TimelineEntry[] }>('/api/state'),
+  streams: () => get<{ streams: LiveStream[] }>('/api/streams'),
+  options: () => get<Options>('/api/options'),
+  decide: (id: string, approved: boolean) =>
+    post('/api/decide', { id, decision: approved ? 'allow' : 'deny' }),
 
   /**
-   * The live channel. One connection carries approvals, timeline entries and
-   * command output; the caller filters by `type`.
+   * The live channel. One connection carries approvals, timeline entries,
+   * command output and transfer progress; the caller filters by `type`.
    */
   subscribe(handler: (event: { type: string; [key: string]: unknown }) => void): () => void {
     const source = new EventSource(url('/api/events'));
@@ -330,5 +432,5 @@ export const state = {
   },
 };
 
-export const api = { servers, files, shells, ssh, health, state };
+export const api = { servers, files, local, transfers, shells, ssh, health, state, hostKeys };
 export type Api = typeof api;

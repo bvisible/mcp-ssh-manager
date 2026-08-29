@@ -188,16 +188,22 @@ async function main() {
     assert.strictEqual(noToken.status, 401, 'a shell is the most dangerous thing here — it must require the token');
     ok('an unknown server 404s, and opening a shell requires the token');
 
-    // --- the vendored assets the screen needs ---
-    for (const [asset, type] of [['/vendor/xterm.js', 'javascript'], ['/vendor/xterm.css', 'css']]) {
+    // --- the built interface, and nothing else, is served from disk ---
+    // xterm.js used to be vendored and served from /vendor. The app bundles it
+    // now, so the only files reaching a browser are the build's own.
+    for (const [asset, type] of [['/app.js', 'javascript'], ['/app.css', 'css']]) {
       const res = await fetch(`${base}${asset}?${q}`);
-      assert.strictEqual(res.status, 200, `${asset} must be served`);
+      assert.strictEqual(res.status, 200, `${asset} must be served — run npm run build:ui`);
       assert.match(res.headers.get('content-type') || '', new RegExp(type));
     }
-    // The one route reading from disk: a path from a URL is how traversal happens.
-    const traversal = await fetch(`${base}/vendor/../package.json?${q}`);
-    assert.notStrictEqual(traversal.status, 200, 'the vendor route must not serve anything outside its allowlist');
-    ok('vendored assets are served, and nothing outside the allowlist is');
+    // These two routes read a path out of a URL, which is how traversal happens.
+    for (const attempt of ['/assets/../../package.json', '/assets/../../../etc/passwd']) {
+      const res = await fetch(`${base}${attempt}?${q}`);
+      assert.notStrictEqual(res.status, 200, `${attempt} must not be served`);
+    }
+    const bundleWithoutToken = await fetch(`${base}/app.js`);
+    assert.strictEqual(bundleWithoutToken.status, 401, 'even the bundle requires the token');
+    ok('the built interface is served, nothing outside it is, and it needs the token');
 
     console.log(`\n✅ terminal tests passed (${passed} checks)`);
   } finally {
