@@ -41,6 +41,7 @@ import { MAX_SOCKET_PATH } from './approval.js';
 import SSHManager from './ssh-manager.js';
 import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck } from './health-monitor.js';
 import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
+import { listSavedCommands, commandsForServer, saveCommand, deleteCommand as deleteSavedCommand, suggestedCommands } from './saved-commands.js';
 import { listGroups, getGroup, createGroup, updateGroup, deleteGroup, executeOnGroup, setServerConfigProvider } from './server-groups.js';
 import { readPublishedTunnels } from './tunnel-manager.js';
 
@@ -449,6 +450,30 @@ export class ControlPlane {
     if (req.method === 'POST' && url.pathname === '/api/groups') return this.#saveGroup(req, res);
     if (req.method === 'DELETE' && url.pathname === '/api/groups') return this.#deleteGroup(url.searchParams.get('name'), res);
     if (req.method === 'POST' && url.pathname === '/api/groups/run') return this.#runOnGroup(req, res);
+
+    // Saved commands: named shortcuts a person picks from a list, as opposed to
+    // the aliases an agent expands.
+    if (req.method === 'GET' && url.pathname === '/api/commands') {
+      const server = url.searchParams.get('server');
+      return this.#json(res, 200, {
+        commands: server ? commandsForServer(server) : listSavedCommands(),
+        suggestions: listSavedCommands().length === 0 ? suggestedCommands() : [],
+      });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/commands') {
+      return this.#readJsonBody(req, res, payload => {
+        try {
+          return this.#json(res, 200, { command: saveCommand(payload) });
+        } catch (error) {
+          return this.#json(res, 400, { error: error.message });
+        }
+      });
+    }
+    if (req.method === 'DELETE' && url.pathname === '/api/commands') {
+      const id = url.searchParams.get('id');
+      return this.#json(res, id && deleteSavedCommand(id) ? 200 : 404,
+        id ? { ok: true } : { error: 'Which command?' });
+    }
     if (req.method === 'POST' && url.pathname === '/api/migration') return this.#runMigration(req, res);
     if (req.method === 'POST' && url.pathname === '/api/servers') return this.#saveServer(req, res);
     if (req.method === 'DELETE' && url.pathname === '/api/servers') {

@@ -11,10 +11,9 @@
  * profile dot they carried.
  */
 import { useState, useRef, useEffect } from 'react'
-import { Server, Clock, HeartPulse, Radio, Activity, Settings, Menu, FolderOpen, X, TerminalSquare, Sun, Moon, Monitor } from 'lucide-react'
+import { Server, Clock, HeartPulse, Radio, Activity, Settings, Menu, FolderOpen, X, TerminalSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useWorkspace, type WorkspaceTab, type ViewId } from '@/stores/workspace'
-import { useTheme, type ThemeMode } from '@/stores/theme'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 /** The screens that always exist, in the order they earn attention. */
@@ -23,8 +22,7 @@ const FIXED_VIEWS: { id: ViewId; label: string; icon: React.ComponentType<{ clas
   { id: 'waiting', label: 'Waiting', icon: Clock },
   { id: 'health', label: 'Health', icon: HeartPulse },
   { id: 'live', label: 'Live', icon: Radio },
-  { id: 'activity', label: 'Activity', icon: Activity },
-  { id: 'options', label: 'Options', icon: Settings }
+  { id: 'activity', label: 'Activity', icon: Activity }
 ]
 
 function getInitials(name: string): string {
@@ -125,75 +123,17 @@ export function Sidebar() {
 
       {tabs.length === 0 && <div className="flex-1" />}
 
-      {/* Pinned to the bottom, where TransHub keeps its settings. */}
+      {/* Pinned to the bottom, where TransHub keeps its settings — the places
+          you configure once belong away from the places you work. */}
       <div className="mt-auto px-1 pb-2 pt-2">
-        <ThemeToggle expanded={sidebarExpanded} />
+        <SidebarItem
+          icon={Settings}
+          label="Options"
+          active={activeTabId === null && view === 'options'}
+          expanded={sidebarExpanded}
+          onClick={() => setView('options')}
+        />
       </div>
-    </div>
-  )
-}
-
-const THEMES: { id: ThemeMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'light', label: 'Light', icon: Sun },
-  { id: 'dark', label: 'Dark', icon: Moon },
-  { id: 'system', label: 'System', icon: Monitor }
-]
-
-/**
- * Three states, not a switch. "Follow the system" is a real preference and the
- * default one — a two-way toggle silently opts you out of it the first time you
- * touch it.
- */
-function ThemeToggle({ expanded }: { expanded: boolean }) {
-  const { mode, resolved, setMode } = useTheme()
-
-  if (!expanded) {
-    // Collapsed, it cycles: there is no room for three targets, and an icon
-    // showing the *current* state is more useful than one showing a choice.
-    const current = THEMES.find((t) => t.id === mode) ?? THEMES[2]
-    const Icon = current.icon
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setMode(THEMES[(THEMES.findIndex((t) => t.id === mode) + 1) % THEMES.length].id)}
-            aria-label={`Theme: ${current.label}. Click to change.`}
-            className="no-drag flex h-9 w-full items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/30 hover:text-foreground"
-          >
-            <Icon className="h-[18px] w-[18px]" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          Theme: {current.label}
-          {mode === 'system' && ` (${resolved})`}
-        </TooltipContent>
-      </Tooltip>
-    )
-  }
-
-  return (
-    <div className="flex gap-0.5 rounded-lg bg-sunk p-0.5">
-      {THEMES.map((theme) => {
-        const Icon = theme.icon
-        const active = mode === theme.id
-        return (
-          <button
-            key={theme.id}
-            onClick={() => setMode(theme.id)}
-            aria-label={theme.label}
-            aria-pressed={active}
-            title={theme.id === 'system' ? `Follow the system (${resolved})` : theme.label}
-            className={cn(
-              'no-drag flex h-7 flex-1 items-center justify-center rounded-md transition-colors',
-              active
-                ? 'bg-card text-foreground shadow-card'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-          </button>
-        )
-      })}
     </div>
   )
 }

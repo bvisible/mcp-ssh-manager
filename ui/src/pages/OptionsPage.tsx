@@ -7,12 +7,60 @@
  * one publishes. Showing a stale list would be worse than saying so.
  */
 import { useEffect, useState } from 'react';
-import { KeyRound, Layers, Loader2, Network, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { KeyRound, Layers, Loader2, Monitor, Moon, Network, Palette, Pencil, Play, Plus, Sun, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { state, hostKeys, groups as groupsApi, type Options, type Group, type GroupRunEvent } from '@/lib/api';
 import { GroupDialog } from '@/components/servers/GroupDialog';
 import { useServersStore } from '@/stores/servers.store';
+import { useTheme, type ThemeMode } from '@/stores/theme';
+import { cn } from '@/lib/utils';
+
+
+const THEMES: { id: ThemeMode; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'system', label: 'Match the desktop', hint: 'follows your system setting, including when it changes', icon: Monitor },
+  { id: 'light', label: 'Light', hint: 'always light, whatever the system does', icon: Sun },
+  { id: 'dark', label: 'Dark', hint: 'always dark', icon: Moon },
+];
+
+/**
+ * Matching the desktop is first and is the default: an application that ignores
+ * the system setting is one you have to configure twice, and most people never
+ * do the second time.
+ */
+function ThemePicker() {
+  const { mode, resolved, setMode } = useTheme();
+  return (
+    <div className="grid gap-2 sm:grid-cols-3">
+      {THEMES.map(theme => {
+        const Icon = theme.icon;
+        const active = mode === theme.id;
+        return (
+          <button
+            key={theme.id}
+            onClick={() => setMode(theme.id)}
+            aria-pressed={active}
+            className={cn(
+              'rounded-lg border p-3 text-left transition-colors',
+              active
+                ? 'border-primary bg-primary/5'
+                : 'border-border bg-card hover:bg-card-hover'
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Icon className={cn('h-4 w-4', active ? 'text-primary' : 'text-muted-foreground')} />
+              <span className="text-sm font-medium">{theme.label}</span>
+              {theme.id === 'system' && (
+                <span className="ml-auto text-[10px] text-muted-foreground">currently {resolved}</span>
+              )}
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">{theme.hint}</p>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function OptionsPage() {
   const [options, setOptions] = useState<Options | null>(null);
@@ -58,6 +106,14 @@ export function OptionsPage() {
       </header>
 
       <div className="min-h-0 flex-1 space-y-8 overflow-y-auto p-6">
+        <section>
+          <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
+            <Palette className="h-3.5 w-3.5" />
+            Appearance
+          </h2>
+          <ThemePicker />
+        </section>
+
         <section>
           <div className="mb-2 flex items-center gap-2">
             <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">

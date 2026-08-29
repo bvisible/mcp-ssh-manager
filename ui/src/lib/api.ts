@@ -162,6 +162,39 @@ export const servers = {
 };
 
 
+
+// ---------------------------------------------------------------------------
+// Saved commands
+// ---------------------------------------------------------------------------
+
+export interface SavedCommand {
+  id: string;
+  name: string;
+  command: string;
+  description?: string;
+  /** Empty means every server. */
+  serverNames: string[];
+  confirmBeforeRun: boolean;
+  workingDirectory?: string;
+}
+
+export const commands = {
+  /**
+   * Pass a server to get the ones offered there — the global list plus those
+   * that name it. `suggestions` is non-empty only when nothing is saved yet.
+   */
+  list: (server?: string) =>
+    get<{ commands: SavedCommand[]; suggestions: Omit<SavedCommand, 'id'>[] }>('/api/commands', { server }),
+
+  save: async (command: Omit<SavedCommand, 'id'> & { id?: string }) =>
+    (await post<{ command: SavedCommand }>('/api/commands', command)).command,
+
+  remove: async (id: string) => {
+    const response = await fetch(url('/api/commands', { id }), { method: 'DELETE' });
+    if (!response.ok) throw new Error(response.statusText);
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Migration from files
 // ---------------------------------------------------------------------------
@@ -496,5 +529,5 @@ export const state = {
   },
 };
 
-export const api = { servers, groups, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
+export const api = { servers, groups, commands, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
 export type Api = typeof api;
