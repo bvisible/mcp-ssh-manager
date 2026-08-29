@@ -52,6 +52,8 @@ ssh-manager vault import      # take what you already have, encrypted
 ssh-manager vault list        # see it, without ever printing a secret
 ssh-manager vault add prod    # add one interactively
 ssh-manager vault status      # where the vault and its key live
+ssh-manager vault backup FILE # a copy that survives a new machine
+ssh-manager vault restore FILE
 ```
 
 AES-256-GCM, master key in your OS keychain (a `0600` file where there is none —
@@ -62,7 +64,15 @@ password that would then be sent to a production server.
 
 The vault sits above your config files and below the process environment, so a
 credential you deliberately stored wins over one left in a `.env`, while an
-operator overriding for one run still wins over both.
+operator overriding for one run still wins over both. Your `.env` is never
+modified — not by `import`, not by the interface — and a setup half in each is
+a normal state, not a broken one.
+
+**The key belongs to this machine.** It is in your keychain, not in the vault
+file, so a vault copied to a new laptop is ciphertext nobody can open.
+`vault backup` writes one copy encrypted under a passphrase you choose, which is
+what makes the move survivable — do that before removing anything from a `.env`.
+Upgrading changes nothing on its own: see **[docs/MIGRATION.md](docs/MIGRATION.md)**.
 
 ### Approve what your agents do, before it runs
 
