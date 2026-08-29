@@ -95,6 +95,11 @@
   --color-sidebar-primary-foreground: oklch(0.99 0 0);
 
   /* Custom TransHub tokens */
+  /* Terminal output keeps a dark ground in both themes; only the shade moves,
+     so it belongs to the page rather than looking like a hole in it. */
+  --color-terminal: oklch(0.22 0.008 250);
+  --color-terminal-foreground: oklch(0.92 0.003 250);
+
   --color-success: oklch(0.55 0.17 145);
   --color-success-light: oklch(0.92 0.05 145);
   --color-warning: oklch(0.65 0.17 70);

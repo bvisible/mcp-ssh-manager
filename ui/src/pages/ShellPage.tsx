@@ -2,6 +2,17 @@ import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { shells, type ShellHandle } from '@/lib/api';
+import { useTheme } from '@/stores/theme';
+
+/**
+ * A terminal is dark in both themes — that is what a terminal is — but the
+ * *shade* has to belong to the page around it, or it reads as a hole punched
+ * in a light window rather than part of the application.
+ */
+const TERMINAL_THEME = {
+  light: { background: '#1c2027', foreground: '#e6e8eb', cursor: '#e6e8eb' },
+  dark: { background: '#111418', foreground: '#e6e8eb', cursor: '#e6e8eb' },
+};
 
 /**
  * A real shell. The PTY is allocated by the remote sshd — ssh2 asks for it — so
@@ -13,6 +24,7 @@ import { shells, type ShellHandle } from '@/lib/api';
  */
 export function ShellPage({ server, hidden = false }: { server: string; hidden?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const resolved = useTheme(s => s.resolved);
   const termRef = useRef<{ term: Terminal; fit: FitAddon; handle: ShellHandle | null } | null>(null);
 
   useEffect(() => {
@@ -23,9 +35,7 @@ export function ShellPage({ server, hidden = false }: { server: string; hidden?:
       fontFamily: "'JetBrains Mono', 'SF Mono', monospace",
       fontSize: 13,
       cursorBlink: true,
-      // Matches the design system's ground rather than xterm's default black,
-      // which reads as a hole punched in the page.
-      theme: { background: '#111418', foreground: '#e6e8eb' },
+      theme: TERMINAL_THEME[resolved],
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -62,7 +72,16 @@ export function ShellPage({ server, hidden = false }: { server: string; hidden?:
       term.dispose();
       termRef.current = null;
     };
+    // Deliberately not depending on the theme: rebuilding the terminal would
+    // drop the connection and everything on screen. The effect below repaints
+    // it instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server]);
+
+  // Following the theme without tearing the session down.
+  useEffect(() => {
+    if (termRef.current) termRef.current.term.options.theme = TERMINAL_THEME[resolved];
+  }, [resolved]);
 
   // Coming back into view: the window may have been resized while this pane was
   // hidden, and a ResizeObserver does not fire for a display:none element.
@@ -80,7 +99,8 @@ export function ShellPage({ server, hidden = false }: { server: string; hidden?:
         <h1 className="text-sm font-medium">{server}</h1>
         <span className="text-xs text-muted-foreground">interactive shell</span>
       </header>
-      <div ref={hostRef} className="min-h-0 flex-1 bg-[#111418] p-2" />
+      <div ref={hostRef} className="min-h-0 flex-1 p-2"
+        style={{ background: TERMINAL_THEME[resolved].background }} />
     </>
   );
 }

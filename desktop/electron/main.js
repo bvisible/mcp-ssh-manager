@@ -21,7 +21,7 @@
  * separate desktop UI: two implementations of the same screens is exactly the
  * trap this project climbed out of when the single-file page was deleted.
  */
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, nativeTheme, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -64,9 +64,10 @@ function createWindow(url) {
     height: 840,
     minWidth: 900,
     minHeight: 600,
-    // Matches the interface's own ground so there is no white flash on launch,
-    // and no seam between the frame and the page.
-    backgroundColor: '#f6f7f9',
+    // The page's own ground, in whichever theme it will resolve to. A fixed
+    // light colour here flashes white for a beat before a dark page paints —
+    // the one moment of the launch anybody actually watches.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#111418' : '#f6f7f9',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     // Moved down and in, so the buttons sit level with the sidebar's own
     // controls rather than on top of them.

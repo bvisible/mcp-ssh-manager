@@ -80,9 +80,11 @@ export function App() {
             key={tab.id}
             className="absolute inset-0 flex flex-col"
             style={{ display: activeTabId === tab.id ? 'flex' : 'none' }}
-            // Hidden panes are not reachable by keyboard or screen reader; the
-            // active one is a normal part of the page.
-            aria-hidden={activeTabId !== tab.id}
+            // `inert` alone: it removes the pane from the accessibility tree and
+            // takes focus out of it. Adding aria-hidden as well is what the
+            // browser warns about — a terminal keeps focus in a hidden textarea,
+            // and aria-hidden over a focused element hides it from assistive
+            // technology while it is still the focus.
             inert={activeTabId !== tab.id}
           >
             {tab.type === 'ssh-terminal' ? (

@@ -98,10 +98,12 @@ export function LivePage() {
                 )}
               </button>
 
+              {/* Output is terminal output, so it keeps a terminal's ground in
+                  both themes — but a shade that belongs to the page. */}
               {open && (
                 <pre className={cn(
-                  'max-h-80 overflow-auto border-t border-border-subtle bg-[#111418] px-3 py-2',
-                  'font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[#e6e8eb]'
+                  'max-h-80 overflow-auto border-t border-border-subtle px-3 py-2',
+                  'bg-terminal font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-terminal-foreground'
                 )}>
                   {stream.scrollback || '(no output yet)'}
                 </pre>
