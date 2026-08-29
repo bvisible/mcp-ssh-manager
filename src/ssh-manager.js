@@ -188,7 +188,7 @@ class SSHManager {
       throw new Error('Not connected to SSH server');
     }
 
-    const { timeout = 30000, cwd, rawCommand = false, stdin = null } = options;
+    const { timeout = 30000, cwd, rawCommand = false, stdin = null, onStdout, onStderr } = options;
     const fullCommand = (cwd && !rawCommand) ? `cd ${cwd} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
@@ -273,11 +273,21 @@ class SSHManager {
         });
 
         stream.on('data', (data) => {
-          stdout += data.toString();
+          const text = data.toString();
+          stdout += text;
+          // Emitted as it arrives, so a watcher sees output during a long
+          // command rather than all at once when it finishes.
+          if (onStdout) {
+            try { onStdout(text); } catch { /* a watcher must never break a command */ }
+          }
         });
 
         stream.stderr.on('data', (data) => {
-          stderr += data.toString();
+          const text = data.toString();
+          stderr += text;
+          if (onStderr) {
+            try { onStderr(text); } catch { /* same */ }
+          }
         });
 
         stream.on('error', (err) => {

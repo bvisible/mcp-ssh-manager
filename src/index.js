@@ -145,6 +145,7 @@ import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 import { evaluatePolicy } from './policy.js';
 import { needsApproval, isControlPlaneListening, requestDecision, buildRequest } from './approval.js';
 import { shellQuote, safeInteger } from './shell-quote.js';
+import { openStream } from './live-stream.js';
 import { auditLog, sanitize } from './audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -358,7 +359,10 @@ async function auditOk(serverName, toolName, args, executionResult) {
  * @param {number} [timeoutMs]
  */
 async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30000) {
-  // Pass through rawCommand and platform if specified
+  // Pass through rawCommand and platform if specified. onStdout/onStderr ride
+  // along in otherOptions to SSHManager.execCommand, which calls them as output
+  // arrives — that is what makes live streaming possible without a second
+  // execution path.
   const { rawCommand, platform = 'linux', ...otherOptions } = options;
 
   // Windows targets: encode the command as PowerShell -EncodedCommand (UTF-16
@@ -776,7 +780,21 @@ registerToolConditional(
       // Log command execution
       const startTime = logger.logCommand(serverName, fullCommand, workingDir);
 
-      const result = await execCommandWithTimeout(ssh, fullCommand, { platform }, cappedTimeout);
+      // Mirror the command to the control plane while it runs, when one is
+      // watching. openStream returns null otherwise, and every call below is
+      // optional-chained — so this costs one stat() when nobody is looking.
+      const live = openStream(serverName, fullCommand);
+      const result = await execCommandWithTimeout(
+        ssh,
+        fullCommand,
+        {
+          platform,
+          onStdout: live ? chunk => live.write('stdout', chunk) : undefined,
+          onStderr: live ? chunk => live.write('stderr', chunk) : undefined,
+        },
+        cappedTimeout
+      );
+      live?.end(result.code ?? null);
 
       // Log command result
       logger.logCommandResult(serverName, fullCommand, startTime, result);

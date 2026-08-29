@@ -32,6 +32,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
+import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +63,10 @@ export class ControlPlane {
     this.port = port;
     this.auditPaths = auditPaths;
     this.store = new SecretStore(vaultPath);
+    // Live command output from the engine, kept with a bounded scrollback so a
+    // window opened mid-command still shows what came before.
+    this.streams = new StreamRegistry();
+    this.streamServer = null;
     this.token = crypto.randomBytes(24).toString('hex');
 
     /** @type {Map<string, PendingRequest>} */
@@ -84,9 +89,17 @@ export class ControlPlane {
    */
   async start() {
     await this.#startSocketServer();
+    await this.#startStreamServer();
     const url = await this.#startHttpServer();
     this.#startAuditTail();
     return { url, socketPath: this.socketPath };
+  }
+
+  async #startStreamServer() {
+    this.streamServer = await listenForStreams(this.streams);
+    // Push every stream event straight to open pages: this is the "watch the
+    // agent work" path, and buffering it would defeat the point.
+    this.streams.subscribe(event => this.#broadcast({ type: 'stream', event }));
   }
 
   /** Stop everything and release the socket. */
@@ -105,8 +118,11 @@ export class ControlPlane {
     await Promise.all([
       new Promise(resolve => (this.socketServer ? this.socketServer.close(() => resolve(undefined)) : resolve(undefined))),
       new Promise(resolve => (this.httpServer ? this.httpServer.close(() => resolve(undefined)) : resolve(undefined))),
+      new Promise(resolve => (this.streamServer ? this.streamServer.close(() => resolve(undefined)) : resolve(undefined))),
     ]);
-    try { fs.unlinkSync(this.socketPath); } catch { /* already gone */ }
+    for (const socket of [this.socketPath, streamSocketPath()]) {
+      try { fs.unlinkSync(socket); } catch { /* already gone */ }
+    }
   }
 
   async #startSocketServer() {
@@ -227,6 +243,10 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
     if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
     if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/streams') {
+      const id = url.searchParams.get('id');
+      return this.#json(res, 200, id ? { stream: this.streams.get(id) } : { streams: this.streams.list() });
+    }
     if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
     if (req.method === 'POST' && url.pathname === '/api/servers') return this.#saveServer(req, res);
     if (req.method === 'DELETE' && url.pathname === '/api/servers') {

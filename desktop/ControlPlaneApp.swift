@@ -146,6 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         var environment = ProcessInfo.processInfo.environment
         let existingPath = environment["PATH"] ?? ""
         environment["PATH"] = (candidatePaths + [existingPath]).joined(separator: ":")
+        // Ask the control plane to stop when this app does, however it dies.
+        // Opt-in on purpose: inferring it killed control planes started with
+        // `ssh-manager control > log &`, where the launching shell exits at once.
+        environment["SSH_MANAGER_PARENT_WATCH"] = "1"
         process.environment = environment
 
         let pipe = Pipe()

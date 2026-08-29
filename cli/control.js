@@ -61,15 +61,18 @@ Close this process and they go back to running unattended.${RESET}
     console.log(`${YELLOW}Tip:${RESET} set ${BOLD}SSH_SERVER_<NAME>_AUDIT_LOG=/path/to/audit.jsonl${RESET} to see everything, not just approvals.\n`);
   }
 
-  // A control plane outliving whatever launched it is worse than none: it keeps
-  // the approval socket, so agents block on a UI nobody can see. When the parent
-  // dies the process is reparented to init, so a changed ppid is the signal.
+  // A control plane outliving the window that launched it is worse than none:
+  // it keeps the approval socket, so agents block on a UI nobody can see. When
+  // the parent dies the process is reparented to init, so a changed ppid is the
+  // signal — but only the desktop app asks for this, by setting
+  // SSH_MANAGER_PARENT_WATCH.
   //
-  // Only when launched by another program: interactively, `nohup` and friends
-  // reparent on purpose and the user means it. (stdin was the first attempt and
-  // was wrong — resume() on an empty pipe fires 'end' immediately, which killed
-  // the control plane the moment the desktop app started it.)
-  if (!process.stdin.isTTY) {
+  // It must not be inferred. Two earlier attempts were wrong, both silently:
+  // watching stdin (resume() on an empty pipe fires 'end' at once, killing the
+  // control plane the instant the app started it), then keying off a non-TTY
+  // stdin — which is also true for `ssh-manager control > log 2>&1 &`, where the
+  // launching shell exits immediately and would take the control plane with it.
+  if (process.env.SSH_MANAGER_PARENT_WATCH) {
     const parentPid = process.ppid;
     const watcher = setInterval(() => {
       if (process.ppid !== parentPid) {

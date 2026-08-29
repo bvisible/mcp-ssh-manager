@@ -27,7 +27,8 @@ optional and never required for the engine to run.
 | **Approval broker** (`src/approval.js`) | **done** — pause an action, ask a human, deny on any failure |
 | **Control plane** (`src/control-plane.js`, `cli/control.js`) | **done** — approval queue + timeline, no dependency |
 | **Homebrew formula** (`Formula/ssh-manager.rb`) | **done** — kept current by the release workflow |
-| **Desktop app** (`desktop/`) | **done** — native macOS window, 100 KB |
+| **Desktop app** (`desktop/`) | **done** — native macOS window, 104 KB |
+| **Live command streaming** (`src/live-stream.js`) | **done** — watch the agent work, as it happens |
 
 ## Done: the vault
 
@@ -211,6 +212,43 @@ Details that matter more than they look:
   the app dutifully started the wrong binary.
 - **Quitting kills the child.** It holds the approval socket; leaving it running
   would keep agents blocked on a UI nobody can see.
+
+## Done: watching the agent work
+
+A fourth screen — **Live** — showing what agents are running while they run it,
+output included. This is the thing no command line can offer, and the reason to
+have a window at all.
+
+```
+prod   tail -f /var/log/app/deploy.log      running
+  [08:14:04] step 14/14 — deploying release 2026.08.29
+  warning: 2 stale releases left on disk
+```
+
+**The scrollback idea comes from TransHub's PtyService** — a bounded circular
+buffer per stream, so a window opened mid-command shows what came before rather
+than starting blank. Same author, relicensed here under MIT with the rest of the
+engine.
+
+Two rules the module may never break, both tested:
+
+- **Nobody watching costs nothing.** No socket → `openStream()` returns null,
+  every call site optional-chains it away, and the command runs exactly as it
+  did before. One `stat()` per command is the entire overhead.
+- **A watcher can never break or slow a command.** Fire-and-forget writes, a
+  subscriber that throws is contained, and the control plane vanishing
+  mid-command does not throw into the execution path.
+
+A **second socket**, next to the approval one: approval is a request/response
+that blocks a command, streaming is a one-way firehose. Sharing one socket would
+let a slow reader of the firehose delay a decision.
+
+### What is deliberately not here
+
+No PTY and no xterm.js. Watching an agent needs the `exec` stream, which ssh2
+already gives us; a PTY (colours, `top`, `vim`, resize) is a different code path
+and xterm.js is a dependency and a bundle. If interactive control is wanted
+later, both belong in the desktop app, not the engine.
 
 ## Non-negotiables
 
