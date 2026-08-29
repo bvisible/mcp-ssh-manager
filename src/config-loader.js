@@ -84,6 +84,8 @@ export class ConfigLoader {
     this.servers = new Map();
     /** @type {string|null} */
     this.configSource = null;
+    /** @type {string|null} The .env actually read, once one has been. */
+    this.envPath = null;
   }
 
   /**
@@ -123,6 +125,9 @@ export class ConfigLoader {
     if (!preferToml && fs.existsSync(envPath)) {
       try {
         this.loadEnvConfig(envPath);
+        // Kept so callers can name the file they are talking about — the
+        // control plane tells the operator which .env it found.
+        this.envPath = envPath;
         loadedFromEnv = true;
         logger.info(`Loaded SSH configuration from .env: ${envPath}`);
       } catch (error) {

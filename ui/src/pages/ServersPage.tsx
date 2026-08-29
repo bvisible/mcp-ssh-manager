@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ServerGrid } from '@/components/servers/ServerGrid';
 import { ServerDialog } from '@/components/servers/ServerDialog';
+import { MigrationBanner } from '@/components/servers/MigrationBanner';
 import { useServersStore } from '@/stores/servers.store';
 import type { ServerConfig } from '@/lib/api';
 
@@ -64,6 +65,7 @@ export function ServersPage() {
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <MigrationBanner onImported={() => void load()} />
         <ServerGrid
           onEditServer={setEditing}
           onDeleteServer={server => void remove(server.name)}

@@ -34,6 +34,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
+import { ConfigLoader } from './config-loader.js';
 import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
 import { MAX_SOCKET_PATH } from './approval.js';
 import SSHManager from './ssh-manager.js';
@@ -401,6 +402,8 @@ export class ControlPlane {
       return this.#json(res, 200, id ? { stream: this.streams.get(id) } : { streams: this.streams.list() });
     }
     if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
+    if (req.method === 'GET' && url.pathname === '/api/migration') return this.#migrationState(res);
+    if (req.method === 'POST' && url.pathname === '/api/migration') return this.#runMigration(req, res);
     if (req.method === 'POST' && url.pathname === '/api/servers') return this.#saveServer(req, res);
     if (req.method === 'DELETE' && url.pathname === '/api/servers') {
       return this.#deleteServer(url.searchParams.get('name'), res);
@@ -550,6 +553,85 @@ export class ControlPlane {
     }
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify({ servers, vaultPath: this.store.vaultPath }));
+  }
+
+
+  /**
+   * What is still living in a .env rather than in the vault.
+   *
+   * Offered, never performed. Somebody upgrading from 3.8 has a working setup
+   * and no obligation to change it; the vault earns its place by being better,
+   * not by moving their files while they are not looking. This route exists so
+   * the interface can *mention* it — which is the part that was missing, since
+   * nobody reads a changelog.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #migrationState(res) {
+    try {
+      const loader = new ConfigLoader();
+      // Deliberately without the vault: what is wanted here is what the files
+      // alone hold, so a server present in both is not counted as pending.
+      const loaded = await loader.load({ vaultPath: null });
+      const fromFiles = loaded instanceof Map ? Object.fromEntries(loaded) : loaded;
+      const inVault = new Set(this.store.exists() ? this.store.listServers() : []);
+
+      const pending = Object.entries(fromFiles)
+        .filter(([name]) => !inVault.has(name))
+        .map(([name, config]) => ({
+          name,
+          host: config.host,
+          user: config.user,
+          // The count, never the values: this travels to a browser.
+          secrets: SECRET_FIELDS.filter(field => config[field]).length,
+          source: config.source ?? 'env',
+        }));
+
+      return this.#json(res, 200, {
+        pending,
+        inVault: inVault.size,
+        envPath: loader.envPath ?? null,
+        // A vault with no recovery file is a vault that does not survive this
+        // machine, and that is exactly what the operator should know before
+        // being told they can clean up their .env.
+        hasVault: this.store.exists(),
+      });
+    } catch (error) {
+      return this.#json(res, 200, { pending: [], inVault: 0, error: error.message });
+    }
+  }
+
+  /**
+   * Copy servers from the files into the vault. Named ones only — a button
+   * that moves everything is a button somebody presses by accident.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #runMigration(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const wanted = Array.isArray(payload.servers) ? payload.servers.map(String) : [];
+      if (wanted.length === 0) return this.#json(res, 400, { error: 'Name the servers to import' });
+
+      try {
+        const loaded = await new ConfigLoader().load({ vaultPath: null });
+        const fromFiles = loaded instanceof Map ? Object.fromEntries(loaded) : loaded;
+
+        const imported = [];
+        for (const name of wanted) {
+          if (!fromFiles[name]) continue;
+          this.store.setServer(name, fromFiles[name]);
+          imported.push(name);
+        }
+        // The .env is not touched, here or anywhere: it stays the fallback, and
+        // removing it is the operator's decision to make later, deliberately.
+        logger.info('Servers imported from files into the vault', { count: imported.length });
+        this.#broadcast({ type: 'servers' });
+        return this.#json(res, 200, { imported });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+    });
   }
 
   /**

@@ -161,6 +161,32 @@ export const servers = {
   },
 };
 
+
+// ---------------------------------------------------------------------------
+// Migration from files
+// ---------------------------------------------------------------------------
+
+export interface PendingServer {
+  name: string;
+  host: string;
+  user?: string;
+  /** How many secrets it holds — never which, or their values. */
+  secrets: number;
+  source: 'env' | 'toml';
+}
+
+export const migration = {
+  state: () => get<{
+    pending: PendingServer[];
+    inVault: number;
+    envPath: string | null;
+    hasVault: boolean;
+  }>('/api/migration'),
+
+  /** Named servers only. A button that moves everything gets pressed by accident. */
+  run: (servers: string[]) => post<{ imported: string[] }>('/api/migration', { servers }),
+};
+
 // ---------------------------------------------------------------------------
 // Files
 // ---------------------------------------------------------------------------
@@ -432,5 +458,5 @@ export const state = {
   },
 };
 
-export const api = { servers, files, local, transfers, shells, ssh, health, state, hostKeys };
+export const api = { servers, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
 export type Api = typeof api;
