@@ -1,37 +1,47 @@
 /**
  * What is on screen.
  *
- * TransHub's workspace store carries a tab type for every kind of pane it can
- * open (dual-browser, remote-browser, code-chat…). This is the same shape with
- * one distinction that matters here: **fixed views** you always return to, and
- * **sessions** you opened against a particular server.
+ * This keeps TransHub's model rather than inventing one: a list of `tabs`, each
+ * with a `type`, a `title` and the `serverId` it belongs to, plus `addTab` /
+ * `activateTab` / `removeTab` / `updateTab`. `ServerCard` and the rail were
+ * written against exactly that, and matching it means they need no edit — which
+ * is the difference between a port and a rewrite.
  *
- * Sessions are what make the sidebar worth having. Without them the app is six
- * tabs and a rail is overkill; with them you keep three servers open at once
- * and the rail is how you move between them.
+ * What is added: the fixed views a control plane has and a file browser does
+ * not (`servers`, `waiting`, `health`, `live`, `activity`, `options`). They are
+ * a separate axis from tabs, because you always return to them and never close
+ * them.
  */
 import { create } from 'zustand';
 
 export type ViewId = 'servers' | 'waiting' | 'health' | 'live' | 'activity' | 'options';
 
-export interface SessionTab {
+/** The two kinds of session a server can have open. Named as TransHub names
+ *  them, so its components keep working. */
+export type TabType = 'dual-browser' | 'ssh-terminal';
+
+export interface WorkspaceTab {
   id: string;
-  server: string;
-  kind: 'shell' | 'files';
+  type: TabType;
+  title: string;
+  serverId: string;
+  closable?: boolean;
+  badge?: number;
 }
 
 interface WorkspaceState {
   view: ViewId;
-  sessions: SessionTab[];
+  tabs: WorkspaceTab[];
   /** null when a fixed view is showing. */
-  activeId: string | null;
+  activeTabId: string | null;
   expanded: boolean;
   pendingCount: number;
 
   setView: (view: ViewId) => void;
-  openSession: (server: string, kind: SessionTab['kind']) => void;
-  activate: (id: string) => void;
-  close: (id: string) => void;
+  addTab: (tab: Omit<WorkspaceTab, 'closable'> & { closable?: boolean }) => void;
+  activateTab: (id: string) => void;
+  removeTab: (id: string) => void;
+  updateTab: (id: string, updates: Partial<WorkspaceTab>) => void;
   toggleExpanded: () => void;
   setPendingCount: (count: number) => void;
 }
@@ -49,32 +59,33 @@ function readExpanded(): boolean {
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   view: 'servers',
-  sessions: [],
-  activeId: null,
+  tabs: [],
+  activeTabId: null,
   expanded: readExpanded(),
   pendingCount: 0,
 
-  setView: view => set({ view, activeId: null }),
+  setView: view => set({ view, activeTabId: null }),
 
-  openSession: (server, kind) => {
-    // One session per server and kind: clicking "shell" twice on the same
-    // machine should bring you back, not open a second identical pane.
-    const existing = get().sessions.find(s => s.server === server && s.kind === kind);
-    if (existing) return set({ activeId: existing.id });
-    const session: SessionTab = { id: `${kind}:${server}:${Date.now()}`, server, kind };
-    set(state => ({ sessions: [...state.sessions, session], activeId: session.id }));
+  addTab: tab => {
+    const existing = get().tabs.find(t => t.id === tab.id);
+    if (existing) return set({ activeTabId: existing.id });
+    const created: WorkspaceTab = { closable: true, ...tab };
+    set(state => ({ tabs: [...state.tabs, created], activeTabId: created.id }));
   },
 
-  activate: id => set({ activeId: id }),
+  activateTab: id => set({ activeTabId: id }),
 
-  close: id =>
+  removeTab: id =>
     set(state => {
-      const sessions = state.sessions.filter(s => s.id !== id);
+      const tabs = state.tabs.filter(t => t.id !== id);
       // Closing the pane you are looking at has to land somewhere: the next
       // session if there is one, the server list otherwise.
-      const activeId = state.activeId === id ? (sessions.at(-1)?.id ?? null) : state.activeId;
-      return { sessions, activeId };
+      const activeTabId = state.activeTabId === id ? (tabs.at(-1)?.id ?? null) : state.activeTabId;
+      return { tabs, activeTabId };
     }),
+
+  updateTab: (id, updates) =>
+    set(state => ({ tabs: state.tabs.map(t => (t.id === id ? { ...t, ...updates } : t)) })),
 
   toggleExpanded: () =>
     set(state => {

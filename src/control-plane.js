@@ -28,6 +28,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import http from 'http';
 import net from 'net';
+import os from 'os';
+import { execFile } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
@@ -375,6 +377,18 @@ export class ControlPlane {
     if (req.method === 'POST' && url.pathname === '/api/files/mkdir') return this.#fileOp('mkdir', req, res);
     if (req.method === 'POST' && url.pathname === '/api/files/rename') return this.#fileOp('rename', req, res);
     if (req.method === 'POST' && url.pathname === '/api/files/delete') return this.#fileOp('delete', req, res);
+
+    // The local side of the file browser. This process runs on the operator's
+    // own machine, so it can read that machine's filesystem — which is what
+    // makes a local/remote pair possible at all. A page in a browser could not,
+    // but the page is not what reads the disk here.
+    if (req.method === 'GET' && url.pathname === '/api/local/files') return this.#listLocal(url.searchParams, res);
+    if (req.method === 'GET' && url.pathname === '/api/local/read') return this.#readLocal(url.searchParams, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/mkdir') return this.#localOp('mkdir', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/rename') return this.#localOp('rename', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/delete') return this.#localOp('delete', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/reveal') return this.#localOp('reveal', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/transfer') return this.#transfer(req, res);
     if (req.method === 'POST' && url.pathname === '/api/execute') return this.#execute(req, res);
     if (req.method === 'GET' && url.pathname === '/api/options') return this.#serveOptions(res);
     if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
@@ -894,6 +908,158 @@ export class ControlPlane {
   }
 
 
+
+
+
+  /**
+   * Move files between this machine and a server, in either direction.
+   *
+   * Done here rather than by the browser downloading and re-uploading: the
+   * bytes never leave this process, which is both faster and the only way a
+   * multi-gigabyte file works at all. Progress is reported on the event stream
+   * so the page can show it without polling.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #transfer(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.server || '').toLowerCase();
+      const direction = payload.direction === 'download' ? 'download' : 'upload';
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      if (items.length === 0) return this.#json(res, 400, { error: 'Nothing to transfer' });
+
+      const id = crypto.randomUUID();
+      // Answered immediately: a transfer can take minutes, and a request left
+      // open that long is a request that times out somewhere in between.
+      this.#json(res, 200, { id, count: items.length });
+
+      let done = 0;
+      const announce = (extra = {}) =>
+        this.#broadcast({ type: 'transfer', id, direction, server: name, done, total: items.length, ...extra });
+      announce({ state: 'started' });
+
+      try {
+        await this.#withSftp(name, async sftp => {
+          for (const item of items) {
+            const local = path.resolve(String(item.local));
+            const remote = String(item.remote);
+            await new Promise((resolve, reject) => {
+              const from = direction === 'upload' ? fs.createReadStream(local) : sftp.createReadStream(remote);
+              const to = direction === 'upload' ? sftp.createWriteStream(remote) : fs.createWriteStream(local);
+              from.on('error', reject);
+              to.on('error', reject);
+              to.on('close', resolve);
+              to.on('finish', resolve);
+              from.pipe(to);
+            });
+            done++;
+            announce({ state: 'progress', file: path.basename(local) });
+          }
+        });
+        announce({ state: 'done' });
+        logger.info('Transfer finished', { server: name, direction, count: items.length });
+      } catch (error) {
+        announce({ state: 'failed', error: error.message });
+        logger.warn('Transfer failed', { server: name, direction, error: error.message });
+      }
+    });
+  }
+
+  /**
+   * List a directory on this machine.
+   *
+   * No path restriction, deliberately and for the same reason as the terminal:
+   * whoever holds this token already has a shell here. A sandbox that a shell
+   * sits next to is decoration.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #listLocal(params, res) {
+    const dir = params.get('path') || os.homedir();
+    try {
+      const resolved = path.resolve(dir);
+      const entries = fs.readdirSync(resolved, { withFileTypes: true }).map(entry => {
+        const full = path.join(resolved, entry.name);
+        let stat;
+        try {
+          // lstat, not stat: a symlink must report as one rather than as
+          // whatever it points at, and a broken link must not throw.
+          stat = fs.lstatSync(full);
+        } catch {
+          stat = null;
+        }
+        return {
+          name: entry.name,
+          path: full,
+          size: stat?.size ?? 0,
+          isDirectory: entry.isDirectory(),
+          isSymlink: entry.isSymbolicLink(),
+          modifyTime: stat?.mtimeMs ?? 0,
+          accessTime: stat?.atimeMs ?? 0,
+          permissions: stat ? stat.mode & 0o7777 : 0,
+          owner: stat?.uid ?? 0,
+          group: stat?.gid ?? 0,
+        };
+      });
+      return this.#json(res, 200, { path: resolved, entries, home: os.homedir(), separator: path.sep });
+    } catch (error) {
+      return this.#json(res, error.code === 'ENOENT' ? 404 : 403, { error: error.message });
+    }
+  }
+
+  /**
+   * Stream a local file out, so the remote pane can upload it without the
+   * browser ever holding the bytes.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #readLocal(params, res) {
+    const file = params.get('path') || '';
+    try {
+      const resolved = path.resolve(file);
+      const stream = fs.createReadStream(resolved);
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-disposition': `attachment; filename="${path.basename(resolved).replace(/["\r\n]/g, '_')}"`,
+      });
+      stream.on('error', () => res.end());
+      stream.pipe(res);
+    } catch (error) {
+      return this.#json(res, 404, { error: error.message });
+    }
+  }
+
+  /**
+   * mkdir / rename / delete / reveal on this machine.
+   *
+   * @param {'mkdir'|'rename'|'delete'|'reveal'} kind - Which operation
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #localOp(kind, req, res) {
+    this.#readJsonBody(req, res, payload => {
+      try {
+        if (kind === 'mkdir') fs.mkdirSync(path.resolve(String(payload.path)), { recursive: true });
+        else if (kind === 'rename') fs.renameSync(path.resolve(String(payload.from)), path.resolve(String(payload.to)));
+        else if (kind === 'delete') fs.rmSync(path.resolve(String(payload.path)), { recursive: Boolean(payload.isDirectory), force: false });
+        else if (kind === 'reveal') {
+          // execFile, never a shell: a path is not ours to trust even when it
+          // came from our own listing, and this one round-trips through a
+          // browser on the way.
+          const opener = process.platform === 'darwin' ? 'open'
+            : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+          execFile(opener, [path.resolve(String(payload.path))], () => { /* best effort */ });
+        }
+        logger.info(`Local ${kind}`, { path: payload.path ?? payload.to });
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      }
+    });
+  }
 
   /**
    * Run one command on a server and hand back what it printed.

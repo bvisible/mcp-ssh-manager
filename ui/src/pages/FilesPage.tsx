@@ -1,238 +1,220 @@
 /**
- * The remote file browser, following TransHub's FilePane: sortable columns,
- * breadcrumb navigation, selection, and the operations you reach for on a
- * server — rename, delete, make a directory, upload, download.
+ * The dual-pane file browser: this machine on the left, the server on the right.
  *
- * Deliberately one pane rather than TransHub's dual local/remote layout. The
- * control plane is a page in a browser: it has no access to your local
- * filesystem beyond the file picker and the downloads folder, so a "local"
- * pane would be a lie. Upload is a picker, download is a browser download.
+ * Both panes are TransHub's `FilePane`, unmodified — it is already generic over
+ * `isLocal` and driven entirely by props, which is why it drops straight in.
+ * The work here is supplying those props against the control plane's routes.
+ *
+ * The local pane is possible because the control plane is a Node process
+ * running on the operator's own machine. A page in a browser could not read
+ * that disk; the page is not what reads it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ArrowUp, ChevronRight, File, Folder, FolderPlus, Link2, Loader2, RefreshCw, Trash2, Upload,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { files as api, type RemoteFileInfo } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Allotment } from 'allotment';
+import 'allotment/dist/style.css';
+import { FilePane, type FileItem } from '@/components/browser/FilePane';
+import { files as remote, local, transfers, state, type TransferEvent } from '@/lib/api';
 
-type SortField = 'name' | 'size' | 'modifyTime';
+type Side = 'local' | 'remote';
 
-/** Bytes as a human reads them, not as a machine stores them. */
-function formatSize(bytes: number, isDirectory: boolean): string {
-  if (isDirectory) return '—';
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+interface PaneState {
+  path: string;
+  files: FileItem[];
+  loading: boolean;
+  selected: Set<string>;
 }
 
-/** The `rwxr-xr-x` form, which is what anyone administering a server reads. */
-function formatMode(mode: number): string {
-  const bits = 'rwxrwxrwx';
-  return [...bits].map((bit, i) => (mode & (1 << (8 - i)) ? bit : '-')).join('');
-}
+const EMPTY: PaneState = { path: '', files: [], loading: true, selected: new Set() };
 
 export function FilesPage({ server }: { server: string }) {
-  const [path, setPath] = useState('.');
-  const [entries, setEntries] = useState<RemoteFileInfo[] | null>(null);
+  const [panes, setPanes] = useState<Record<Side, PaneState>>({ local: EMPTY, remote: EMPTY });
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [sort, setSort] = useState<{ field: SortField; asc: boolean }>({ field: 'name', asc: true });
-  const [busy, setBusy] = useState(false);
-  const uploadRef = useRef<HTMLInputElement>(null);
+  const [transfer, setTransfer] = useState<TransferEvent | null>(null);
+  // Anchor for shift-click ranges, per pane, as a file manager behaves.
+  const anchors = useRef<Record<Side, string | null>>({ local: null, remote: null });
+  // Read inside callbacks that must not be rebuilt every time a path changes.
+  const pathsRef = useRef<Record<Side, string>>({ local: '', remote: '' });
+
+  const update = (side: Side, patch: Partial<PaneState>) =>
+    setPanes(current => ({ ...current, [side]: { ...current[side], ...patch } }));
 
   const load = useCallback(
-    (target: string) => {
-      setError(null);
-      return api
-        .list(server, target)
-        .then(result => {
-          setEntries(result.entries);
-          setPath(result.path);
-          setSelected(null);
-        })
-        .catch(e => setError(e.message));
+    async (side: Side, target?: string) => {
+      update(side, { loading: true });
+      try {
+        const result = side === 'local' ? await local.list(target) : await remote.list(server, target ?? '.');
+        pathsRef.current[side] = result.path;
+        update(side, { path: result.path, files: result.entries, loading: false, selected: new Set() });
+        anchors.current[side] = null;
+      } catch (e) {
+        update(side, { loading: false });
+        setError((e as Error).message);
+      }
     },
     [server]
   );
 
-  useEffect(() => { void load('.'); }, [load]);
+  useEffect(() => {
+    void load('local');
+    void load('remote');
+  }, [load]);
 
-  const sorted = useMemo(() => {
-    if (!entries) return null;
-    const direction = sort.asc ? 1 : -1;
-    return [...entries].sort((a, b) => {
-      // Directories first, always: it is how every file manager behaves and
-      // sorting them in with the files makes a deep tree unreadable.
-      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-      if (sort.field === 'name') return a.name.localeCompare(b.name) * direction;
-      return (a[sort.field] - b[sort.field]) * direction;
+  // Progress arrives on the shared event stream rather than by polling, and a
+  // finished transfer refreshes the side it landed on.
+  useEffect(() => {
+    const stop = state.subscribe(event => {
+      if (event.type !== 'transfer') return;
+      const progress = event as unknown as TransferEvent;
+      setTransfer(progress.state === 'done' || progress.state === 'failed' ? null : progress);
+      if (progress.state === 'done') void load(progress.direction === 'upload' ? 'remote' : 'local');
+      if (progress.state === 'failed') setError(progress.error ?? 'The transfer failed');
     });
-  }, [entries, sort]);
+    return stop;
+  }, [load]);
 
-  const segments = path === '.' || path === '/' ? [] : path.split('/').filter(Boolean);
+  /** Click, ctrl-click and shift-click, which is what a file list has to do. */
+  const select = (side: Side) => (path: string, multi: boolean, range: boolean) =>
+    setPanes(current => {
+      const pane = current[side];
+      let selected: Set<string>;
+      if (range && anchors.current[side]) {
+        const order = pane.files.map(f => f.path);
+        const from = order.indexOf(anchors.current[side]!);
+        const to = order.indexOf(path);
+        const [start, end] = from < to ? [from, to] : [to, from];
+        selected = new Set(order.slice(start, end + 1));
+      } else if (multi) {
+        selected = new Set(pane.selected);
+        if (selected.has(path)) selected.delete(path);
+        else selected.add(path);
+        anchors.current[side] = path;
+      } else {
+        selected = new Set([path]);
+        anchors.current[side] = path;
+      }
+      return { ...current, [side]: { ...pane, selected } };
+    });
 
-  const act = async (run: () => Promise<unknown>) => {
-    setBusy(true);
+  const open = (side: Side) => (file: FileItem) => {
+    if (file.isDirectory) return void load(side, file.path);
+    if (side === 'remote') window.open(remote.downloadUrl(server, file.path), '_blank');
+  };
+
+  const join = (dir: string, name: string) => (dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`);
+
+  /** Send a selection to the other side, into whatever directory it is showing. */
+  const send = (from: Side) => (items: FileItem[]) => {
+    const targetDir = pathsRef.current[from === 'local' ? 'remote' : 'local'];
+    const files = items.filter(item => !item.isDirectory);
+    if (files.length === 0) {
+      // Directories would need a recursive walk on both sides; saying so beats
+      // transferring nothing and looking broken.
+      setError('Directories cannot be transferred yet — select files.');
+      return;
+    }
+    void transfers
+      .start({
+        server,
+        direction: from === 'local' ? 'upload' : 'download',
+        items: files.map(item =>
+          from === 'local'
+            ? { local: item.path, remote: join(targetDir, item.name) }
+            : { local: join(targetDir, item.name), remote: item.path }
+        ),
+      })
+      .catch(e => setError((e as Error).message));
+  };
+
+  const remove = (side: Side) => async (items: FileItem[]) => {
+    if (!window.confirm(`Delete ${items.length === 1 ? items[0].name : `${items.length} items`}?`)) return;
     try {
-      await run();
-      await load(path);
+      for (const item of items) {
+        if (side === 'local') await local.remove(item.path, item.isDirectory);
+        else await remote.remove(server, item.path, item.isDirectory);
+      }
+      await load(side, pathsRef.current[side]);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
-  return (
-    <>
-      <header className="flex items-center gap-2 border-b border-border px-6 py-3">
-        <h1 className="shrink-0 text-sm font-medium">{server}</h1>
-        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-xs text-muted-foreground">
-          <button className="shrink-0 rounded px-1 py-0.5 hover:bg-accent" onClick={() => void load('/')}>
-            /
-          </button>
-          {segments.map((segment, index) => (
-            <span key={index} className="flex shrink-0 items-center gap-0.5">
-              <ChevronRight className="h-3 w-3" />
-              <button
-                className="rounded px-1 py-0.5 hover:bg-accent"
-                onClick={() => void load(`/${segments.slice(0, index + 1).join('/')}`)}
-              >
-                {segment}
-              </button>
-            </span>
-          ))}
-        </nav>
-        <div className="flex shrink-0 items-center gap-1">
-          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-          <Button variant="ghost" size="icon" aria-label="Up one level"
-            onClick={() => void load(segments.slice(0, -1).join('/') ? `/${segments.slice(0, -1).join('/')}` : '/')}>
-            <ArrowUp className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="Refresh" onClick={() => void load(path)}>
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="New folder"
-            onClick={() => {
-              const name = window.prompt('Name of the new directory');
-              if (name) void act(() => api.mkdir(server, `${path === '/' ? '' : path}/${name}`));
-            }}>
-            <FolderPlus className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="Upload" onClick={() => uploadRef.current?.click()}>
-            <Upload className="h-3.5 w-3.5" />
-          </Button>
-          <input
-            ref={uploadRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={event => {
-              const chosen = [...(event.target.files ?? [])];
-              event.target.value = '';
-              if (chosen.length) {
-                void act(async () => {
-                  for (const file of chosen) {
-                    await api.upload(server, `${path === '/' ? '' : path}/${file.name}`, file);
-                  }
-                });
-              }
-            }}
-          />
-        </div>
-      </header>
+  const rename = (side: Side) => async (file: FileItem) => {
+    const next = window.prompt('New name', file.name);
+    if (!next || next === file.name) return;
+    const parent = file.path.slice(0, file.path.lastIndexOf('/')) || '/';
+    try {
+      if (side === 'local') await local.rename(file.path, join(parent, next));
+      else await remote.rename(server, file.path, join(parent, next));
+      await load(side, pathsRef.current[side]);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
+  const createFolder = (side: Side) => async () => {
+    const name = window.prompt('Name of the new directory');
+    if (!name) return;
+    const dir = pathsRef.current[side];
+    try {
+      if (side === 'local') await local.mkdir(join(dir, name));
+      else await remote.mkdir(server, join(dir, name));
+      await load(side, dir);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const paneProps = (side: Side) => ({
+    isLocal: side === 'local',
+    files: panes[side].files,
+    currentPath: panes[side].path,
+    loading: panes[side].loading,
+    selectedFiles: panes[side].selected,
+    onNavigate: (path: string) => void load(side, path),
+    onRefresh: () => void load(side, pathsRef.current[side]),
+    onSelect: select(side),
+    onOpen: open(side),
+    onCreateFolder: createFolder(side),
+    onDelete: remove(side),
+    onRename: rename(side),
+    onTransfer: send(side),
+    transferLabel: side === 'local' ? 'Upload' : 'Download',
+    // Dropping a selection carries it from the pane it was dragged out of, so
+    // the direction is the opposite of the pane receiving the drop.
+    onDropFiles: (items: FileItem[]) => send(side === 'local' ? 'remote' : 'local')(items),
+    onCopyPath: () => void navigator.clipboard?.writeText(pathsRef.current[side]),
+  });
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
       {error && (
-        <p className="border-b border-destructive/30 bg-destructive-light px-6 py-2 text-sm">{error}</p>
+        <div className="flex items-center justify-between border-b border-destructive/30 bg-destructive-light px-4 py-2 text-sm">
+          <span>{error}</span>
+          <button className="text-xs underline" onClick={() => setError(null)}>dismiss</button>
+        </div>
+      )}
+      {transfer && (
+        <div className="border-b border-border bg-muted px-4 py-1.5 text-xs text-muted-foreground">
+          {transfer.direction === 'upload' ? 'Uploading' : 'Downloading'} — {transfer.done} of {transfer.total}
+          {transfer.file && <span className="ml-2 font-mono">{transfer.file}</span>}
+        </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-background">
-            <tr className="border-b border-border text-left text-xs text-muted-foreground">
-              {([['name', 'Name'], ['size', 'Size'], ['modifyTime', 'Modified']] as const).map(([field, label]) => (
-                <th key={field} className="px-6 py-2 font-medium">
-                  <button
-                    className="hover:text-foreground"
-                    onClick={() => setSort(s => ({ field, asc: s.field === field ? !s.asc : true }))}
-                  >
-                    {label}{sort.field === field && (sort.asc ? ' ↑' : ' ↓')}
-                  </button>
-                </th>
-              ))}
-              <th className="px-6 py-2 font-medium">Mode</th>
-              <th className="w-10" />
-            </tr>
-          </thead>
-          <tbody>
-            {sorted?.map(entry => (
-              <tr
-                key={entry.path}
-                onClick={() => setSelected(entry.path)}
-                onDoubleClick={() => {
-                  if (entry.isDirectory) void load(entry.path);
-                  else window.open(api.downloadUrl(server, entry.path), '_blank');
-                }}
-                className={cn(
-                  'group cursor-default border-b border-border-subtle',
-                  selected === entry.path ? 'bg-sidebar-accent' : 'hover:bg-card-hover'
-                )}
-              >
-                <td className="flex items-center gap-2 px-6 py-1.5">
-                  {entry.isSymlink ? (
-                    <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : entry.isDirectory ? (
-                    <Folder className="h-4 w-4 shrink-0 text-primary" />
-                  ) : (
-                    <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="truncate">{entry.name}</span>
-                </td>
-                <td className="px-6 py-1.5 text-right tabular-nums text-muted-foreground">
-                  {formatSize(entry.size, entry.isDirectory)}
-                </td>
-                <td className="px-6 py-1.5 tabular-nums text-muted-foreground">
-                  {entry.modifyTime ? new Date(entry.modifyTime).toLocaleString() : '—'}
-                </td>
-                <td className="px-6 py-1.5 font-mono text-xs text-muted-foreground">
-                  {formatMode(entry.permissions)}
-                </td>
-                <td className="pr-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Delete ${entry.name}`}
-                    className="opacity-0 group-hover:opacity-100"
-                    onClick={event => {
-                      event.stopPropagation();
-                      if (window.confirm(`Delete ${entry.name}?`)) {
-                        void act(() => api.remove(server, entry.path, entry.isDirectory));
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {sorted?.length === 0 && (
-          <p className="p-6 text-sm text-muted-foreground">This directory is empty.</p>
-        )}
-        {sorted === null && !error && (
-          <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-        )}
+      <div className="min-h-0 flex-1">
+        <Allotment defaultSizes={[1, 1]}>
+          <Allotment.Pane minSize={260}>
+            <FilePane title="This machine" {...paneProps('local')} onGoHome={() => void load('local')} />
+          </Allotment.Pane>
+          <Allotment.Pane minSize={260}>
+            <FilePane
+              title={server}
+              {...paneProps('remote')}
+              onGoHome={() => void load('remote', '.')}
+              onGoRoot={() => void load('remote', '/')}
+            />
+          </Allotment.Pane>
+        </Allotment>
       </div>
-
-      <footer className="flex items-center justify-between border-t border-border px-6 py-2 text-xs text-muted-foreground">
-        <span>{sorted?.length ?? 0} {sorted?.length === 1 ? 'item' : 'items'}</span>
-        <span className="truncate font-mono">{path}</span>
-      </footer>
-    </>
+    </div>
   );
 }

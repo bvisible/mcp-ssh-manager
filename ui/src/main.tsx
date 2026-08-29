@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
+import '@/lib/i18n';
 import { App } from './App';
 import './globals.css';
 

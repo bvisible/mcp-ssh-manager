@@ -185,6 +185,56 @@ export const files = {
   },
 };
 
+
+// ---------------------------------------------------------------------------
+// This machine
+// ---------------------------------------------------------------------------
+
+/**
+ * The control plane runs on the operator's own machine, so it can read that
+ * machine's disk — which is what makes a local/remote pair possible. A page in
+ * a browser could not; the page is not what reads it.
+ */
+export const local = {
+  list: (path?: string) =>
+    get<{ path: string; entries: RemoteFileInfo[]; home: string; separator: string }>(
+      '/api/local/files', { path }),
+
+  mkdir: (path: string) => post('/api/local/mkdir', { path }),
+
+  rename: (from: string, to: string) => post('/api/local/rename', { from, to }),
+
+  remove: (path: string, isDirectory: boolean) => post('/api/local/delete', { path, isDirectory }),
+
+  /** Open the enclosing folder in Finder / Explorer / the desktop's file manager. */
+  reveal: (path: string) => post('/api/local/reveal', { path }),
+};
+
+export interface TransferEvent {
+  type: 'transfer';
+  id: string;
+  direction: 'upload' | 'download';
+  server: string;
+  done: number;
+  total: number;
+  state: 'started' | 'progress' | 'done' | 'failed';
+  file?: string;
+  error?: string;
+}
+
+export const transfers = {
+  /**
+   * Move files between the two panes. The bytes go directly between this
+   * machine and the server through the control plane — the browser never holds
+   * them, which is both faster and the only way a large file works at all.
+   */
+  start: (request: {
+    server: string;
+    direction: 'upload' | 'download';
+    items: { local: string; remote: string }[];
+  }) => post<{ id: string; count: number }>('/api/transfer', request),
+};
+
 // ---------------------------------------------------------------------------
 // Shells
 // ---------------------------------------------------------------------------

@@ -24,6 +24,16 @@ process.env.SSH_MANAGER_HOME = scratch;
 /** @type {any[]} */
 const cleanup = [];
 
+/** Wait for a condition, or give up. A transfer finishes when it finishes. */
+async function until(check, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (check()) return true;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  return false;
+}
+
 /**
  * An SFTP server backed by a real directory on disk, so readdir, stat, rename
  * and unlink go through ssh2's protocol layer and land on a real filesystem.
@@ -248,6 +258,71 @@ async function main() {
     assert.strictEqual((await fetch(`${base}/api/files?server=box&path=/`)).status, 401,
       'reading files must require the token');
     ok('an unknown server 404s, and reading files requires the token');
+
+    // --- the local side, which is what makes a dual pane possible ---
+    // The control plane runs on the operator's own machine, so it can read that
+    // machine's disk. A page in a browser could not; the page is not what reads.
+    const localDir = path.join(scratch, 'local-side');
+    fs.mkdirSync(path.join(localDir, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(localDir, 'to-upload.txt'), 'from this machine\n');
+    fs.symlinkSync(path.join(localDir, 'to-upload.txt'), path.join(localDir, 'a-link'));
+
+    const local = await fetch(`${base}/api/local/files?${q}&path=${encodeURIComponent(localDir)}`)
+      .then(r => r.json());
+    const localByName = Object.fromEntries(local.entries.map(e => [e.name, e]));
+    assert.strictEqual(localByName.sub.isDirectory, true, 'a local directory must report as one');
+    assert.strictEqual(localByName['a-link'].isSymlink, true,
+      'lstat, not stat: a symlink must report as itself, and a broken one must not throw');
+    assert.strictEqual(localByName['to-upload.txt'].size, 18);
+    assert.ok(local.home, 'the home directory must come back so the pane knows where to open');
+    ok(`the local filesystem lists, with types and a home to start from (${local.entries.length} entries)`);
+
+    // --- transfer: this machine → the server ---
+    const upload = await fetch(`${base}/api/transfer?${q}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        server: 'box', direction: 'upload',
+        items: [{ local: path.join(localDir, 'to-upload.txt'), remote: '/uploaded-by-transfer.txt' }],
+      }),
+    }).then(r => r.json());
+    assert.ok(upload.id, 'a transfer must report an id so its progress can be followed');
+    // Waiting on existence would race: createWriteStream makes the file before
+    // it writes a byte, so the assertion has to be on the content.
+    const target = path.join(root, 'uploaded-by-transfer.txt');
+    const landed = await until(
+      () => fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'from this machine\n', 8000);
+    assert.ok(landed, `the uploaded file must land on the server with its content, got ${
+      fs.existsSync(target) ? JSON.stringify(fs.readFileSync(target, 'utf8')) : 'nothing'}`);
+    ok('a file transfers from this machine to the server, bytes never touching the browser');
+
+    // --- transfer: the server → this machine ---
+    await fetch(`${base}/api/transfer?${q}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        server: 'box', direction: 'download',
+        items: [{ local: path.join(localDir, 'pulled.md'), remote: '/README.md' }],
+      }),
+    });
+    const pulledPath = path.join(localDir, 'pulled.md');
+    const pulled = await until(
+      () => fs.existsSync(pulledPath) && fs.readFileSync(pulledPath, 'utf8') === '# hello\n', 8000);
+    assert.ok(pulled, `the downloaded file must land here with its content, got ${
+      fs.existsSync(pulledPath) ? JSON.stringify(fs.readFileSync(pulledPath, 'utf8')) : 'nothing'}`);
+    ok('and back the other way, which is the point of having two panes');
+
+    // --- local operations ---
+    const localJson = (route, body) => fetch(`${base}${route}?${q}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    await localJson('/api/local/mkdir', { path: path.join(localDir, 'made') });
+    assert.ok(fs.existsSync(path.join(localDir, 'made')), 'mkdir must work locally too');
+    await localJson('/api/local/rename', { from: path.join(localDir, 'made'), to: path.join(localDir, 'moved') });
+    assert.ok(fs.existsSync(path.join(localDir, 'moved')), 'rename must work locally');
+    await localJson('/api/local/delete', { path: path.join(localDir, 'moved'), isDirectory: true });
+    assert.ok(!fs.existsSync(path.join(localDir, 'moved')), 'delete must work locally');
+    assert.strictEqual((await fetch(`${base}/api/local/files?path=/tmp`)).status, 401,
+      'reading this machine without the token would be worse than reading the server without it');
+    ok('local mkdir, rename and delete work, and all of it requires the token');
 
     // --- releasing ---
     plane.sftpPool.forEach((_, name) => plane.sftpPool.get(name));

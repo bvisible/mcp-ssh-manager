@@ -5,13 +5,20 @@ import { ShellPage } from '@/pages/ShellPage';
 import { FilesPage } from '@/pages/FilesPage';
 import { Placeholder } from '@/pages/Placeholder';
 import { useWorkspace } from '@/stores/workspace';
+import { useServersStore } from '@/stores/servers.store';
 import { state } from '@/lib/api';
 
 export function App() {
-  const { view, sessions, activeId, setPendingCount } = useWorkspace();
+  const { view, tabs, activeTabId, setPendingCount } = useWorkspace();
+  const servers = useServersStore(s => s.servers);
+  const loadServers = useServersStore(s => s.load);
 
-  // The pending count belongs on the rail, so it is fetched once here rather
-  // than by whichever screen happens to be open.
+  // Loaded once here rather than by the Servers screen: the rail and every
+  // session pane need to resolve a serverId to a name, whichever screen the
+  // page happened to open on.
+  useEffect(() => { void loadServers(); }, [loadServers]);
+
+  // The pending count belongs on the rail, so it is fetched here too.
   useEffect(() => {
     let cancelled = false;
     const refresh = () =>
@@ -26,6 +33,8 @@ export function App() {
     return () => { cancelled = true; stop(); };
   }, [setPendingCount]);
 
+  const nameFor = (serverId: string) => servers.find(s => s.id === serverId)?.name ?? serverId;
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar />
@@ -35,25 +44,25 @@ export function App() {
             the directory you had navigated to, and it would *close the shell* —
             its cleanup disposes the connection. A tab you can click away from
             and come back to is the whole point of having tabs. */}
-        {sessions.map(session => (
+        {tabs.map(tab => (
           <div
-            key={session.id}
+            key={tab.id}
             className="absolute inset-0 flex flex-col"
-            style={{ display: activeId === session.id ? 'flex' : 'none' }}
+            style={{ display: activeTabId === tab.id ? 'flex' : 'none' }}
             // Hidden panes are not reachable by keyboard or screen reader; the
             // active one is a normal part of the page.
-            aria-hidden={activeId !== session.id}
-            inert={activeId !== session.id}
+            aria-hidden={activeTabId !== tab.id}
+            inert={activeTabId !== tab.id}
           >
-            {session.kind === 'shell' ? (
-              <ShellPage server={session.server} hidden={activeId !== session.id} />
+            {tab.type === 'ssh-terminal' ? (
+              <ShellPage server={nameFor(tab.serverId)} hidden={activeTabId !== tab.id} />
             ) : (
-              <FilesPage server={session.server} />
+              <FilesPage server={nameFor(tab.serverId)} />
             )}
           </div>
         ))}
 
-        {activeId === null && (
+        {activeTabId === null && (
           <div className="flex min-h-0 flex-1 flex-col">
             {view === 'servers' ? <ServersPage /> : <Placeholder view={view} />}
           </div>
