@@ -7,18 +7,20 @@
 #
 # Only runs when the formula changes, or on demand: macOS minutes cost ten times
 # Linux ones, and nothing else here needs them.
-name: Homebrew formula
+name: macOS — formula and desktop app
 
 on:
   push:
     branches: [ main, v4 ]
     paths:
       - 'Formula/**'
+      - 'desktop/**'
       - '.github/workflows/homebrew.yml'
   pull_request:
     branches: [ main, v4 ]
     paths:
       - 'Formula/**'
+      - 'desktop/**'
   workflow_dispatch:
 
 permissions:
@@ -50,6 +52,15 @@ jobs:
       # handshake, not a --version check.
       - name: Run the formula's test block
         run: brew test local/test/ssh-manager
+
+      # The desktop shell is one Swift file with no project and no package
+      # manager, so nothing else would catch it failing to compile.
+      - name: Build the desktop app
+        run: |
+          ./desktop/build.sh
+          test -x "desktop/build/SSH Manager.app/Contents/MacOS/SSHManager"
+          plutil -lint "desktop/build/SSH Manager.app/Contents/Info.plist"
+          du -sh "desktop/build/SSH Manager.app"
 
       - name: Check both binaries are on PATH and work
         run: |

@@ -64,3 +64,6 @@ id_ed25519*
 .ssh-command-history.json
 .server-groups.json
 archived/
+
+# Desktop app build output
+desktop/build/

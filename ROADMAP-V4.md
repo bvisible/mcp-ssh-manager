@@ -27,6 +27,7 @@ optional and never required for the engine to run.
 | **Approval broker** (`src/approval.js`) | **done** — pause an action, ask a human, deny on any failure |
 | **Control plane** (`src/control-plane.js`, `cli/control.js`) | **done** — approval queue + timeline, no dependency |
 | **Homebrew formula** (`Formula/ssh-manager.rb`) | **done** — kept current by the release workflow |
+| **Desktop app** (`desktop/`) | **done** — native macOS window, 100 KB |
 
 ## Done: the vault
 
@@ -178,6 +179,38 @@ about whether the package works.
 > A short `brew install bvisible/tap/ssh-manager` would need a separate
 > `bvisible/homebrew-tap` repository. Worth doing if the formula gets traction;
 > not worth a second repository to maintain before then.
+
+## Done: the desktop app
+
+```bash
+./desktop/build.sh          # produces desktop/build/SSH Manager.app
+```
+
+A real window: dock icon, double-click, no terminal. It starts
+`ssh-manager control` as a child process, reads the tokenised URL from its
+output, and shows that page in a `WKWebView`.
+
+**Not Electron.** What has to be displayed is one HTML page the engine already
+serves over localhost; Electron's runtime alone is 19 MB before any application
+code, and a packaged app is well past a hundred. This bundle is **100 KB** and
+ships no browser of its own — one Swift file, `swiftc`, and a hand-assembled
+bundle, so there is no Xcode project and no package manager in the way.
+
+The trade-off is honest: **macOS only**. Elsewhere `ssh-manager control` opens
+the same interface in the browser. A Windows and Linux shell would need a
+different toolkit, and is not worth building before the app proves useful.
+
+Details that matter more than they look:
+
+- **A GUI app launched from Finder does not inherit your shell's PATH**, so
+  `node` and `ssh-manager` are invisible to it. The app searches the usual
+  install locations and, failing that, asks your login shell — which is how it
+  finds anything nvm, asdf or volta set up.
+- **`SSH_MANAGER_CLI` overrides which CLI is launched.** Found the hard way: this
+  machine had an older global install that predated the `control` command, so
+  the app dutifully started the wrong binary.
+- **Quitting kills the child.** It holds the approval socket; leaving it running
+  would keep agents blocked on a UI nobody can see.
 
 ## Non-negotiables
 
