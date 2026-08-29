@@ -329,6 +329,55 @@ async function testServerManagement() {
   ok('server management requires the token, like everything else');
 }
 
+async function testHealthProbe() {
+  process.env.SSH_MANAGER_KEY_SOURCE = 'file';
+  process.env.SSH_MANAGER_HOME = scratch;
+  const vaultPath = path.join(scratch, 'health.json');
+  const { plane, base } = await startPlane({ vaultPath });
+  const q = `token=${plane.token}`;
+
+  const none = await (await call(base, `/api/health?${q}`, { method: 'POST' })).json();
+  assert.deepStrictEqual(none.results, [], 'an empty vault must probe nothing rather than error');
+  ok('probing with no server returns an empty result, not an error');
+
+  // 203.0.113.x is TEST-NET-3: reserved for documentation, guaranteed not to
+  // route anywhere. The probe must report it, not hang or throw.
+  plane.store.setServer('ghost', { host: '203.0.113.99', user: 'nobody', password: 'x' });
+  plane.store.setServer('ghost2', { host: '203.0.113.98', user: 'nobody', password: 'x' });
+
+  const started = Date.now();
+  const res = await call(base, `/api/health?${q}`, { method: 'POST' });
+  const body = await res.json();
+  const elapsed = Date.now() - started;
+
+  assert.strictEqual(res.status, 200, 'an unreachable server is a result, not an HTTP error');
+  assert.strictEqual(body.results.length, 2, 'both servers must be reported');
+  for (const result of body.results) {
+    assert.strictEqual(result.reachable, false, 'a TEST-NET address cannot be reachable');
+    assert.ok(result.error, 'the reason must be reported so the screen can show it');
+    assert.ok(typeof result.tookMs === 'number', 'how long it took must be reported');
+  }
+  ok(`unreachable servers are reported as results, with a reason (${elapsed} ms for two)`);
+
+  // Probed in parallel: two unreachable hosts must not take twice as long as
+  // one, or a dashboard over ten servers would be unusable.
+  const oneStarted = Date.now();
+  await call(base, `/api/health?${q}&name=ghost`, { method: 'POST' });
+  const oneElapsed = Date.now() - oneStarted;
+  assert.ok(elapsed < oneElapsed * 1.8,
+    `two servers (${elapsed} ms) must not cost twice one (${oneElapsed} ms) — probes must run in parallel`);
+  ok('servers are probed in parallel, so one slow host does not hold up the rest');
+
+  const named = await (await call(base, `/api/health?${q}&name=ghost`, { method: 'POST' })).json();
+  assert.strictEqual(named.results.length, 1, 'naming a server must probe only that one');
+  assert.strictEqual(named.results[0].server, 'ghost');
+  ok('a single server can be probed by name');
+
+  const noToken = await call(base, '/api/health', { method: 'POST' });
+  assert.strictEqual(noToken.status, 401, 'probing must require the token like everything else');
+  ok('health probing requires the token');
+}
+
 async function main() {
   try {
     await testTokenIsRequired();
@@ -341,6 +390,7 @@ async function main() {
     await testAuditTailFeedsTheTimeline();
     await testUiIsServedWithoutExternalResources();
     await testServerManagement();
+    await testHealthProbe();
     console.log(`\n✅ control plane tests passed (${passed} checks)`);
   } finally {
     for (const plane of planes) {

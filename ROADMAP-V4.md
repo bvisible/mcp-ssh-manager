@@ -29,6 +29,7 @@ optional and never required for the engine to run.
 | **Homebrew formula** (`Formula/ssh-manager.rb`) | **done** — kept current by the release workflow |
 | **Desktop app** (`desktop/`) | **done** — native macOS window, 104 KB |
 | **Live command streaming** (`src/live-stream.js`) | **done** — watch the agent work, as it happens |
+| **Server health** | **done** — on-demand probes, never in the background |
 
 ## Done: the vault
 
@@ -249,6 +250,34 @@ No PTY and no xterm.js. Watching an agent needs the `exec` stream, which ssh2
 already gives us; a PTY (colours, `top`, `vim`, resize) is a different code path
 and xterm.js is a dependency and a bundle. If interactive control is wanted
 later, both belong in the desktop app, not the engine.
+
+## Done: server health
+
+A fifth screen. Press the button, get CPU, memory, disk and uptime per machine,
+with a gauge that turns amber past 80% and red past 90%.
+
+**Nothing is probed in the background.** Each probe is an SSH handshake, and a
+control plane that connects to every production box on a timer is worse than no
+dashboard: it is a machine quietly opening sessions nobody asked for. The button
+is the whole scheduling policy.
+
+Almost none of this was new code — `buildComprehensiveHealthCheckCommand()` and
+`parseComprehensiveHealthCheck()` already existed for the `ssh_health_check`
+tool. The control plane opens its own connection (it holds the vault, so it has
+the credentials) and closes it immediately after.
+
+Two things the tests pinned down:
+
+- **Unreachable is a result, not an error.** It returns HTTP 200 with the reason
+  and how long it took, because "prod did not answer" is exactly what an
+  operator opened the screen to find out.
+- **Probes run in parallel**, asserted by comparing two servers against one. A
+  dashboard over ten machines would otherwise take ten timeouts.
+
+And one real fix the test forced: `readyTimeout` was hard-coded at 60 seconds,
+so checking two unreachable servers took a full minute. Callers can now shorten
+it, and the probe uses 8 seconds — a machine that has not answered by then is
+unreachable as far as a screen is concerned.
 
 ## Non-negotiables
 

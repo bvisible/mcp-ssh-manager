@@ -54,7 +54,10 @@ class SSHManager {
         host: this.config.host,
         port: this.config.port || 22,
         username: this.config.user,
-        readyTimeout: 60000, // Increased from 20000 to 60000 for slow connections
+        // 60s suits an agent's command, which is worth waiting for. A health
+        // dashboard is not: it must answer in seconds, so callers can shorten
+        // this per connection.
+        readyTimeout: options.readyTimeout ?? 60000,
         keepaliveInterval: 10000,
         algorithms: {
           kex: [

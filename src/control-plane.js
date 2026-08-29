@@ -33,6 +33,8 @@ import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
 import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
+import SSHManager from './ssh-manager.js';
+import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck } from './health-monitor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -243,6 +245,9 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
     if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
     if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/health') {
+      return this.#probeHealth(url.searchParams.get('name'), res);
+    }
     if (req.method === 'GET' && url.pathname === '/api/streams') {
       const id = url.searchParams.get('id');
       return this.#json(res, 200, id ? { stream: this.streams.get(id) } : { streams: this.streams.list() });
@@ -479,6 +484,68 @@ export class ControlPlane {
   #json(res, status, payload) {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify(payload));
+  }
+
+  /**
+   * Probe one server's health, or every server when no name is given.
+   *
+   * The control plane opens its own SSH connection for this: it holds the
+   * vault, so it has the credentials, and the MCP server is driven by an agent
+   * rather than by us. Connections are opened per probe and closed straight
+   * after — a dashboard that quietly holds a connection open to every machine
+   * is a dashboard nobody should run.
+   *
+   * Only ever on request. Nothing is polled in the background: each probe costs
+   * an SSH handshake, and a control plane that connects to every production box
+   * on a timer would be worse than no dashboard at all.
+   *
+   * @param {string|null} name - Server to probe, or null for all
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #probeHealth(name, res) {
+    /** @type {Record<string, any>} */
+    let servers = {};
+    try {
+      servers = this.store.getAllDecrypted();
+    } catch (error) {
+      return this.#json(res, 500, { error: `Cannot read the vault: ${error.message}` });
+    }
+
+    const targets = name ? [name.toLowerCase()].filter(n => servers[n]) : Object.keys(servers);
+    if (targets.length === 0) {
+      return this.#json(res, 200, { results: [] });
+    }
+
+    // In parallel: one slow or unreachable machine must not delay the others.
+    const results = await Promise.all(targets.map(async serverName => {
+      const config = { ...servers[serverName], name: serverName };
+      const started = Date.now();
+      const ssh = new SSHManager(config);
+      try {
+        // Short, because this is a dashboard: a machine that has not answered
+        // in eight seconds is "unreachable" as far as the screen is concerned,
+        // and the operator would rather see that than watch a spinner.
+        await ssh.connect({ readyTimeout: 8000 });
+        const result = await ssh.execCommand(buildComprehensiveHealthCheckCommand(), { timeout: 20000 });
+        const health = parseComprehensiveHealthCheck(result.stdout);
+        return { server: serverName, host: config.host, reachable: true, tookMs: Date.now() - started, ...health };
+      } catch (error) {
+        // Unreachable is a legitimate answer, not an error: it is exactly what
+        // the operator wants to see on the screen.
+        return {
+          server: serverName,
+          host: config.host,
+          reachable: false,
+          tookMs: Date.now() - started,
+          error: error.message,
+        };
+      } finally {
+        try { ssh.dispose(); } catch { /* best effort */ }
+      }
+    }));
+
+    this.#broadcast({ type: 'health', results });
+    return this.#json(res, 200, { results });
   }
 
   /**

@@ -188,6 +188,36 @@
   }
   .stream-out[hidden] { display: none; }
 
+  /* health */
+  .health-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .health-bar .note { font-size: 13px; color: var(--ink-faint); }
+  .hcard {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--line); border-radius: 4px;
+    padding: 15px 18px; margin-bottom: 10px;
+  }
+  .hcard.healthy { border-left-color: var(--ok); }
+  .hcard.warning { border-left-color: #b58900; }
+  .hcard.critical { border-left-color: var(--danger); }
+  .hcard.unreachable { border-left-color: var(--ink-faint); background: var(--sunk); }
+  .hcard-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .hcard .hname { font-weight: 600; }
+  .hcard .hhost { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--ink-faint); }
+  .hcard .took { margin-left: auto; font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px; }
+  .metric-cell .mlabel {
+    font-family: ui-monospace, monospace; font-size: 10px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint);
+  }
+  .metric-cell .mvalue { font-size: 19px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .metric-cell .mvalue.warn { color: #b58900; }
+  .metric-cell .mvalue.crit { color: var(--danger); }
+  .gauge { height: 3px; background: var(--sunk); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .gauge i { display: block; height: 100%; background: var(--ok); }
+  .gauge i.warn { background: #b58900; }
+  .gauge i.crit { background: var(--danger); }
+  .hcard .err { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--danger); }
+
   /* timeline */
   .row {
     display: grid; grid-template-columns: 74px 1fr auto;
@@ -217,6 +247,7 @@
   <nav class="tabs" role="tablist">
     <button role="tab" data-panel="servers" aria-selected="true">Servers</button>
     <button role="tab" data-panel="queue" aria-selected="false">Waiting<span class="count" id="pendingCount" hidden>0</span></button>
+    <button role="tab" data-panel="health" aria-selected="false">Health</button>
     <button role="tab" data-panel="live" aria-selected="false">Live<span class="count" id="liveCount" hidden>0</span></button>
     <button role="tab" data-panel="activity" aria-selected="false">Activity</button>
   </nav>
@@ -259,6 +290,17 @@
     <section>
       <h2>Waiting for you</h2>
       <div id="pending"></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-health" hidden>
+    <section>
+      <h2>Server health</h2>
+      <div class="health-bar">
+        <button id="probeAll" class="small">Check all servers</button>
+        <span class="note" id="healthNote">Nothing is checked in the background — each probe opens an SSH connection.</span>
+      </div>
+      <div id="health"></div>
     </section>
   </div>
 
@@ -478,6 +520,82 @@
     renderServers();
   }
 
+  // --- health ---
+  const healthEl = document.getElementById('health');
+  const probeAll = document.getElementById('probeAll');
+  const healthNote = document.getElementById('healthNote');
+  let health = [];
+
+  const pct = v => (typeof v === 'number' ? Math.max(0, Math.min(100, Math.round(v))) : null);
+  const level = v => (v === null ? '' : v > 90 ? 'crit' : v > 80 ? 'warn' : '');
+
+  function cell(label, value, unit = '%') {
+    const p = pct(value);
+    if (p === null) return `<div class="metric-cell"><div class="mlabel">${esc(label)}</div><div class="mvalue">—</div></div>`;
+    const cls = level(p);
+    return `<div class="metric-cell">
+      <div class="mlabel">${esc(label)}</div>
+      <div class="mvalue ${cls}">${p}${esc(unit)}</div>
+      <div class="gauge"><i class="${cls}" style="width:${p}%"></i></div>
+    </div>`;
+  }
+
+  function renderHealth() {
+    if (health.length === 0) {
+      healthEl.innerHTML = '<p class="empty">No server checked yet. Press the button above — nothing is probed until you ask.</p>';
+      return;
+    }
+    healthEl.innerHTML = health.map(h => {
+      if (!h.reachable) {
+        return `<div class="hcard unreachable">
+          <div class="hcard-head">
+            <span class="hname">${esc(h.server)}</span>
+            <span class="hhost">${esc(h.host || '')}</span>
+            <span class="took">${h.tookMs} ms</span>
+          </div>
+          <div class="err">unreachable — ${esc(h.error || 'no reason given')}</div>
+        </div>`;
+      }
+      const status = String(h.overall_status || 'unknown').toLowerCase();
+      const disk = Array.isArray(h.disks) && h.disks.length
+        ? Math.max(...h.disks.map(d => d.percent || 0)) : h.disk?.percent;
+      return `<div class="hcard ${esc(status)}">
+        <div class="hcard-head">
+          <span class="hname">${esc(h.server)}</span>
+          <span class="hhost">${esc(h.host || '')}</span>
+          <span class="state ${status === 'healthy' ? 'ok' : status === 'critical' ? 'bad' : 'running'}">${esc(status)}</span>
+          <span class="took">${h.tookMs} ms</span>
+        </div>
+        <div class="metrics-row">
+          ${cell('CPU', h.cpu?.percent)}
+          ${cell('Memory', h.memory?.percent)}
+          ${cell('Disk', disk)}
+          <div class="metric-cell"><div class="mlabel">Uptime</div><div class="mvalue" style="font-size:14px">${esc(h.uptime?.formatted || h.uptime || '—')}</div></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function probe(name) {
+    probeAll.disabled = true;
+    healthNote.textContent = name ? `Checking ${name}…` : 'Checking every server…';
+    try {
+      const url = `/api/health?token=${encodeURIComponent(token)}${name ? `&name=${encodeURIComponent(name)}` : ''}`;
+      const res = await fetch(url, { method: 'POST' });
+      const data = await res.json();
+      health = data.results || [];
+      const unreachable = health.filter(h => !h.reachable).length;
+      healthNote.textContent = `${health.length} checked${unreachable ? `, ${unreachable} unreachable` : ''} · ${new Date().toTimeString().slice(0, 8)}`;
+    } catch (error) {
+      healthNote.textContent = `Check failed: ${error.message}`;
+    } finally {
+      probeAll.disabled = false;
+      renderHealth();
+    }
+  }
+
+  probeAll.addEventListener('click', () => probe(null));
+
   // --- live streams ---
   const streamsEl = document.getElementById('streams');
   const liveCount = document.getElementById('liveCount');
@@ -560,6 +678,7 @@
     renderTimeline();
     await loadServers();
     await loadStreams();
+    renderHealth();
   }
 
   function connect() {
