@@ -71,3 +71,18 @@ ENV/
 .venv
 requirements.txt
 tools/*.pyc
+
+# The interface SOURCE does not ship — the built output in dist/ui does.
+ui/
+
+# Documentation images and the compiled desktop app: several megabytes that
+# every `npm install` downloads and nothing at runtime reads. They live in the
+# repository and on the README, which is where people look at them.
+docs/images/
+desktop/build/
+
+# The built interface DOES ship — it is what `ssh-manager control` serves, and
+# nothing about it is compiled at install time.
+!dist/
+!dist/ui/
+!dist/ui/**

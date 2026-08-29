@@ -38,7 +38,12 @@ coverage/
 .pytest_cache/
 
 # Build
-dist/
+# Note the trailing /* rather than /: git does not descend into an excluded
+# directory, so a plain `dist/` would make the negation below unreachable.
+dist/*
+# The built interface is committed on purpose: `npm install mcp-ssh-manager`
+# must never compile anything, the same bargain as vendor/.
+!dist/ui/
 build/
 *.egg-info/
 
@@ -67,3 +72,6 @@ archived/
 
 # Desktop app build output
 desktop/build/
+
+# The interface builds separately; its tree is not the package tree.
+ui/node_modules/

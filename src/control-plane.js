@@ -62,6 +62,79 @@ const TIMELINE_LIMIT = 500;
  */
 const TERMINAL_BACKLOG_BYTES = 64 * 1024;
 
+/**
+ * How long an idle SFTP connection is kept. Long enough that browsing feels
+ * instant, short enough that walking away closes the session.
+ */
+const SFTP_IDLE_MS = 5 * 60 * 1000;
+
+/** Where `npm run build:ui` puts the built interface. */
+const APP_DIR = path.resolve(__dirname, '..', 'dist', 'ui');
+
+
+
+/**
+ * A pooled SFTP session can stop answering without ever failing: the machine
+ * went away, the network moved, the far end was killed. ssh2 has no deadline of
+ * its own for a request in flight, so the screen would sit on "Loading…"
+ * forever — which is worse than an error, because the operator cannot tell it
+ * apart from a slow directory.
+ *
+ * @template T
+ * @param {Promise<T>} work - The operation in flight
+ * @param {number} [ms] - How long to wait
+ * @returns {Promise<T>}
+ */
+function withTimeout(work, ms = 15000) {
+  return Promise.race([
+    work,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('The server stopped answering')), ms).unref()),
+  ]);
+}
+
+/** @param {any} sftp - SFTP session @param {string} dir - Path to resolve */
+function realpath(sftp, dir) {
+  return new Promise(resolve => {
+    sftp.realpath(dir, (/** @type {Error|null} */ error, /** @type {string} */ resolved) =>
+      resolve(error ? dir : resolved));
+  });
+}
+
+/** @param {any} sftp - SFTP session @param {string} dir - Directory to list */
+function readdir(sftp, dir) {
+  return new Promise((resolve, reject) => {
+    sftp.readdir(dir, (/** @type {Error|null} */ error, /** @type {any[]} */ list) =>
+      (error ? reject(error) : resolve(list)));
+  });
+}
+
+/**
+ * One SFTP entry as a file browser wants it: types decoded from the POSIX mode,
+ * times in milliseconds, and the full path already joined so the caller never
+ * has to guess how to join at the root.
+ *
+ * @param {string} dir - The directory being listed
+ * @param {any} item - An ssh2 directory entry
+ */
+function describe(dir, item) {
+  const attrs = item.attrs || {};
+  const mode = attrs.mode || 0;
+  const S_IFMT = 0o170000;
+  return {
+    name: item.filename,
+    path: dir === '/' ? `/${item.filename}` : `${dir}/${item.filename}`,
+    size: attrs.size ?? 0,
+    isDirectory: (mode & S_IFMT) === 0o040000,
+    isSymlink: (mode & S_IFMT) === 0o120000,
+    modifyTime: (attrs.mtime ?? 0) * 1000,
+    accessTime: (attrs.atime ?? 0) * 1000,
+    permissions: mode & 0o7777,
+    owner: attrs.uid ?? 0,
+    group: attrs.gid ?? 0,
+  };
+}
+
 export class ControlPlane {
   /**
    * @param {Object} options - Configuration
@@ -82,6 +155,14 @@ export class ControlPlane {
     // Interactive shells opened from the terminal screen, keyed by id.
     /** @type {Map<string, {ssh: any, stream: any, server: string, subscribers: Set<import('http').ServerResponse>, backlog: string[], backlogBytes: number}>} */
     this.terminals = new Map();
+
+    // SFTP connections, kept alive between requests. A file manager makes tens
+    // of calls to browse one directory tree, and an SSH handshake per `ls` —
+    // several hundred milliseconds each — would make the screen unusable. Idle
+    // connections are dropped after SFTP_IDLE_MS so nothing stays open on a
+    // machine nobody is looking at.
+    /** @type {Map<string, {ssh: any, sftp: any, timer: NodeJS.Timeout|null}>} */
+    this.sftpPool = new Map();
     this.token = crypto.randomBytes(24).toString('hex');
 
     /** @type {Map<string, PendingRequest>} */
@@ -146,6 +227,7 @@ export class ControlPlane {
     // Interactive shells hold an SSH connection each; leaving them would leak
     // a session per terminal ever opened.
     for (const id of [...this.terminals.keys()]) this.#disposeTerminal(id);
+    for (const name of [...this.sftpPool.keys()]) this.#releaseSftp(name);
 
     await Promise.all([
       new Promise(resolve => (this.socketServer ? this.socketServer.close(() => resolve(undefined)) : resolve(undefined))),
@@ -271,7 +353,10 @@ export class ControlPlane {
       return;
     }
 
-    if (req.method === 'GET' && url.pathname === '/') return this.#serveUi(res);
+    if (req.method === 'GET' && url.pathname === '/') return this.#serveApp(res);
+    if (req.method === 'GET' && url.pathname === '/legacy') return this.#serveUi(res);
+    if (req.method === 'GET' && (url.pathname === '/app.js' || url.pathname === '/app.css'
+      || url.pathname.startsWith('/assets/'))) return this.#serveAppAsset(url.pathname, res);
     if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
     if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
     if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
@@ -281,6 +366,16 @@ export class ControlPlane {
     if (req.method === 'POST' && url.pathname === '/api/terminal/input') return this.#terminalInput(url.searchParams.get('id'), req, res);
     if (req.method === 'POST' && url.pathname === '/api/terminal/resize') return this.#terminalResize(url.searchParams.get('id'), req, res);
     if (req.method === 'DELETE' && url.pathname === '/api/terminal') return this.#closeTerminal(url.searchParams.get('id'), res);
+
+    // Files. Deliberately not path-restricted, for the same reason the terminal
+    // is not: whoever holds this token already has a shell on the machine.
+    if (req.method === 'GET' && url.pathname === '/api/files') return this.#listFiles(url.searchParams, res);
+    if (req.method === 'GET' && url.pathname === '/api/files/read') return this.#readFile(url.searchParams, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/write') return this.#writeFile(url.searchParams, req, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/mkdir') return this.#fileOp('mkdir', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/rename') return this.#fileOp('rename', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/delete') return this.#fileOp('delete', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/execute') return this.#execute(req, res);
     if (req.method === 'GET' && url.pathname === '/api/options') return this.#serveOptions(res);
     if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
       return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
@@ -534,6 +629,80 @@ export class ControlPlane {
     res.end(JSON.stringify(payload));
   }
 
+
+  /**
+   * The control plane's interface: a built React app under `dist/ui`.
+   *
+   * Committed rather than built on install, for the same reason xterm.js is
+   * vendored — `npm install mcp-ssh-manager` must never compile anything. If
+   * the build is missing (a source checkout that has not run `npm run build:ui`)
+   * this falls back to the single-file page rather than showing a blank screen.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveApp(res) {
+    const index = path.join(APP_DIR, 'index.html');
+    if (!fs.existsSync(index)) return this.#serveUi(res);
+    try {
+      // Vite emits root-relative asset URLs; the token has to ride along on
+      // them for the same reason it does on the vendored files — a <script>
+      // tag cannot authenticate itself.
+      const html = fs.readFileSync(index, 'utf8')
+        .replace(/(src|href)="\.?\/(app\.(?:js|css))"/g, (_, attr, file) => `${attr}="/${file}?token=${this.token}"`);
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'content-security-policy':
+          'default-src \'none\'; style-src \'self\' \'unsafe-inline\'; '
+          + 'script-src \'self\'; connect-src \'self\'; img-src \'self\' data:; font-src \'self\'',
+      });
+      res.end(html);
+    } catch {
+      this.#serveUi(res);
+    }
+  }
+
+  /**
+   * Static files from the build. The allowlist is by shape rather than by name
+   * because the font filenames are chosen by the bundler, but the shape is
+   * narrow and every path is resolved and checked to be inside APP_DIR — a
+   * path from a URL is how traversal happens.
+   *
+   * @param {string} pathname - Requested path
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveAppAsset(pathname, res) {
+    const types = {
+      '.js': 'text/javascript', '.css': 'text/css', '.ttf': 'font/ttf',
+      '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png',
+    };
+    const type = types[path.extname(pathname)];
+    const resolved = path.resolve(APP_DIR, `.${pathname}`);
+    if (!type || !resolved.startsWith(APP_DIR + path.sep)) {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('Not found\n');
+      return;
+    }
+    try {
+      let body = fs.readFileSync(resolved);
+      // A stylesheet's url() references are fetched by the browser with no way
+      // to add the token, exactly like a <script> tag. Same fix, same reason:
+      // stamp it in when serving. Without this the fonts 401 and the page
+      // silently falls back to the system stack.
+      if (type === 'text/css') {
+        body = Buffer.from(
+          body.toString('utf8').replace(/url\(([^)"']*\/assets\/[^)"']+)\)/g,
+            (_, asset) => `url(${asset}?token=${this.token})`)
+        );
+      }
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
+      res.end(body);
+    } catch {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('Not found\n');
+    }
+  }
+
   /**
    * Serve the vendored browser assets (xterm.js and its stylesheet).
    *
@@ -722,6 +891,217 @@ export class ControlPlane {
     try { entry.stream.end(); } catch { /* already closed */ }
     try { entry.ssh.dispose(); } catch { /* best effort */ }
     logger.info('Interactive shell closed', { server: entry.server });
+  }
+
+
+
+  /**
+   * Run one command on a server and hand back what it printed.
+   *
+   * Same reasoning as the terminal and the file routes: this is the operator's
+   * own hands, not an agent's, so the readonly/restricted modes do not apply.
+   * It exists because a file browser needs `chmod` and `chown`, and because
+   * "run this on that machine" is the shortest path between a screen and an
+   * answer.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #execute(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.server || '').toLowerCase();
+      const command = String(payload.command || '');
+      if (!command.trim()) return this.#json(res, 400, { error: 'A command is required' });
+
+      /** @type {Record<string, any>} */
+      let servers = {};
+      try {
+        servers = this.store.getAllDecrypted();
+      } catch (error) {
+        return this.#json(res, 500, { error: `Cannot read the vault: ${error.message}` });
+      }
+      if (!servers[name]) return this.#json(res, 404, { error: 'No such server in the vault' });
+
+      const ssh = new SSHManager({ ...servers[name], name });
+      try {
+        await ssh.connect({ readyTimeout: 15000 });
+        const result = await ssh.execCommand(command, { timeout: 60000 });
+        logger.info('Command run from the control plane', { server: name });
+        return this.#json(res, 200, { stdout: result.stdout, stderr: result.stderr, code: result.code });
+      } catch (error) {
+        return this.#json(res, 502, { error: error.message });
+      } finally {
+        try { ssh.dispose(); } catch { /* best effort */ }
+      }
+    });
+  }
+
+  /**
+   * Borrow a live SFTP session for a server, opening one if needed.
+   *
+   * The idle timer restarts on every use, so an operator browsing a tree keeps
+   * one connection and someone who wandered off keeps none.
+   *
+   * @param {string} name - Server name, already lowercased
+   * @returns {Promise<any>} an ssh2 SFTP session
+   */
+  async #sftp(name) {
+    const existing = this.sftpPool.get(name);
+    if (existing) {
+      if (existing.timer) clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS);
+      return existing.sftp;
+    }
+
+    /** @type {Record<string, any>} */
+    const servers = this.store.getAllDecrypted();
+    if (!servers[name]) throw Object.assign(new Error('No such server in the vault'), { status: 404 });
+
+    const ssh = new SSHManager({ ...servers[name], name });
+    await ssh.connect({ readyTimeout: 15000 });
+    const sftp = await ssh.getSFTP();
+    const entry = { ssh, sftp, timer: setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS) };
+    this.sftpPool.set(name, entry);
+    logger.info('SFTP session opened', { server: name });
+    return sftp;
+  }
+
+  /** @param {string} name - Server name */
+  #releaseSftp(name) {
+    const entry = this.sftpPool.get(name);
+    if (!entry) return;
+    this.sftpPool.delete(name);
+    if (entry.timer) clearTimeout(entry.timer);
+    try { entry.ssh.dispose(); } catch { /* best effort */ }
+    logger.info('SFTP session released', { server: name });
+  }
+
+  /**
+   * Turn an SFTP callback into a promise, and a dropped connection into a
+   * retry. A pooled session can die between two requests — the machine
+   * rebooted, the network moved — and the operator should not have to know
+   * that; they clicked a folder.
+   *
+   * @param {string} name - Server name
+   * @param {(sftp: any) => Promise<any>} run - What to do with the session
+   */
+  async #withSftp(name, run) {
+    try {
+      return await withTimeout(run(await this.#sftp(name)));
+    } catch (error) {
+      if (/** @type {any} */ (error).status === 404) throw error;
+      this.#releaseSftp(name);
+      return withTimeout(run(await this.#sftp(name)));
+    }
+  }
+
+  /**
+   * List a directory. Returns the shape a file browser wants — one stat per
+   * entry, already merged — because a browser that has to stat every row makes
+   * one round trip per file.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #listFiles(params, res) {
+    const name = String(params.get('server') || '').toLowerCase();
+    const requested = params.get('path') || '.';
+    try {
+      const result = await this.#withSftp(name, async sftp => {
+        // '.' means the home directory, and the browser needs its real name:
+        // without resolving it the breadcrumb has nothing to show, and every
+        // path built from there is relative to a directory it cannot name.
+        const dir = requested === '.' ? await realpath(sftp, '.') : requested;
+        const list = await readdir(sftp, dir);
+        return { dir, entries: list.map(item => describe(dir, item)) };
+      });
+      return this.#json(res, 200, { path: result.dir, entries: result.entries });
+    } catch (error) {
+      return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+    }
+  }
+
+  /**
+   * Stream a file down. Streamed rather than buffered: a control plane that
+   * reads a 4 GB log into memory to hand it over is a control plane that dies.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #readFile(params, res) {
+    const name = String(params.get('server') || '').toLowerCase();
+    const file = params.get('path') || '';
+    try {
+      const sftp = await this.#sftp(name);
+      const stream = sftp.createReadStream(file);
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        // The name is quoted and stripped of quotes and control characters: a
+        // filename is remote input, and this header is parsed by the browser.
+        'content-disposition': `attachment; filename="${String(file.split('/').pop()).replace(/[""\r\n]/g, '_')}"`,
+      });
+      stream.on('error', (/** @type {Error} */ error) => {
+        logger.warn('File read failed', { server: name, error: error.message });
+        res.end();
+      });
+      stream.pipe(res);
+    } catch (error) {
+      return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+    }
+  }
+
+  /**
+   * Stream a file up.
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #writeFile(params, req, res) {
+    const name = String(params.get('server') || '').toLowerCase();
+    const file = params.get('path') || '';
+    try {
+      const sftp = await this.#sftp(name);
+      await new Promise((resolve, reject) => {
+        const stream = sftp.createWriteStream(file);
+        stream.on('close', resolve);
+        stream.on('error', reject);
+        req.on('error', reject);
+        req.pipe(stream);
+      });
+      logger.info('File written', { server: name, path: file });
+      return this.#json(res, 200, { ok: true });
+    } catch (error) {
+      return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+    }
+  }
+
+  /**
+   * mkdir / rename / delete. One handler because they differ only in the call.
+   *
+   * @param {'mkdir'|'rename'|'delete'} kind - Which operation
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #fileOp(kind, req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.server || '').toLowerCase();
+      try {
+        await this.#withSftp(name, sftp => new Promise((resolve, reject) => {
+          const done = (/** @type {Error|null} */ error) => (error ? reject(error) : resolve(true));
+          if (kind === 'mkdir') return sftp.mkdir(String(payload.path), done);
+          if (kind === 'rename') return sftp.rename(String(payload.from), String(payload.to), done);
+          // rmdir and unlink are different calls, and the caller knows which it
+          // clicked on — asking SFTP to guess would mean a stat per delete.
+          return payload.isDirectory
+            ? sftp.rmdir(String(payload.path), done)
+            : sftp.unlink(String(payload.path), done);
+        }));
+        logger.info(`File ${kind}`, { server: name });
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+      }
+    });
   }
 
   /**

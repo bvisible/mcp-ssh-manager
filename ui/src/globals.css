@@ -1,0 +1,591 @@
+@import 'tailwindcss';
+@import '@xterm/xterm/css/xterm.css';
+
+/* ==============================
+   Design system, carried over from TransHub AI (same authors, MIT here)
+   shadcn/ui compatible + Fluent-inspired
+   ============================== */
+
+@font-face {
+  font-family: 'Forum';
+  src: url('./assets/fonts/Forum-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Karla';
+  src: url('./assets/fonts/Karla-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+
+/* Tailwind v4 theme configuration
+   Variable naming follows shadcn/ui conventions */
+@theme {
+  --font-display: 'Forum', serif;
+  --font-body: 'Karla', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius: 0.375rem;
+
+  /* Core colors */
+  --color-background: oklch(0.99 0 0);
+  --color-foreground: oklch(0.14 0 0);
+
+  --color-card: oklch(0.985 0 0);
+  --color-card-foreground: oklch(0.14 0 0);
+  --color-card-hover: oklch(0.97 0 0);
+
+  --color-popover: oklch(0.985 0 0);
+  --color-popover-foreground: oklch(0.14 0 0);
+
+  /* Primary = main action color (coral orange #ff7f50) */
+  --color-primary: oklch(0.55 0.19 55);
+  --color-primary-foreground: oklch(0.99 0 0);
+
+  /* Secondary = subtle background */
+  --color-secondary: oklch(0.97 0 0);
+  --color-secondary-foreground: oklch(0.14 0 0);
+
+  /* Muted = muted background + foreground for grey text */
+  --color-muted: oklch(0.97 0 0);
+  --color-muted-foreground: oklch(0.45 0 0);
+
+  /* Accent = subtle interactive hover (tinted) */
+  --color-accent: oklch(0.92 0.04 55);
+  --color-accent-foreground: oklch(0.14 0 0);
+
+  /* Destructive = danger/error actions */
+  --color-destructive: oklch(0.55 0.22 25);
+  --color-destructive-foreground: oklch(0.98 0 0);
+  --color-destructive-light: oklch(0.92 0.05 25);
+
+  --color-border: oklch(0.9 0 0);
+  --color-border-subtle: oklch(0.93 0 0);
+  --color-input: oklch(0.96 0 0);
+  --color-ring: oklch(0.55 0.19 55);
+
+  /* Sidebar */
+  --color-sidebar: oklch(0.975 0.004 55);
+  --color-sidebar-foreground: oklch(0.14 0 0);
+  --color-sidebar-border: oklch(0.9 0 0);
+  --color-sidebar-ring: oklch(0.55 0.19 55);
+  --color-sidebar-accent: oklch(0.92 0.04 55);
+  --color-sidebar-accent-foreground: oklch(0.14 0 0);
+  --color-sidebar-primary: oklch(0.55 0.19 55);
+  --color-sidebar-primary-foreground: oklch(0.99 0 0);
+
+  /* Custom TransHub tokens */
+  --color-success: oklch(0.55 0.17 145);
+  --color-success-light: oklch(0.92 0.05 145);
+  --color-warning: oklch(0.65 0.17 70);
+  --color-warning-light: oklch(0.92 0.05 70);
+  --color-pro: oklch(0.55 0.19 55);
+  --color-pro-light: oklch(0.92 0.04 55);
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px oklch(0 0 0 / 0.04), 0 0 0 1px oklch(0 0 0 / 0.05);
+  --shadow-card-hover: 0 2px 8px oklch(0 0 0 / 0.08), 0 0 0 1px oklch(0 0 0 / 0.06);
+  --shadow-dialog: 0 8px 32px oklch(0 0 0 / 0.14);
+  --shadow-dropdown: 0 4px 16px oklch(0 0 0 / 0.1);
+
+  /* Terminal — matches theme background so container blends with xterm canvas */
+  --color-term-bg: oklch(0.97 0 0);
+  --color-term-fg: oklch(0.14 0 0);
+}
+
+/* Dark theme */
+.dark {
+  --color-background: oklch(0.13 0 0);
+  --color-foreground: oklch(0.93 0 0);
+
+  --color-card: oklch(0.19 0.003 55);
+  --color-card-foreground: oklch(0.93 0 0);
+  --color-card-hover: oklch(0.22 0.003 55);
+
+  --color-popover: oklch(0.19 0.003 55);
+  --color-popover-foreground: oklch(0.93 0 0);
+
+  --color-primary: oklch(0.75 0.17 55);
+
+  --color-secondary: oklch(0.17 0 0);
+  --color-secondary-foreground: oklch(0.93 0 0);
+
+  --color-muted: oklch(0.17 0 0);
+  --color-muted-foreground: oklch(0.65 0 0);
+
+  --color-accent: oklch(0.25 0.06 55);
+  --color-accent-foreground: oklch(0.93 0 0);
+
+  --color-destructive-foreground: oklch(0.98 0 0);
+  --color-destructive-light: oklch(0.25 0.06 25);
+
+  --color-border: oklch(0.26 0 0);
+  --color-border-subtle: oklch(0.22 0 0);
+  --color-input: oklch(0.2 0 0);
+  --color-ring: oklch(0.75 0.17 55);
+
+  --color-sidebar: oklch(0.15 0.005 55);
+  --color-sidebar-foreground: oklch(0.93 0 0);
+  --color-sidebar-border: oklch(0.26 0 0);
+  --color-sidebar-ring: oklch(0.75 0.17 55);
+  --color-sidebar-accent: oklch(0.25 0.06 55);
+  --color-sidebar-accent-foreground: oklch(0.93 0 0);
+  --color-sidebar-primary: oklch(0.75 0.17 55);
+  --color-sidebar-primary-foreground: oklch(0.99 0 0);
+
+  --color-success-light: oklch(0.25 0.06 145);
+  --color-warning-light: oklch(0.25 0.06 70);
+
+  --shadow-card: 0 1px 3px oklch(0 0 0 / 0.2), 0 0 0 1px oklch(1 0 0 / 0.05);
+  --shadow-card-hover: 0 2px 8px oklch(0 0 0 / 0.3), 0 0 0 1px oklch(1 0 0 / 0.06);
+
+  --color-term-bg: oklch(0.12 0 0);
+  --color-term-fg: oklch(0.9 0 0);
+}
+
+/* ==============================
+   Base styles
+   ============================== */
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+}
+
+/* macOS title bar drag region */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag !important;
+}
+
+/* Ensure sidebar is always clickable in Electron (not blocked by drag regions) */
+.sidebar-nav {
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 10;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.7 0 0 / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0 0 / 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0 0 / 0.3);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.6 0 0 / 0.5);
+}
+
+/* Selection */
+::selection {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+
+/* Allotment sash — centered grip handle like Flutter version */
+:root {
+  --sash-size: 12px;
+  --sash-hover-size: 4px;
+}
+
+/* Gap area: subtle background to visually separate the two panes */
+[class*='allotment-module_sashContainer'] > [class*='sash-module_sash'][class*='vertical'] {
+  background: var(--color-muted);
+  box-shadow:
+    inset 1px 0 0 var(--color-border),
+    inset -1px 0 0 var(--color-border);
+}
+
+/* Grip handle: small centered pill instead of full-height bar */
+[class*='allotment-module_sashContainer'] > [class*='sash-module_sash']::before {
+  height: 40px !important;
+  width: 4px !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  border-radius: 2px !important;
+  background: var(--color-muted-foreground) !important;
+  opacity: 0.4;
+  transition:
+    background-color 150ms ease,
+    opacity 150ms ease !important;
+}
+
+/* Grip handle hover/active: accent color, full opacity */
+[class*='allotment-module_sashContainer'] > [class*='sash-module_sash'][class*='hover']::before,
+[class*='allotment-module_sashContainer'] > [class*='sash-module_sash'][class*='active']::before,
+[class*='allotment-module_sashContainer'] > [class*='sash-module_sash']:hover::before {
+  background: var(--color-accent) !important;
+  opacity: 1;
+}
+
+/* Hide scrollbar for breadcrumb */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Transition utilities */
+.transition-theme {
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease;
+}
+
+/* Streaming indicator ring animation */
+@keyframes streaming-ring {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+.animate-streaming-ring {
+  animation: streaming-ring 1.5s ease-in-out infinite;
+}
+
+/* Animated gradient border — snake trail effect */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.gradient-border-snake::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--border-angle),
+    transparent 0%,
+    transparent 65%,
+    oklch(0.75 0.17 55 / 0.3) 78%,
+    oklch(0.65 0.19 300) 85%,
+    oklch(0.65 0.17 210) 90%,
+    oklch(0.75 0.17 55) 93%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: gradient-border-spin 4s linear infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes gradient-border-spin {
+  to {
+    --border-angle: 360deg;
+  }
+}
+
+/* Thinking shimmer — gradient sweep across text */
+@keyframes thinking-shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+.animate-thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-muted-foreground) 0%,
+    var(--color-muted-foreground) 35%,
+    var(--color-foreground) 50%,
+    var(--color-muted-foreground) 65%,
+    var(--color-muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.5s ease-in-out infinite;
+}
+
+/* Thinking icon pulse */
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+.animate-thinking-pulse {
+  animation: thinking-pulse 2s ease-in-out infinite;
+}
+
+/* ==============================
+   Chat redesign tokens (light-only for now)
+   Editorial cream palette + coral accent, used by components/chrome/*
+   and the refreshed chat surface. Safe to coexist with shadcn tokens above.
+   ============================== */
+:root {
+  /* Surfaces */
+  --cream: oklch(0.985 0.006 80);
+  --cream-2: oklch(0.97 0.008 75);
+
+  /* Ink scale (text) */
+  --ink-1: oklch(0.18 0.008 60);
+  --ink-2: oklch(0.36 0.006 60);
+  --ink-3: oklch(0.54 0.006 60);
+  --ink-4: oklch(0.72 0.006 60);
+
+  /* Lines */
+  --line: oklch(0.91 0.006 60);
+  --line-soft: oklch(0.94 0.006 60);
+
+  /* Accent — coral transhub */
+  --coral: oklch(0.6 0.17 45);
+  --coral-soft: oklch(0.93 0.04 55);
+
+  /* Titlebar — warm gray, markedly darker than --cream so the tab strip pops. */
+  --titlebar: oklch(0.93 0.005 70);
+
+  /* Chat bubbles */
+  --user-bubble: oklch(0.935 0.015 60);
+  --asst-bubble: oklch(0.975 0.004 60);
+
+  /* Density — defaults match "cozy" (app default) */
+  --thread-max: 780px;
+  --thread-pad-y: 20px;
+  --msg-gap: 18px;
+  --msg-pad-y: 10px;
+  --msg-pad-x: 14px;
+  --msg-radius: 12px;
+  --msg-font: 13.5px;
+  --msg-line: 1.55;
+  --tabs-pad-y: 8px;
+  --tabs-font: 12.5px;
+}
+
+/* Dark-mode overrides for the paper palette.
+   Components consume these tokens via var(--…) everywhere, so redefining
+   them inside .dark is enough to flip the whole UI — no component rewrites. */
+.dark {
+  /* Surfaces — warm charcoal */
+  --cream: oklch(0.18 0.006 60);
+  --cream-2: oklch(0.22 0.007 60);
+
+  /* Ink scale — inverted, light on dark */
+  --ink-1: oklch(0.96 0.005 70);
+  --ink-2: oklch(0.82 0.005 70);
+  --ink-3: oklch(0.66 0.006 70);
+  --ink-4: oklch(0.48 0.006 70);
+
+  /* Lines — subtle on dark */
+  --line: oklch(0.32 0.006 60);
+  --line-soft: oklch(0.27 0.006 60);
+
+  /* Coral — slightly brighter for AA contrast on dark surfaces */
+  --coral: oklch(0.72 0.17 45);
+  --coral-soft: oklch(0.28 0.05 45);
+
+  /* Chat bubbles */
+  --user-bubble: oklch(0.28 0.015 60);
+  --asst-bubble: oklch(0.22 0.005 60);
+
+  /* Titlebar — lifted header, slightly lighter than --cream for elevation. */
+  --titlebar: oklch(0.14 0.006 60);
+}
+
+[data-density='airy'] {
+  --thread-max: 760px;
+  --thread-pad-y: 36px;
+  --msg-gap: 32px;
+  --msg-pad-y: 16px;
+  --msg-pad-x: 20px;
+  --msg-radius: 18px;
+  --msg-font: 15.5px;
+  --msg-line: 1.7;
+  --tabs-pad-y: 12px;
+  --tabs-font: 13px;
+}
+
+[data-density='cozy'] {
+  --thread-max: 780px;
+  --thread-pad-y: 20px;
+  --msg-gap: 18px;
+  --msg-pad-y: 10px;
+  --msg-pad-x: 14px;
+  --msg-radius: 12px;
+  --msg-font: 13.5px;
+  --msg-line: 1.55;
+  --tabs-pad-y: 8px;
+  --tabs-font: 12.5px;
+}
+
+[data-density='compact'] {
+  --thread-max: 920px;
+  --thread-pad-y: 10px;
+  --msg-gap: 8px;
+  --msg-pad-y: 6px;
+  --msg-pad-x: 10px;
+  --msg-radius: 8px;
+  --msg-font: 12.5px;
+  --msg-line: 1.45;
+  --tabs-pad-y: 5px;
+  --tabs-font: 11.5px;
+}
+
+/* Message entry animation used by the new MessageBubble */
+@keyframes chat-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 3-dots thinking used by the new bubbles (not the shimmer one above) */
+@keyframes chat-dots-blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Utility: every chat message row fades + slides in on mount (identity pinned
+   by React key, so the animation runs once per message, not on re-renders) */
+.chat-msg-row {
+  animation: chat-msg-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Meta line below each bubble ("TOI" / "OPUS"). Hidden in compact density. */
+[data-density='compact'] .chat-meta {
+  display: none;
+}
+
+/* ==============================
+   .paper-surface — scoped palette override for the redesigned chat page.
+   Rebinds shadcn/Tailwind color tokens to the cream/ink palette inside the
+   scope, so every `bg-background`, `border-border`, `text-muted-foreground`,
+   etc. used by child components (sidebar, toolbar, bubbles, pane chrome) is
+   transformed at once — no per-component restyling needed for the base coat.
+   Per-component visual touches (session tabs, toolbar spacing, meta font) can
+   still layer on top via explicit classes or inline styles.
+   ============================== */
+.paper-surface {
+  --color-background: var(--cream);
+  --color-foreground: var(--ink-1);
+  --color-card: var(--cream);
+  --color-card-foreground: var(--ink-1);
+  --color-card-hover: var(--cream-2);
+  --color-popover: oklch(0.995 0.005 70);
+  --color-popover-foreground: var(--ink-1);
+  --color-primary: var(--coral);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-secondary: var(--cream-2);
+  --color-secondary-foreground: var(--ink-1);
+  --color-muted: var(--cream-2);
+  --color-muted-foreground: var(--ink-3);
+  --color-accent: var(--coral-soft);
+  --color-accent-foreground: var(--coral);
+  --color-border: var(--line);
+  --color-border-subtle: var(--line-soft);
+  --color-input: var(--cream-2);
+  --color-ring: var(--coral);
+
+  --color-sidebar: var(--cream-2);
+  --color-sidebar-foreground: var(--ink-1);
+  --color-sidebar-border: var(--line-soft);
+  --color-sidebar-ring: var(--coral);
+  --color-sidebar-accent: var(--coral-soft);
+  --color-sidebar-accent-foreground: var(--coral);
+  --color-sidebar-primary: var(--coral);
+  --color-sidebar-primary-foreground: oklch(0.99 0 0);
+
+  background: var(--cream);
+  color: var(--ink-1);
+  font-family: var(--font-body);
+}
+
+/* Dark-mode tweaks for .paper-surface: the light remap assumes white-ish
+   popovers and near-white primary-foregrounds; on dark we need the popover
+   to float *above* the surface (lighter), and coral's foreground flips to
+   near-black for legibility on bright coral. */
+.dark .paper-surface {
+  --color-popover: oklch(0.24 0.006 60);
+  --color-primary-foreground: oklch(0.12 0 0);
+  --color-sidebar-primary-foreground: oklch(0.12 0 0);
+}
+
+/* Display-font headings + mono path styling used inside .paper-surface
+   (applied via utility classes on key text nodes). */
+.paper-surface .chat-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.005em;
+}
+.paper-surface .chat-mono {
+  font-family: var(--font-mono);
+}
