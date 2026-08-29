@@ -1,0 +1,23 @@
+{
+  "name": "ssh-manager-desktop",
+  "productName": "SSH Manager",
+  "version": "4.0.0",
+  "private": true,
+  "description": "The SSH Manager control plane as a desktop application",
+  "main": "main.js",
+  "type": "module",
+  "author": "bvisible",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "prepare-engine": "node prepare-engine.mjs",
+    "build:mac": "npm run prepare-engine && electron-builder --mac",
+    "build:win": "npm run prepare-engine && electron-builder --win",
+    "build:linux": "npm run prepare-engine && electron-builder --linux",
+    "build:all": "npm run prepare-engine && electron-builder --mac --win --linux"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
+  }
+}

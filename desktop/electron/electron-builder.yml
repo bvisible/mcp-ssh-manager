@@ -1,0 +1,68 @@
+appId: com.bvisible.ssh-manager
+productName: SSH Manager
+copyright: Copyright © 2026 bvisible
+
+directories:
+  output: dist
+  buildResources: resources
+
+# Only this directory's own files go in the asar. The engine is carried as a
+# resource instead — see extraResources — because ssh2 loads optional native
+# bindings at runtime and those cannot be read from inside an archive.
+files:
+  - main.js
+  - package.json
+
+extraResources:
+  # Assembled by prepare-engine.mjs, which installs only the production
+  # dependencies — pointing at the repository's node_modules put 55 MB of
+  # eslint and friends inside the application.
+  - from: engine
+    to: engine
+    filter:
+      - '**/*'
+      - '!**/{test,tests,__tests__,example,examples,docs,doc}/**'
+      - '!**/*.{md,map,ts}'
+      - '!**/.bin/**'
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Keychain access is what the vault uses on macOS; without the entitlement the
+  # `security` call fails and the vault silently falls back to a key file.
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSDownloadsFolderUsageDescription: SSH Manager reads and writes files here when you transfer them to or from a server.
+    NSDocumentsFolderUsageDescription: SSH Manager reads and writes files here when you transfer them to or from a server.
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # Uninstalling must not take the vault with it: the servers and their
+  # encrypted credentials live in the user's home, not in the install directory,
+  # and someone reinstalling expects to find them again.
+  deleteAppDataOnUninstall: false
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  maintainer: bvisible
+  artifactName: ${productName}-${version}-${arch}.${ext}

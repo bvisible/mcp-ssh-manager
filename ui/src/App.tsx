@@ -11,6 +11,7 @@ import { OptionsPage } from '@/pages/OptionsPage';
 import { useWorkspace } from '@/stores/workspace';
 import { useServersStore } from '@/stores/servers.store';
 import { state, QUEUE_EVENTS } from '@/lib/api';
+import { ensurePermission, notifyApproval, clearApproval, clearAll } from '@/lib/notify';
 
 export function App() {
   const { view, tabs, activeTabId, setPendingCount } = useWorkspace();
@@ -22,20 +23,46 @@ export function App() {
   // page happened to open on.
   useEffect(() => { void loadServers(); }, [loadServers]);
 
-  // The pending count belongs on the rail, so it is fetched here too.
+  const setView = useWorkspace(s => s.setView);
+
+  // The approval queue: the badge on the rail, and a desktop notification for
+  // anything waiting. The notification is the point — an operator watching this
+  // window did not need telling, and one who isn't would otherwise find out
+  // when the request had already timed out and been denied.
   useEffect(() => {
     let cancelled = false;
-    const refresh = () =>
-      state
-        .get()
-        .then(current => !cancelled && setPendingCount(current.pending.length))
-        .catch(() => { /* the badge is not worth an error banner */ });
+    const seen = new Set<string>();
+
+    const refresh = async () => {
+      try {
+        const current = await state.get();
+        if (cancelled) return;
+        setPendingCount(current.pending.length);
+
+        const waiting = new Set(current.pending.map(request => request.id));
+        // Gone from the queue means answered or expired; a notification for a
+        // decision already made invites a second one.
+        for (const id of [...seen]) {
+          if (!waiting.has(id)) { clearApproval(id); seen.delete(id); }
+        }
+        for (const request of current.pending) {
+          if (seen.has(request.id)) continue;
+          seen.add(request.id);
+          if (await ensurePermission()) {
+            notifyApproval(request, () => setView('waiting'));
+          }
+        }
+      } catch {
+        /* the badge is not worth an error banner */
+      }
+    };
+
     void refresh();
     const stop = state.subscribe(event => {
       if ((QUEUE_EVENTS as readonly string[]).includes(event.type)) void refresh();
     });
-    return () => { cancelled = true; stop(); };
-  }, [setPendingCount]);
+    return () => { cancelled = true; stop(); clearAll(); };
+  }, [setPendingCount, setView]);
 
   const nameFor = (serverId: string) => servers.find(s => s.id === serverId)?.name ?? serverId;
 

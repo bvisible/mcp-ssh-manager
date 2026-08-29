@@ -32,6 +32,12 @@ function getInitials(name: string): string {
   return name.slice(0, 2).charAt(0).toUpperCase() + name.slice(1, 2).toLowerCase()
 }
 
+/**
+ * Which shell the page is in. The desktop app appends this; a browser tab does
+ * not, and gets the plain layout.
+ */
+const shell = new URLSearchParams(window.location.search).get('shell');
+
 export function Sidebar() {
   const {
     view,
@@ -54,6 +60,12 @@ export function Sidebar() {
       )}
     >
       {/* Toggle button */}
+      {/* The desktop app hides the title bar and draws the window buttons over
+          the content, so the rail has to start below them. A browser tab has
+          nothing to avoid, which is why this is conditional rather than a
+          constant top margin. */}
+      {shell === 'macos' && <div className="h-7 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />}
+
       <button
         onClick={toggleExpanded}
         aria-label={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}

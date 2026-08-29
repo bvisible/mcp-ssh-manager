@@ -185,6 +185,9 @@ export class ControlPlane {
     // machine nobody is looking at.
     /** @type {Map<string, {ssh: any, sftp: any, timer: NodeJS.Timeout|null}>} */
     this.sftpPool = new Map();
+
+    /** @type {string|null} The tokenised URL, once the server is listening. */
+    this.url = null;
     this.token = crypto.randomBytes(24).toString('hex');
 
     /** @type {Map<string, PendingRequest>} */
@@ -365,7 +368,12 @@ export class ControlPlane {
       this.httpServer?.listen(this.port, '127.0.0.1', () => resolve(undefined));
     });
     const address = /** @type {import('net').AddressInfo} */ (this.httpServer.address());
-    return `http://127.0.0.1:${address.port}/?token=${this.token}`;
+    // Port 0 asks the OS to choose; remember what it chose, or callers that
+    // outlive the returned URL — a desktop window reopening, a status command —
+    // have no way to build it again.
+    this.port = address.port;
+    this.url = `http://127.0.0.1:${address.port}/?token=${this.token}`;
+    return this.url;
   }
 
   /**
