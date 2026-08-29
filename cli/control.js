@@ -61,13 +61,34 @@ Close this process and they go back to running unattended.${RESET}
     console.log(`${YELLOW}Tip:${RESET} set ${BOLD}SSH_SERVER_<NAME>_AUDIT_LOG=/path/to/audit.jsonl${RESET} to see everything, not just approvals.\n`);
   }
 
-  const shutdown = async () => {
+  // A control plane outliving whatever launched it is worse than none: it keeps
+  // the approval socket, so agents block on a UI nobody can see. When the parent
+  // dies the process is reparented to init, so a changed ppid is the signal.
+  //
+  // Only when launched by another program: interactively, `nohup` and friends
+  // reparent on purpose and the user means it. (stdin was the first attempt and
+  // was wrong — resume() on an empty pipe fires 'end' immediately, which killed
+  // the control plane the moment the desktop app started it.)
+  if (!process.stdin.isTTY) {
+    const parentPid = process.ppid;
+    const watcher = setInterval(() => {
+      if (process.ppid !== parentPid) {
+        console.log('\nParent process gone — stopping.');
+        clearInterval(watcher);
+        shutdown();
+      }
+    }, 2000);
+    watcher.unref();
+  }
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  async function shutdown() {
     console.log('\nStopping — pending requests will be refused.');
     await plane.stop();
     process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  }
 }
 
 main().catch(error => {

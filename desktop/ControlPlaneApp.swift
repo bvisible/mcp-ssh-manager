@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     var webView: WKWebView!
     var controlPlane: Process?
     var statusLabel: NSTextField!
+    var signalSources: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(
@@ -98,6 +99,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         startControlPlane()
+        installSignalHandlers()
+    }
+
+    /// Terminate the child on signals AppKit does not turn into a clean quit.
+    /// Without this, `kill` on the app leaves the control plane running and
+    /// holding the approval socket.
+    func installSignalHandlers() {
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { NSApp.terminate(nil) }
+            source.resume()
+            signalSources.append(source)
+        }
     }
 
     /// Launch `ssh-manager control` and wait for it to print its URL.
