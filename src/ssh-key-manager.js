@@ -140,7 +140,14 @@ export function removeHostKey(host, port = 22) {
   // Was it there to begin with? ssh-keygen -R succeeds either way, so without
   // this the function would report success for a host it never touched — and a
   // control plane would tell an operator it forgot a key that is still there.
-  const wasKnown = isHostKnown(host, port);
+  // Return before touching ssh-keygen when there is nothing to remove: the
+  // command fails outright where no known_hosts file exists at all (a fresh CI
+  // runner, a container), and reporting that as an error would be wrong — there
+  // was simply no key.
+  if (!isHostKnown(host, port)) {
+    logger.info('No host key to remove', { host, port });
+    return false;
+  }
 
   try {
     // execFileSync, not execSync: arguments are passed to the process directly
@@ -154,10 +161,6 @@ export function removeHostKey(host, port = 22) {
     throw new Error(`Failed to remove host key: ${error.message}`);
   }
 
-  if (!wasKnown) {
-    logger.info('No host key to remove', { host, port });
-    return false;
-  }
   logger.info('Host key removed', { host, port });
   return true;
 }
