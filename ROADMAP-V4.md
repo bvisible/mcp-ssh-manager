@@ -31,6 +31,7 @@ optional and never required for the engine to run.
 | **Live command streaming** (`src/live-stream.js`) | **done** — watch the agent work, as it happens |
 | **Server health** | **done** — on-demand probes, never in the background |
 | **Options** (groups, host keys) | **done** — tunnels deliberately absent, see below |
+| **Skills** (`skills/`) | **done** — three, shipped with the package |
 
 ## Done: the vault
 
@@ -309,6 +310,35 @@ passed directly, and guarded in the injection test.
 It also always returned `true`: `ssh-keygen -R` succeeds whether or not the host
 was there, so the control plane would have told an operator it forgot a key that
 is still in the file. It now checks first and answers honestly.
+
+## Done: skills
+
+Three, shipped with the npm package, covering what an agent cannot infer from a
+tool description because it is judgement rather than syntax:
+
+| Skill | Fires on |
+|---|---|
+| `ssh-operations` | deploying, backing up, restarting, running commands |
+| `ssh-incident` | "the server is down", "the site is slow" |
+| `ssh-restricted` | a tool was refused — security modes and approval |
+
+They are short on purpose. A skill that reads like a manual gets skimmed, which
+defeats writing it; each says the few things that change what an agent does —
+look before you change, back up before you overwrite, read the log before
+restarting, and treat a refusal as the system working rather than an obstacle to
+route around.
+
+`ssh-restricted` is the one that matters most for this project: it tells an agent
+not to retry a blocked action through `ssh_execute`, not to hop to a less
+constrained server, and not to ask the operator to turn the mode off. Working
+around a control someone deliberately configured is worse than failing the task,
+because they will believe it held.
+
+Guarded by `npm run test:skills`. Prose type-checks against nothing, so the test
+does it: front matter loadable and matching the directory, descriptions that say
+*when* rather than *what*, **every `ssh_*` tool named actually registered** (the
+failure being a skill sending an agent at a renamed tool), and a length ceiling
+so they do not grow into manuals.
 
 ## Non-negotiables
 
