@@ -343,8 +343,9 @@
         <div id="hostkeys"></div>
       </div>
       <div class="opt-group">
-        <h3>Tunnels</h3>
-        <p class="sub">Not shown here: open tunnels live inside the MCP server's own process, which this one cannot see. Use <code>ssh_tunnel_list</code> from your agent.</p>
+        <h3>Open tunnels</h3>
+        <p class="sub">Opened by your agent through <code>ssh_tunnel_create</code>, and published by the MCP server so they can be shown here.</p>
+        <div id="tunnels"></div>
       </div>
     </section>
   </div>
@@ -562,6 +563,25 @@
   const groupsEl = document.getElementById('groups');
   const hostKeysEl = document.getElementById('hostkeys');
 
+  const tunnelsEl = document.getElementById('tunnels');
+
+  function renderTunnels(data) {
+    if (data.tunnelsStale) {
+      tunnelsEl.innerHTML = '<p class="empty">The last MCP server that opened tunnels is no longer running, so whatever it had open is gone with it.</p>';
+      return;
+    }
+    const tunnels = data.tunnels || [];
+    tunnelsEl.innerHTML = tunnels.length === 0
+      ? '<p class="empty">No open tunnel.</p>'
+      : tunnels.map(t => `<div class="grp">
+          <div>
+            <div class="gname">${esc(t.serverName || t.server || '?')} <span class="tag">${esc(t.type || 'local')}</span></div>
+            <div class="members">${esc(t.description || [t.localPort, t.remoteHost, t.remotePort].filter(Boolean).join(' → ') || t.id)}</div>
+          </div>
+          <span class="tag">${esc(t.state || 'open')}</span>
+        </div>`).join('');
+  }
+
   function renderOptions(data) {
     const groups = data.groups || [];
     groupsEl.innerHTML = groups.length === 0
@@ -574,17 +594,26 @@
           <span class="tag">${esc(String(g.source || 'file'))}</span>
         </div>`).join('');
 
+    renderTunnels(data);
+
     const keys = data.hostKeys || [];
     hostKeysEl.innerHTML = keys.length === 0
       ? '<p class="empty">No known host yet. Entries appear the first time you connect to a machine.</p>'
-      : keys.map(k => `<div class="hk">
+      : keys.map(k => {
+        // listKnownHosts returns one entry per host with a keys[] array — a
+        // host commonly has several (ed25519 and ecdsa, say), and reading a
+        // `type` off the entry itself silently showed "unknown" for every row.
+        const algos = (k.keys || []).map(entry => entry.type).filter(Boolean);
+        const fingerprints = (k.keys || []).map(entry => entry.fingerprint).filter(Boolean);
+        return `<div class="hk">
           <div>
             <div class="hkhost">${esc(k.host)}${k.port && k.port !== 22 ? `:${esc(k.port)}` : ''}</div>
-            <div class="hkalgo">${esc(k.type || k.algorithm || 'unknown')}</div>
-            ${k.fingerprint ? `<div class="fp">${esc(k.fingerprint)}</div>` : ''}
+            <div class="hkalgo">${esc(algos.join(', ') || 'no key type recorded')}</div>
+            ${fingerprints.map(f => `<div class="fp">${esc(f)}</div>`).join('')}
           </div>
           <button class="small deny" data-forget="${esc(k.host)}" data-port="${esc(k.port || 22)}">Forget</button>
-        </div>`).join('');
+        </div>`;
+      }).join('');
   }
 
   hostKeysEl.addEventListener('click', async event => {

@@ -37,6 +37,7 @@ import SSHManager from './ssh-manager.js';
 import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck } from './health-monitor.js';
 import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
 import { listGroups, setServerConfigProvider } from './server-groups.js';
+import { readPublishedTunnels } from './tunnel-manager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -528,7 +529,12 @@ export class ControlPlane {
       logger.warn('Cannot read known_hosts', { error: error.message });
     }
 
-    this.#json(res, 200, { groups, hostKeys });
+    // Tunnels are opened inside the MCP server's process; it publishes them to
+    // a file so this one can show them. `stale` means the file was written by a
+    // process that is no longer running — showing those as open would be a lie.
+    const tunnelState = readPublishedTunnels();
+
+    this.#json(res, 200, { groups, hostKeys, tunnels: tunnelState.tunnels, tunnelsStale: tunnelState.stale });
   }
 
   /**

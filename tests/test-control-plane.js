@@ -15,6 +15,7 @@ import path from 'path';
 import http from 'http';
 import { ControlPlane } from '../src/control-plane.js';
 import { requestDecision, buildRequest } from '../src/approval.js';
+import { tunnelStatePath } from '../src/tunnel-manager.js';
 
 let passed = 0;
 function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); passed++; }
@@ -404,6 +405,52 @@ async function testOptionsAndHostKeys() {
   ok('options and host-key removal require the token');
 }
 
+async function testPublishedTunnels() {
+  process.env.SSH_MANAGER_HOME = scratch;
+  const { plane, base } = await startPlane({ vaultPath: path.join(scratch, 'tun.json') });
+  const q = `token=${plane.token}`;
+  // The real path helper, not a hard-coded copy of it: if the location changes,
+  // this test must move with it rather than silently testing nothing.
+  const statePath = tunnelStatePath();
+
+  const empty = await (await call(base, `/api/options?${q}`)).json();
+  assert.deepStrictEqual(empty.tunnels, [], 'no state file means no tunnels');
+  assert.strictEqual(empty.tunnelsStale, false, 'a missing file is not stale, it is empty');
+  ok('with no published state, no tunnel is shown and nothing is called stale');
+
+  // A live engine publishing two tunnels: this process is alive, so they count.
+  fs.writeFileSync(statePath, JSON.stringify({
+    pid: process.pid,
+    updatedAt: new Date().toISOString(),
+    tunnels: [
+      { id: 't1', serverName: 'prod', type: 'local', localPort: 8080, state: 'open' },
+      { id: 't2', serverName: 'db1', type: 'socks', localPort: 1080, state: 'open' },
+    ],
+  }));
+  const live = await (await call(base, `/api/options?${q}`)).json();
+  assert.strictEqual(live.tunnels.length, 2, 'tunnels published by a running process must be shown');
+  assert.strictEqual(live.tunnelsStale, false);
+  ok('tunnels published by a running engine are shown');
+
+  // The case that matters: the engine died and left its file behind. Showing
+  // those as open would tell an operator a port is forwarded when it is not.
+  fs.writeFileSync(statePath, JSON.stringify({
+    pid: 999999, // not a running process
+    updatedAt: new Date().toISOString(),
+    tunnels: [{ id: 't3', serverName: 'prod', type: 'local', localPort: 8080, state: 'open' }],
+  }));
+  const stale = await (await call(base, `/api/options?${q}`)).json();
+  assert.deepStrictEqual(stale.tunnels, [], 'a stale file must yield no tunnels');
+  assert.strictEqual(stale.tunnelsStale, true, 'and must say so, rather than looking empty');
+  ok('a state file left by a dead process is reported stale, never shown as open');
+
+  fs.writeFileSync(statePath, 'not json at all');
+  const broken = await (await call(base, `/api/options?${q}`)).json();
+  assert.deepStrictEqual(broken.tunnels, [], 'an unreadable file must not break the options screen');
+  ok('an unreadable state file degrades to no tunnels');
+  fs.rmSync(statePath, { force: true });
+}
+
 async function main() {
   try {
     await testTokenIsRequired();
@@ -418,6 +465,7 @@ async function main() {
     await testServerManagement();
     await testHealthProbe();
     await testOptionsAndHostKeys();
+    await testPublishedTunnels();
     console.log(`\n✅ control plane tests passed (${passed} checks)`);
   } finally {
     for (const plane of planes) {

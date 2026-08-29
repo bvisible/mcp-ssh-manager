@@ -30,7 +30,7 @@ optional and never required for the engine to run.
 | **Desktop app** (`desktop/`) | **done** — native macOS window, 104 KB |
 | **Live command streaming** (`src/live-stream.js`) | **done** — watch the agent work, as it happens |
 | **Server health** | **done** — on-demand probes, never in the background |
-| **Options** (groups, host keys) | **done** — tunnels deliberately absent, see below |
+| **Options** (groups, host keys, tunnels) | **done** |
 | **Skills** (`skills/`) | **done** — three, shipped with the package |
 
 ## Done: the vault
@@ -291,13 +291,23 @@ fix is deleting a line from `~/.ssh/known_hosts` identified by a number in an
 error message. Two clicks, like deleting a server — silencing a
 machine-in-the-middle warning should not be one slip.
 
-### Tunnels are deliberately not here
+### Tunnels, and how they got here
 
-`tunnel-manager.js` keeps open tunnels in a `Map` **inside the MCP server's
-process**, which this process cannot see. Showing an empty or stale tunnel list
-would be worse than showing none, so the screen says where to look instead.
-Fixing it properly means sharing that state across processes — a real design
-question, not a screen.
+`tunnel-manager.js` keeps open tunnels in a `Map` inside the MCP server's
+process, which the control plane cannot see. The fix is a published state file:
+the engine writes `~/.ssh-manager/tunnels.json` whenever a tunnel opens or
+closes, and the control plane reads it.
+
+**The file carries the writing process's pid**, and a reader checks that pid is
+alive before believing the contents. Without it, an engine that crashed would
+leave a file claiming ports are forwarded when nothing is listening — telling an
+operator a tunnel is open when it is not is worse than showing no tunnels at all.
+A stale file is reported as stale, never rendered as open.
+
+Publishing is best-effort and swallows its own errors: it is a convenience for a
+window, and must never take down a tunnel that is working. No file is written at
+all when there are no tunnels — an empty file and a missing one mean the same
+thing, and removing it stops a dead pid lingering on disk.
 
 ### A security bug found while wiring it
 
