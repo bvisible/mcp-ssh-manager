@@ -31,6 +31,7 @@ import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,11 +55,13 @@ export class ControlPlane {
    * @param {string} options.socketPath - Where the engine connects
    * @param {number} [options.port] - HTTP port; 0 picks a free one
    * @param {string[]} [options.auditPaths] - JSONL audit logs to read
+   * @param {string} [options.vaultPath] - Encrypted store to manage servers in
    */
-  constructor({ socketPath, port = 0, auditPaths = [] }) {
+  constructor({ socketPath, port = 0, auditPaths = [], vaultPath = defaultVaultPath() }) {
     this.socketPath = socketPath;
     this.port = port;
     this.auditPaths = auditPaths;
+    this.store = new SecretStore(vaultPath);
     this.token = crypto.randomBytes(24).toString('hex');
 
     /** @type {Map<string, PendingRequest>} */
@@ -224,6 +227,11 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
     if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
     if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
+    if (req.method === 'POST' && url.pathname === '/api/servers') return this.#saveServer(req, res);
+    if (req.method === 'DELETE' && url.pathname === '/api/servers') {
+      return this.#deleteServer(url.searchParams.get('name'), res);
+    }
 
     res.writeHead(404, { 'content-type': 'text/plain' });
     res.end('Not found\n');
@@ -312,6 +320,145 @@ export class ControlPlane {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{"ok":true}');
     });
+  }
+
+  /**
+   * Servers held in the vault.
+   *
+   * Never returns a secret, only whether one is set: the page is the most
+   * exposed surface here, and a credential has no reason to travel to it. The
+   * CLI does not print them either.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveServers(res) {
+    /** @type {any[]} */
+    let servers = [];
+    try {
+      const raw = this.store.read();
+      servers = Object.entries(raw.servers).map(([name, config]) => {
+        /** @type {Record<string, any>} */
+        const safe = { name };
+        for (const [field, value] of Object.entries(config)) {
+          // A boolean saying "there is a password" is all the UI needs to render
+          // the row and pre-fill the form sensibly.
+          safe[field] = SECRET_FIELDS.includes(field) ? undefined : value;
+          if (SECRET_FIELDS.includes(field)) safe[`has${field[0].toUpperCase()}${field.slice(1)}`] = true;
+        }
+        return safe;
+      });
+    } catch (error) {
+      logger.error('Cannot read the vault', { error: error.message });
+    }
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ servers, vaultPath: this.store.vaultPath }));
+  }
+
+  /**
+   * Add or replace a server.
+   *
+   * A field left empty on an existing server keeps its stored value, so editing
+   * the port does not silently wipe the password — the form cannot show it, so
+   * it must not require re-typing it either.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #saveServer(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      const name = String(payload.name || '').trim().toLowerCase();
+      if (!name || !/^[a-z0-9_]+$/.test(name)) {
+        return this.#json(res, 400, { error: 'Name must use letters, digits and underscores only' });
+      }
+      if (!payload.host) return this.#json(res, 400, { error: 'A host is required' });
+
+      const existing = this.store.read().servers[name];
+      /** @type {Record<string, any>} */
+      const config = {};
+      for (const [field, value] of Object.entries(payload)) {
+        if (field === 'name' || value === '' || value === null || value === undefined) continue;
+        config[field] = value;
+      }
+      // Carry forward any secret the form did not resend.
+      if (existing) {
+        const decrypted = this.#decryptedServer(name);
+        for (const field of SECRET_FIELDS) {
+          if (config[field] === undefined && decrypted?.[field] !== undefined) {
+            config[field] = decrypted[field];
+          }
+        }
+      }
+
+      try {
+        this.store.setServer(name, config);
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+      logger.info('Server saved from the control plane', { server: name });
+      this.#broadcast({ type: 'servers' });
+      return this.#json(res, 200, { ok: true, name });
+    });
+  }
+
+  /**
+   * One server with its secrets decrypted, keyed by name.
+   *
+   * Used so an edit that did not resend a password keeps the stored one: the
+   * form cannot display a secret, so it must not require re-typing it.
+   *
+   * @param {string} name - Server name, lowercase
+   * @returns {Record<string, any>|undefined} The decrypted config
+   */
+  #decryptedServer(name) {
+    try {
+      return this.store.getAllDecrypted()[name];
+    } catch (error) {
+      logger.error('Cannot decrypt the stored server', { server: name, error: error.message });
+      return undefined;
+    }
+  }
+
+  /**
+   * @param {string|null} name - Server to remove
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #deleteServer(name, res) {
+    if (!name) return this.#json(res, 400, { error: 'No server named' });
+    const removed = this.store.removeServer(name);
+    if (!removed) return this.#json(res, 404, { error: 'No such server in the vault' });
+    logger.info('Server removed from the control plane', { server: name });
+    this.#broadcast({ type: 'servers' });
+    return this.#json(res, 200, { ok: true });
+  }
+
+  /**
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   * @param {(payload: any) => void} handler - Called with the parsed body
+   */
+  #readJsonBody(req, res, handler) {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > 8192) req.destroy();
+    });
+    req.on('end', () => {
+      try {
+        handler(JSON.parse(body));
+      } catch {
+        this.#json(res, 400, { error: 'malformed body' });
+      }
+    });
+  }
+
+  /**
+   * @param {import('http').ServerResponse} res - Response
+   * @param {number} status - HTTP status
+   * @param {any} payload - JSON body
+   */
+  #json(res, status, payload) {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(JSON.stringify(payload));
   }
 
   /**

@@ -101,8 +101,8 @@ Found while testing end to end, both now guarded:
 ssh-manager control      # prints a tokenised localhost URL, runs in the foreground
 ```
 
-Two screens, as planned, and nothing else: **what is waiting for you**, and
-**what your agents did**. No terminal, no SFTP browser — that market has an
+Three screens: **your servers** (add, edit, delete — the vault behind a form),
+**what is waiting for you**, and **what your agents did**. No terminal, no SFTP browser — that market has an
 incumbent with nine months' head start, and a control plane that opens on a
 terminal is just a late SSH client.
 
@@ -124,6 +124,21 @@ website could approve an agent's `rm -rf`. Hence, all tested:
 - the listener binds `127.0.0.1`, never `0.0.0.0`;
 - the page is served `no-store` under a CSP of `default-src 'none'`, and loads
   nothing from the network.
+
+### Managing servers from the page
+
+The vault is editable from the browser, not only the CLI — both drive the same
+`SecretStore`, so they cannot disagree about what is stored.
+
+- **A secret never travels to the page.** Listing returns `hasPassword: true`,
+  never the value. The form cannot display one, so it does not ask for one back:
+  editing a port keeps the stored password rather than wiping it.
+- **Deleting takes two clicks** on the same button, not a `confirm()` dialog — a
+  browser modal freezes the automation this page is tested with, and the second
+  click is enough friction. The armed state lasts 10 seconds, long enough to
+  actually read which row it belongs to.
+- Names are validated server-side (`[a-z0-9_]+`), because a name is the vault
+  key and a bad one is a second entry rather than an error.
 
 ### Behaviours that matter
 

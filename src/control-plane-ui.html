@@ -103,6 +103,58 @@
   button.deny { background: var(--danger); border-color: var(--danger); color: #fff; }
   button[disabled] { opacity: .5; cursor: default; }
 
+  /* tabs */
+  nav.tabs { display: flex; gap: 4px; margin-left: 24px; }
+  nav.tabs button {
+    font: inherit; font-size: 13px; font-weight: 500;
+    background: none; border: none; border-bottom: 2px solid transparent;
+    padding: 6px 10px; cursor: pointer; color: var(--ink-faint); border-radius: 0;
+  }
+  nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  nav.tabs button .count {
+    font-family: ui-monospace, monospace; font-size: 10px;
+    background: var(--danger); color: #fff; border-radius: 8px;
+    padding: 1px 6px; margin-left: 6px;
+  }
+  .panel[hidden] { display: none; }
+
+  /* servers */
+  .srv {
+    display: grid; grid-template-columns: 1fr auto; gap: 14px;
+    padding: 13px 0; border-bottom: 1px solid var(--line-soft); align-items: center;
+  }
+  .srv .id { font-weight: 600; }
+  .srv .conn { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--ink-soft); }
+  .srv .tags { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .tag {
+    font-family: ui-monospace, monospace; font-size: 10px;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 3px; background: var(--sunk); color: var(--ink-soft);
+  }
+  .tag.mode { background: var(--accent-soft); color: var(--accent); }
+  .tag.approval { background: var(--danger-soft); color: var(--danger); }
+  .srv .row-actions { display: flex; gap: 8px; }
+  button.small { font-size: 13px; padding: 5px 12px; font-weight: 500; }
+
+  form.server-form {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 4px; padding: 20px; margin-bottom: 20px;
+  }
+  form.server-form h3 { margin: 0 0 16px; font-size: 15px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+  label { display: block; font-size: 12px; color: var(--ink-faint); margin-bottom: 5px; }
+  input, select {
+    font: inherit; font-size: 14px; width: 100%;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--ground); color: var(--ink);
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--ink-faint); margin-top: 5px; }
+  .form-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
+  .msg { font-size: 13px; }
+  .msg.error { color: var(--danger); }
+  .msg.ok { color: var(--ok); }
+
   /* timeline */
   .row {
     display: grid; grid-template-columns: 74px 1fr auto;
@@ -128,20 +180,60 @@
 <body>
 
 <header>
-  <h1>SSH Manager — control plane</h1>
+  <h1>SSH Manager</h1>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-panel="servers" aria-selected="true">Servers</button>
+    <button role="tab" data-panel="queue" aria-selected="false">Waiting<span class="count" id="pendingCount" hidden>0</span></button>
+    <button role="tab" data-panel="activity" aria-selected="false">Activity</button>
+  </nav>
   <span class="live"><span class="dot" id="dot"></span><span id="conn">connecting</span></span>
 </header>
 
 <main>
-  <section>
-    <h2>Waiting for you</h2>
-    <div id="pending"></div>
-  </section>
+  <div class="panel" id="panel-servers">
+    <section>
+      <h2>Your servers</h2>
+      <form class="server-form" id="serverForm">
+        <h3 id="formTitle">Add a server</h3>
+        <div class="fields">
+          <div><label for="f-name">Name</label><input id="f-name" name="name" placeholder="prod" required></div>
+          <div><label for="f-host">Host</label><input id="f-host" name="host" placeholder="prod.internal" required></div>
+          <div><label for="f-user">User</label><input id="f-user" name="user" placeholder="deploy"></div>
+          <div><label for="f-port">Port</label><input id="f-port" name="port" type="number" placeholder="22"></div>
+          <div><label for="f-keyPath">SSH key path</label><input id="f-keyPath" name="keyPath" placeholder="~/.ssh/id_ed25519"></div>
+          <div><label for="f-password">Password</label><input id="f-password" name="password" type="password" placeholder="leave blank to keep"></div>
+          <div><label for="f-sudoPassword">Sudo password</label><input id="f-sudoPassword" name="sudoPassword" type="password" placeholder="leave blank to keep"></div>
+          <div><label for="f-mode">Security mode</label><select id="f-mode" name="mode">
+            <option value="">unrestricted</option><option value="readonly">readonly</option><option value="restricted">restricted</option>
+          </select></div>
+          <div><label for="f-approval">Ask me before</label><select id="f-approval" name="approval">
+            <option value="">never</option><option value="destructive">destructive actions</option><option value="always">everything</option>
+          </select></div>
+        </div>
+        <p class="hint">Secrets are encrypted before they touch the disk. Editing a server and leaving a password blank keeps the stored one.</p>
+        <div class="form-actions">
+          <button type="submit" class="allow">Save</button>
+          <button type="button" id="cancelEdit" hidden>Cancel</button>
+          <span class="msg" id="formMsg"></span>
+        </div>
+      </form>
+      <div id="servers"></div>
+    </section>
+  </div>
 
-  <section>
-    <h2>What your agents did</h2>
-    <div id="timeline"></div>
-  </section>
+  <div class="panel" id="panel-queue" hidden>
+    <section>
+      <h2>Waiting for you</h2>
+      <div id="pending"></div>
+    </section>
+  </div>
+
+  <div class="panel" id="panel-activity" hidden>
+    <section>
+      <h2>What your agents did</h2>
+      <div id="timeline"></div>
+    </section>
+  </div>
 </main>
 
 <script>
@@ -163,6 +255,9 @@
   };
 
   function renderPending() {
+    const badge = document.getElementById('pendingCount');
+    badge.textContent = String(pending.size);
+    badge.hidden = pending.size === 0;
     if (pending.size === 0) {
       pendingEl.innerHTML = '<p class="empty">Nothing waiting. Actions that need approval will appear here and stay until you decide.</p>';
       return;
@@ -226,6 +321,122 @@
     }
   });
 
+  // --- tabs ---
+  const tabs = [...document.querySelectorAll('nav.tabs button')];
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    tabs.forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+    for (const panel of document.querySelectorAll('.panel')) {
+      panel.hidden = panel.id !== `panel-${tab.dataset.panel}`;
+    }
+  }));
+
+  // --- servers ---
+  const serversEl = document.getElementById('servers');
+  const form = document.getElementById('serverForm');
+  const formTitle = document.getElementById('formTitle');
+  const formMsg = document.getElementById('formMsg');
+  const cancelEdit = document.getElementById('cancelEdit');
+  let servers = [];
+
+  function renderServers() {
+    if (servers.length === 0) {
+      serversEl.innerHTML = '<p class="empty">No server in the vault yet. Add one above, or run <code>ssh-manager vault import</code> to bring over what is already in your .env.</p>';
+      return;
+    }
+    serversEl.innerHTML = servers.map(s => {
+      const tags = [];
+      if (s.mode && s.mode !== 'unrestricted') tags.push(`<span class="tag mode">${esc(s.mode)}</span>`);
+      if (s.approval && s.approval !== 'never') tags.push(`<span class="tag approval">asks: ${esc(s.approval)}</span>`);
+      tags.push(`<span class="tag">${s.keyPath ? 'ssh key' : (s.hasPassword ? 'password' : 'no credential')}</span>`);
+      if (s.hasSudoPassword) tags.push('<span class="tag">sudo</span>');
+      return `<div class="srv">
+        <div>
+          <div class="id">${esc(s.name)}</div>
+          <div class="conn">${esc(s.user || '?')}@${esc(s.host || '?')}:${esc(s.port || 22)}</div>
+          <div class="tags">${tags.join('')}</div>
+        </div>
+        <div class="row-actions">
+          <button class="small" data-edit="${esc(s.name)}">Edit</button>
+          <button class="small deny" data-delete="${esc(s.name)}">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function fillForm(server) {
+    form.reset();
+    formMsg.textContent = '';
+    if (!server) {
+      formTitle.textContent = 'Add a server';
+      cancelEdit.hidden = true;
+      form.elements.name.readOnly = false;
+      return;
+    }
+    formTitle.textContent = `Edit ${server.name}`;
+    cancelEdit.hidden = false;
+    // The name is the key in the vault; changing it would create a second entry
+    // rather than rename one.
+    form.elements.name.readOnly = true;
+    for (const field of ['name', 'host', 'user', 'port', 'keyPath', 'mode', 'approval']) {
+      if (server[field] !== undefined) form.elements[field].value = server[field];
+    }
+  }
+
+  serversEl.addEventListener('click', async event => {
+    const edit = event.target.closest('button[data-edit]');
+    if (edit) {
+      fillForm(servers.find(s => s.name === edit.dataset.edit));
+      form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    const del = event.target.closest('button[data-delete]');
+    if (!del) return;
+    // Two clicks, no modal: a browser confirm() would freeze the automation
+    // this page is tested with, and a second click is enough friction.
+    if (del.dataset.armed !== 'yes') {
+      del.dataset.armed = 'yes';
+      del.textContent = 'Really delete?';
+      // 10s, not 4: the window has to outlast someone actually reading the
+      // question and glancing at which server the row belongs to.
+      setTimeout(() => { del.dataset.armed = ''; del.textContent = 'Delete'; }, 10000);
+      return;
+    }
+    await fetch(`/api/servers?token=${encodeURIComponent(token)}&name=${encodeURIComponent(del.dataset.delete)}`, { method: 'DELETE' });
+    await loadServers();
+  });
+
+  cancelEdit.addEventListener('click', () => fillForm(null));
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const payload = {};
+    for (const [key, value] of new FormData(form)) if (value !== '') payload[key] = value;
+    if (payload.port) payload.port = Number(payload.port);
+
+    const res = await fetch(`/api/servers?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      formMsg.textContent = body.error || 'Could not save';
+      formMsg.className = 'msg error';
+      return;
+    }
+    formMsg.textContent = `Saved ${body.name}`;
+    formMsg.className = 'msg ok';
+    fillForm(null);
+    await loadServers();
+  });
+
+  async function loadServers() {
+    const res = await fetch(`/api/servers?token=${encodeURIComponent(token)}`);
+    const data = await res.json();
+    servers = data.servers || [];
+    renderServers();
+  }
+
   async function load() {
     const res = await fetch(`/api/state?token=${encodeURIComponent(token)}`);
     const state = await res.json();
@@ -234,6 +445,7 @@
     timeline = state.timeline || [];
     renderPending();
     renderTimeline();
+    await loadServers();
   }
 
   function connect() {
@@ -251,6 +463,8 @@
       } else if (msg.type === 'timeline') {
         timeline.push(msg.entry);
         renderTimeline();
+      } else if (msg.type === 'servers') {
+        loadServers();
       }
     };
   }

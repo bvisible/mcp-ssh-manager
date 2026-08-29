@@ -252,6 +252,83 @@ async function testUiIsServedWithoutExternalResources() {
   ok('the page is served no-store, with a strict CSP and no external resources');
 }
 
+async function testServerManagement() {
+  // The vault the control plane manages: isolated, file key, never the real one.
+  process.env.SSH_MANAGER_KEY_SOURCE = 'file';
+  process.env.SSH_MANAGER_HOME = scratch;
+  const vaultPath = path.join(scratch, 'managed.json');
+  const { plane, base } = await startPlane({ vaultPath });
+  const q = `token=${plane.token}`;
+
+  const post = payload => call(base, `/api/servers?${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const empty = await (await call(base, `/api/servers?${q}`)).json();
+  assert.deepStrictEqual(empty.servers, [], 'a fresh vault must list nothing');
+  ok('an empty vault lists no server');
+
+  const created = await post({
+    name: 'prod', host: 'prod.internal', user: 'deploy', port: 22,
+    password: 'top-secret-42', sudoPassword: 'sudo-99', mode: 'readonly', approval: 'destructive',
+  });
+  assert.strictEqual(created.status, 200);
+  ok('a server can be created from the UI');
+
+  // The most important property of this endpoint: it must never hand a
+  // credential back to the page.
+  const listed = await (await call(base, `/api/servers?${q}`)).json();
+  const serialized = JSON.stringify(listed);
+  assert.ok(!serialized.includes('top-secret-42'), 'the password must never reach the page');
+  assert.ok(!serialized.includes('sudo-99'), 'the sudo password must never reach the page');
+  assert.strictEqual(listed.servers[0].hasPassword, true, 'the page must still know a password is set');
+  assert.strictEqual(listed.servers[0].host, 'prod.internal');
+  assert.strictEqual(listed.servers[0].mode, 'readonly');
+  ok('listing exposes what is set but never a secret value');
+
+  // And the vault really holds them, encrypted.
+  const onDisk = fs.readFileSync(vaultPath, 'utf8');
+  assert.ok(!onDisk.includes('top-secret-42'), 'the password must be encrypted at rest');
+  ok('what the UI saved is encrypted on disk');
+
+  // Editing without resending the password must keep it — the form cannot show
+  // a secret, so it must not demand one back.
+  const edited = await post({ name: 'prod', host: 'prod.internal', user: 'deploy', port: 2222 });
+  assert.strictEqual(edited.status, 200);
+  const { ConfigLoader } = await import('../src/config-loader.js');
+  const loaded = await new ConfigLoader().load({ envPath: '/nonexistent', tomlPath: '/nonexistent', vaultPath });
+  assert.strictEqual(loaded.get('prod').port, 2222, 'the edit must apply');
+  assert.strictEqual(loaded.get('prod').password, 'top-secret-42',
+    'editing another field must not wipe the stored password');
+  ok('editing a server keeps secrets that were not resent');
+
+  for (const bad of [{ host: 'x' }, { name: 'has space', host: 'x' }, { name: 'ok' }]) {
+    const res = await post(bad);
+    assert.strictEqual(res.status, 400, `must reject ${JSON.stringify(bad)}`);
+  }
+  ok('a missing name, a bad name and a missing host are all rejected');
+
+  const del = await call(base, `/api/servers?${q}&name=prod`, { method: 'DELETE' });
+  assert.strictEqual(del.status, 200);
+  const gone = await (await call(base, `/api/servers?${q}`)).json();
+  assert.deepStrictEqual(gone.servers, [], 'the server must be gone');
+  const missing = await call(base, `/api/servers?${q}&name=prod`, { method: 'DELETE' });
+  assert.strictEqual(missing.status, 404, 'deleting twice must 404, not pretend it worked');
+  ok('deleting works and is honest about whether it deleted anything');
+
+  // Managing servers is as dangerous as approving commands.
+  const noToken = await call(base, '/api/servers', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'x', host: 'y' }),
+  });
+  assert.strictEqual(noToken.status, 401, 'creating a server without the token must be refused');
+  const delNoToken = await call(base, '/api/servers?name=x', { method: 'DELETE' });
+  assert.strictEqual(delNoToken.status, 401, 'deleting without the token must be refused');
+  ok('server management requires the token, like everything else');
+}
+
 async function main() {
   try {
     await testTokenIsRequired();
@@ -263,6 +340,7 @@ async function main() {
     await testShutdownDoesNotStrandTheEngine();
     await testAuditTailFeedsTheTimeline();
     await testUiIsServedWithoutExternalResources();
+    await testServerManagement();
     console.log(`\n✅ control plane tests passed (${passed} checks)`);
   } finally {
     for (const plane of planes) {
