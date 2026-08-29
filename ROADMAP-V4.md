@@ -32,6 +32,7 @@ optional and never required for the engine to run.
 | **Server health** | **done** — on-demand probes, never in the background |
 | **Options** (groups, host keys, tunnels) | **done** |
 | **Skills** (`skills/`) | **done** — three, shipped with the package |
+| **Interactive terminal** | **done** — a real shell in the browser, no native module |
 
 ## Done: the vault
 
@@ -106,10 +107,15 @@ Found while testing end to end, both now guarded:
 ssh-manager control      # prints a tokenised localhost URL, runs in the foreground
 ```
 
-Three screens: **your servers** (add, edit, delete — the vault behind a form),
-**what is waiting for you**, and **what your agents did**. No terminal, no SFTP browser — that market has an
-incumbent with nine months' head start, and a control plane that opens on a
-terminal is just a late SSH client.
+Seven screens: **your servers** (add, edit, delete — the vault behind a form),
+**what is waiting for you**, **server health**, **what your agents are doing right
+now**, **what they did**, **a real shell**, and **options**.
+
+No SFTP browser, and the terminal is deliberately the sixth tab rather than the
+first: a control plane that *opens* on a terminal is just a late SSH client, and
+that market has an incumbent with nine months' head start. The order says what
+the product is for — you come here to see what the agent is doing, and the
+keyboard is there for when watching is not enough.
 
 Not an Electron app, and **no new dependency**: Node's `http` and `net` plus one
 HTML file. It therefore runs anywhere the engine runs, including on a server
@@ -246,12 +252,22 @@ A **second socket**, next to the approval one: approval is a request/response
 that blocks a command, streaming is a one-way firehose. Sharing one socket would
 let a slow reader of the firehose delay a decision.
 
-### What is deliberately not here
+### What was deliberately not here, and then was
 
-No PTY and no xterm.js. Watching an agent needs the `exec` stream, which ssh2
-already gives us; a PTY (colours, `top`, `vim`, resize) is a different code path
-and xterm.js is a dependency and a bundle. If interactive control is wanted
-later, both belong in the desktop app, not the engine.
+This section used to say: no PTY, no xterm.js — a PTY is a different code path
+and xterm.js is a dependency and a bundle. Half of that was wrong, and worth
+recording rather than quietly deleting.
+
+**The PTY was never a dependency.** `ssh2` allocates the remote pseudo-terminal
+itself: `client.shell({ term: 'xterm-256color', cols, rows })` asks the far side
+for a terminal, which is what makes colours, `top`, `vim`, Ctrl-C and resizing
+work. Nothing is compiled, nothing is installed. The native module people
+associate with the word — `node-pty` — is for spawning a *local* shell, which
+this project never does.
+
+**xterm.js was a real cost**, and it is the one we paid: 477 KB, vendored under
+`vendor/xterm/` with its MIT licence, loaded only by the control plane. The
+engine's dependency list is unchanged.
 
 ## Done: server health
 
@@ -349,6 +365,50 @@ does it: front matter loadable and matching the directory, descriptions that say
 *when* rather than *what*, **every `ssh_*` tool named actually registered** (the
 failure being a skill sending an agent at a renamed tool), and a length ceiling
 so they do not grow into manuals.
+
+## Done: the interactive terminal
+
+The Live screen answers *what is it doing*. It does not answer *let me fix this
+myself*. The Terminal screen does: pick a server, open a shell, type.
+
+```
+POST   /api/terminal          open a shell   → { id }
+GET    /api/terminal/stream   output, SSE, base64
+POST   /api/terminal/input    keystrokes, base64
+POST   /api/terminal/resize   cols/rows → SSH window-change
+DELETE /api/terminal          close and release the connection
+```
+
+Output is base64 on the way out and keystrokes base64 on the way in, because
+terminal traffic is **bytes, not text**: escape sequences and half-delivered
+UTF-8 do not survive a round trip through a JSON string.
+
+**Not subject to readonly/restricted mode.** Those modes exist to constrain an
+*agent*. Whoever holds the control-plane token is the operator who configured
+them and already holds the credentials; stopping them here would be theatre, and
+theatre in a security feature is worse than nothing because it gets believed.
+
+### What driving it found that reading it would not
+
+- **Output printed before anyone subscribed was lost** — which is exactly the
+  login banner and the first prompt, so the screen opened blank. Now a bounded
+  64 KB backlog, replayed on subscribe.
+- **The `<link>` and `<script>` tags carried no token**, so both assets were
+  refused 401 and the terminal rendered as a blank box. A tag cannot add a header
+  before the browser fetches it, so the token is stamped into the URLs when the
+  page is served.
+- **The server picker was never filled** — the screen could not be used at all.
+- **An over-long socket path reports `EADDRINUSE`**, on a socket file that is not
+  there, for a process that does not exist. `sun_path` is 104 bytes on macOS and
+  a repo under a long path passes it easily. Checked before binding now, with the
+  byte count in the message.
+- **`/favicon.ico` logged a 401 on every load.** Inlined as a data URI: the
+  request stops happening.
+
+Tested against a real SSH server rather than a mock — `ssh2` can be a server, so
+`npm run test:terminal` starts one, generates a host key, and asserts a PTY is
+genuinely requested with the right size, that keystrokes arrive, that a resize is
+forwarded, and that closing releases the connection instead of leaking it.
 
 ## Non-negotiables
 
