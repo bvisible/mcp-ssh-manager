@@ -416,3 +416,29 @@ forwarded, and that closing releases the connection instead of leaking it.
 2. No new runtime dependency in the engine for any of this.
 3. Every credential path stays covered by the injection and redaction tests.
 4. The engine never requires the interface. The arrow only points one way.
+
+## The name
+
+`mcp-ssh-manager` is the **package** name and does not change. 461 stars, 4165
+downloads a month, an entry in the official MCP registry as
+`io.github.bvisible/mcp-ssh-manager`, and — the part that actually matters —
+every installed MCP configuration on someone's machine holds a path that
+contains it. Renaming an npm package does not rename anything: it creates a
+second package and turns the first into a wreck that search engines keep
+serving for years.
+
+**SSH Manager** is the **product** name, which is free to differ and already
+does: it is what the desktop application is called in its bundle.
+
+Two names for two audiences is not a compromise, it is the normal arrangement —
+the package name is an address, the product name is what you say out loud.
+
+What was considered and rejected: *SSH Manager & MCP*. An `&` cannot be typed
+or spoken, and the name would describe a list of components rather than what the
+thing does. MCP is the protocol an agent speaks to reach it — an implementation
+detail from the operator's side, not a feature.
+
+The line under the name is where the differentiation belongs, because that is
+what decides whether somebody clicks: **you give your agents a shell, and you
+see what they do with it.** Netcatty has the terminal; nobody else has the
+watching.

@@ -6,13 +6,34 @@
  * operator to conclude their agents did nothing.
  */
 import { useEffect, useState } from 'react';
-import { Activity, Check, Info, X } from 'lucide-react';
+import { Activity, Check, ChevronDown, ChevronRight, Info, Terminal, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { state, type TimelineEntry } from '@/lib/api';
+import { state, history as historyApi, type TimelineEntry, type CommandLogEntry } from '@/lib/api';
+import { TerminalOutput } from '@/components/terminal/TerminalOutput';
+
+type Tab = 'commands' | 'decisions';
 
 export function ActivityPage() {
+  const [tab, setTab] = useState<Tab>('commands');
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [commands, setCommands] = useState<CommandLogEntry[]>([]);
+  const [recordsOutput, setRecordsOutput] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  // What agents ran, from the control plane's own log — nothing to configure on
+  // the servers, because every command already passes through here.
+  useEffect(() => {
+    const refresh = () =>
+      historyApi
+        .get()
+        .then(result => { setCommands(result.entries); setRecordsOutput(result.recordsOutput); })
+        .catch(() => {});
+    void refresh();
+    return state.subscribe(event => {
+      if (event.type === 'stream') void refresh();
+    });
+  }, []);
 
   useEffect(() => {
     void state.get().then(s => setTimeline(s.timeline)).catch(() => {});
@@ -25,26 +46,126 @@ export function ActivityPage() {
     });
   }, []);
 
+  const header = (
+    <header className="flex items-center gap-1 border-b border-border px-6 py-3">
+      <h1 className="mr-3 text-sm font-medium">Activity</h1>
+      {([['commands', 'Commands', commands.length], ['decisions', 'Decisions', timeline.length]] as const)
+        .map(([id, label, count]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              'rounded-md px-2 py-1 text-xs transition-colors',
+              tab === id ? 'bg-accent text-primary' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {label}
+            {count > 0 && <span className="ml-1 text-[10px] text-muted-foreground">{count}</span>}
+          </button>
+        ))}
+      {tab === 'commands' && commands.length > 0 && (
+        <button
+          className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
+          onClick={async () => {
+            if (!window.confirm('Clear the command history on this machine?')) return;
+            await historyApi.clear();
+            setCommands([]);
+          }}
+        >
+          clear
+        </button>
+      )}
+    </header>
+  );
+
+  if (tab === 'commands') {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {header}
+        {commands.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
+              <Terminal className="h-7 w-7 text-accent" />
+            </div>
+            <p className="text-sm font-medium">No command recorded yet</p>
+            <p className="max-w-sm text-xs text-muted-foreground">
+              Everything your agents run is written down here, on this machine — nothing to configure
+              on the servers.
+              {!recordsOutput && ' Output is not kept; set SSH_MANAGER_LOG_OUTPUT=1 if you want it.'}
+            </p>
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ol>
+              {commands.map((entry, index) => {
+                const key = `${entry.ts}-${index}`;
+                const open = expanded === key;
+                return (
+                  <li key={key} className="border-b border-border-subtle">
+                    <button
+                      onClick={() => setExpanded(open ? null : key)}
+                      disabled={!entry.output}
+                      className="flex w-full items-start gap-2 px-6 py-2.5 text-left hover:bg-card-hover disabled:cursor-default"
+                    >
+                      {entry.output
+                        ? (open ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0" />)
+                        : <span className="w-3.5" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-medium">{entry.server}</span>
+                          <Badge variant={entry.code === 0 ? 'outline' : 'destructive'}>
+                            exit {entry.code ?? '—'}
+                          </Badge>
+                          {entry.durationMs !== undefined && (
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                              {entry.durationMs < 1000
+                                ? `${entry.durationMs} ms`
+                                : `${(entry.durationMs / 1000).toFixed(1)} s`}
+                            </span>
+                          )}
+                        </div>
+                        <code className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
+                          {entry.command}
+                        </code>
+                      </div>
+                      <time className="shrink-0 text-[10px] text-muted-foreground tabular-nums" dateTime={entry.ts}>
+                        {new Date(entry.ts).toLocaleString()}
+                      </time>
+                    </button>
+                    {open && entry.output && <TerminalOutput content={entry.output} rows={12} />}
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (timeline.length === 0) {
     return (
+      <div className="flex h-full min-h-0 flex-col">
+        {header}
+        {(
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
           <Activity className="h-7 w-7 text-accent" />
         </div>
         <p className="text-sm font-medium">Nothing recorded yet</p>
         <p className="max-w-sm text-xs text-muted-foreground">
-          Approvals always appear here. To see everything else, set{' '}
-          <code className="font-mono">SSH_SERVER_&lt;NAME&gt;_AUDIT_LOG</code> on a server.
+          Every approval you granted or refused appears here. What agents ran is under Commands.
         </p>
+      </div>
+    )}
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-border px-6 py-3">
-        <h1 className="text-sm font-medium">Activity</h1>
-      </header>
+      {header}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ol>

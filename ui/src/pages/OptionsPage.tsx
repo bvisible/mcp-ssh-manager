@@ -7,10 +7,11 @@
  * one publishes. Showing a stale list would be worse than saying so.
  */
 import { useEffect, useState } from 'react';
-import { KeyRound, Layers, Loader2, Monitor, Moon, Network, Palette, Pencil, Play, Plus, Sun, Trash2 } from 'lucide-react';
+import { AlertTriangle, KeyRound, Layers, Loader2, Monitor, Moon, Network, Palette, Pencil, Play, Plus, Sun, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { state, hostKeys, groups as groupsApi, type Options, type Group, type GroupRunEvent } from '@/lib/api';
+import { Input } from '@/components/ui/input';
+import { state, hostKeys, groups as groupsApi, thresholds as thresholdsApi, type Options, type Group, type GroupRunEvent, type Thresholds } from '@/lib/api';
 import { GroupDialog } from '@/components/servers/GroupDialog';
 import { useServersStore } from '@/stores/servers.store';
 import { useTheme, type ThemeMode } from '@/stores/theme';
@@ -58,6 +59,72 @@ function ThemePicker() {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+
+/**
+ * The levels at which a machine is worth mentioning.
+ *
+ * Held on this machine, not pushed onto the servers. The engine's
+ * `ssh_alert_setup` writes a config file onto each box; that is a lot of blast
+ * radius for three numbers, and it only helps something running *there* —
+ * nothing does. The watching happens here, when you press the health button.
+ */
+function Thresholds() {
+  const [limits, setLimits] = useState<Thresholds | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void thresholdsApi.get().then(r => setLimits(r.thresholds)).catch(() => {});
+  }, []);
+
+  if (!limits) return null;
+
+  const update = (patch: Partial<Thresholds>) => {
+    const next = { ...limits, ...patch };
+    setLimits(next);
+    setSaving(true);
+    void thresholdsApi.save(next).finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <label className="mb-3 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={limits.enabled}
+          onChange={e => update({ enabled: e.target.checked })}
+          className="h-3.5 w-3.5"
+        />
+        Point out machines over these levels
+        <span className="text-xs text-muted-foreground">
+          {/* Said plainly: nothing runs on a timer, here or on the servers. */}
+          — checked when you probe, never in the background
+        </span>
+        {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      </label>
+
+      <div className="grid grid-cols-3 gap-3">
+        {([['cpu', 'CPU'], ['memory', 'Memory'], ['disk', 'Disk']] as const).map(([key, label]) => (
+          <div key={key} className="grid gap-1">
+            <span className="text-xs text-muted-foreground">{label}</span>
+            <div className="flex items-center gap-1">
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={limits[key]}
+                disabled={!limits.enabled}
+                onChange={e => update({ [key]: Number(e.target.value) || limits[key] })}
+                className="h-8"
+              />
+              <span className="text-xs text-muted-foreground">%</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -112,6 +179,14 @@ export function OptionsPage() {
             Appearance
           </h2>
           <ThemePicker />
+        </section>
+
+        <section>
+          <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Alert thresholds
+          </h2>
+          <Thresholds />
         </section>
 
         <section>

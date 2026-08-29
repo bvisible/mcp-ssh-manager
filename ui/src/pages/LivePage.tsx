@@ -14,8 +14,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Radio } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
 import { state, type LiveStream } from '@/lib/api';
+import { TerminalOutput } from '@/components/terminal/TerminalOutput';
 
 export function LivePage() {
   const [streams, setStreams] = useState<LiveStream[]>([]);
@@ -98,15 +98,15 @@ export function LivePage() {
                 )}
               </button>
 
-              {/* Output is terminal output, so it keeps a terminal's ground in
-                  both themes — but a shade that belongs to the page. */}
+              {/* Rendered by a terminal emulator, not as text: the scrollback
+                  is what the program actually wrote, escape sequences included,
+                  and a <pre> shows `[32m✓[0m` where the operator should see a
+                  green tick. What the agent ran then looks exactly like what
+                  you would have seen had you typed it yourself. */}
               {open && (
-                <pre className={cn(
-                  'max-h-80 overflow-auto border-t border-border-subtle px-3 py-2',
-                  'bg-terminal font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-terminal-foreground'
-                )}>
-                  {stream.scrollback || '(no output yet)'}
-                </pre>
+                <div className="border-t border-border-subtle">
+                  <TerminalOutput content={stream.scrollback || '(no output yet)\r\n'} />
+                </div>
               )}
             </article>
           );

@@ -6,21 +6,27 @@
  * schedule is worse than no dashboard — it is a machine quietly opening
  * sessions nobody asked for. The button is the whole scheduling policy.
  */
-import { useState } from 'react';
-import { HeartPulse, Loader2, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, HeartPulse, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { health, type HealthResult } from '@/lib/api';
+import { health, thresholds as thresholdsApi, type HealthResult, type Thresholds } from '@/lib/api';
+import { ensurePermission } from '@/lib/notify';
 
-/** Amber past 80%, red past 90% — the thresholds an operator already has in mind. */
-function severity(percent: number): string {
-  if (percent >= 90) return 'bg-destructive';
-  if (percent >= 80) return 'bg-warning';
+/**
+ * Amber at the threshold, red ten points past it. The threshold is the
+ * operator's, not a constant baked into a gauge — a disk that is meant to sit
+ * at 88% should not be permanently amber.
+ */
+function severity(percent: number, threshold: number): string {
+  if (percent >= threshold + 10) return 'bg-destructive';
+  if (percent >= threshold) return 'bg-warning';
   return 'bg-success';
 }
 
-function Gauge({ label, percent, detail }: { label: string; percent?: number; detail?: string }) {
+function Gauge({ label, percent, detail, threshold }:
+  { label: string; percent?: number; detail?: string; threshold: number }) {
   if (percent === undefined) return null;
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
   return (
@@ -30,7 +36,7 @@ function Gauge({ label, percent, detail }: { label: string; percent?: number; de
         <span className="font-medium tabular-nums">{clamped}%</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-sunk">
-        <div className={cn('h-full rounded-full transition-[width]', severity(clamped))}
+        <div className={cn('h-full rounded-full transition-[width]', severity(clamped, threshold))}
           style={{ width: `${clamped}%` }} />
       </div>
       {detail && <p className="text-[10px] text-muted-foreground">{detail}</p>}
@@ -41,6 +47,11 @@ function Gauge({ label, percent, detail }: { label: string; percent?: number; de
 export function HealthPage() {
   const [results, setResults] = useState<HealthResult[] | null>(null);
   const [probing, setProbing] = useState(false);
+  const [limits, setLimits] = useState<Thresholds>({ cpu: 80, memory: 90, disk: 85, enabled: true });
+
+  useEffect(() => {
+    void thresholdsApi.get().then(r => setLimits(r.thresholds)).catch(() => {});
+  }, []);
 
   const probe = async (server?: string) => {
     setProbing(true);
@@ -51,6 +62,19 @@ export function HealthPage() {
           ? current.map(r => answer.results.find(a => a.server === r.server) ?? r)
           : answer.results
       );
+
+      // A probe you ran while looking at the screen needs no notification. One
+      // that crosses a threshold does, because the next thing you do is walk
+      // away — and the disk does not stop filling.
+      const crossed = answer.results.filter(r => (r.alerts?.length ?? 0) > 0);
+      if (crossed.length > 0 && await ensurePermission()) {
+        for (const machine of crossed) {
+          new Notification(`${machine.server}: ${machine.alerts![0].type} over threshold`, {
+            body: machine.alerts!.map(a => a.message).join('\n'),
+            tag: `health:${machine.server}`,
+          });
+        }
+      }
     } finally {
       setProbing(false);
     }
@@ -97,16 +121,26 @@ export function HealthPage() {
 
                 {result.reachable ? (
                   <div className="grid gap-3">
-                    <Gauge label="CPU" percent={result.cpu?.percent}
+                    {(result.alerts?.length ?? 0) > 0 && (
+                      <div className="rounded-md border border-warning/40 bg-warning-light px-2 py-1.5">
+                        {result.alerts!.map(alert => (
+                          <p key={alert.type} className="flex items-start gap-1.5 text-[11px]">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
+                            {alert.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    <Gauge label="CPU" percent={result.cpu?.percent} threshold={limits.cpu}
                       detail={result.load_average ? `load ${result.load_average}` : undefined} />
-                    <Gauge label="Memory" percent={result.memory?.percent}
+                    <Gauge label="Memory" percent={result.memory?.percent} threshold={limits.memory}
                       detail={result.memory?.used_mb !== undefined && result.memory.total_mb !== undefined
                         ? `${Math.round(result.memory.used_mb / 1024)} of ${Math.round(result.memory.total_mb / 1024)} GB`
                         : undefined} />
                     {/* Every mount, not the first two: the one that fills up is
                         never the one you were watching. */}
                     {result.disks?.map(disk => (
-                      <Gauge key={disk.mount} label={disk.mount} percent={disk.percent}
+                      <Gauge key={disk.mount} label={disk.mount} percent={disk.percent} threshold={limits.disk}
                         detail={`${disk.used} of ${disk.size}, ${disk.avail} free`} />
                     ))}
                     <p className="text-[10px] text-muted-foreground">

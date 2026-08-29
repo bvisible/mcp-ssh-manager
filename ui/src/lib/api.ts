@@ -379,7 +379,55 @@ export interface HealthResult {
   /** Already reads "up 42 days" — prefixing it again is how you get "up up". */
   uptime?: string;
   overall_status?: 'healthy' | 'warning' | 'critical';
+  /** Thresholds this machine crossed, computed by the control plane. */
+  alerts?: HealthAlert[];
 }
+
+export interface HealthAlert {
+  type: 'cpu' | 'memory' | 'disk';
+  severity: 'warning' | 'critical';
+  message: string;
+  value: number;
+  threshold: number;
+}
+
+export interface Thresholds {
+  cpu: number;
+  memory: number;
+  disk: number;
+  enabled: boolean;
+}
+
+
+/** One command an agent ran, as recorded on this machine. */
+export interface CommandLogEntry {
+  ts: string;
+  server: string;
+  command: string;
+  code: number | null;
+  durationMs?: number;
+  /** Only present when SSH_MANAGER_LOG_OUTPUT=1. */
+  output?: string;
+}
+
+export const history = {
+  /**
+   * What agents ran, from a log the control plane keeps itself — no AUDIT_LOG
+   * to configure on each server.
+   */
+  get: (limit = 500) =>
+    get<{ entries: CommandLogEntry[]; path: string; recordsOutput: boolean }>('/api/history', { limit }),
+
+  clear: async () => {
+    const response = await fetch(url('/api/history'), { method: 'DELETE' });
+    if (!response.ok) throw new Error(response.statusText);
+  },
+};
+
+export const thresholds = {
+  get: () => get<{ thresholds: Thresholds }>('/api/thresholds'),
+  save: (next: Partial<Thresholds>) => post<{ thresholds: Thresholds }>('/api/thresholds', next),
+};
 
 export const health = {
   /**
@@ -529,5 +577,5 @@ export const state = {
   },
 };
 
-export const api = { servers, groups, commands, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
+export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
 export type Api = typeof api;

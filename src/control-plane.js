@@ -37,9 +37,10 @@ import { safeInteger } from './shell-quote.js';
 import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
 import { ConfigLoader } from './config-loader.js';
 import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
+import { appendCommand, readCommandLog, trimCommandLog, clearCommandLog, commandLogPath, recordsOutput } from './command-log.js';
 import { MAX_SOCKET_PATH } from './approval.js';
 import SSHManager from './ssh-manager.js';
-import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck } from './health-monitor.js';
+import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck, createAlertConfig, checkAlertThresholds } from './health-monitor.js';
 import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
 import { listSavedCommands, commandsForServer, saveCommand, deleteCommand as deleteSavedCommand, suggestedCommands } from './saved-commands.js';
 import { listGroups, getGroup, createGroup, updateGroup, deleteGroup, executeOnGroup, setServerConfigProvider } from './server-groups.js';
@@ -248,6 +249,23 @@ export class ControlPlane {
 
   async #startStreamServer() {
     this.streamServer = await listenForStreams(this.streams);
+
+    // Every command an agent runs passes through here, which is why the log can
+    // exist without anything being configured on the servers themselves.
+    trimCommandLog();
+    this.streams.subscribe(event => {
+      if (event.type !== 'end') return;
+      const stream = this.streams.get(event.id);
+      if (!stream) return;
+      appendCommand({
+        ts: new Date().toISOString(),
+        server: stream.server,
+        command: stream.command,
+        code: event.code ?? null,
+        durationMs: stream.startedAt ? Date.now() - Date.parse(stream.startedAt) : undefined,
+        output: stream.scrollback,
+      });
+    });
     // Push every stream event straight to open pages: this is the "watch the
     // agent work" path, and buffering it would defeat the point.
     this.streams.subscribe(event => this.#broadcast({ type: 'stream', event }));
@@ -446,6 +464,35 @@ export class ControlPlane {
       return this.#json(res, 200, id ? { stream: this.streams.get(id) } : { streams: this.streams.list() });
     }
     if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
+    if (req.method === 'GET' && url.pathname === '/api/history') {
+      return this.#json(res, 200, {
+        entries: readCommandLog(safeInteger(url.searchParams.get('limit'), 500)),
+        path: commandLogPath(),
+        recordsOutput: recordsOutput(),
+      });
+    }
+    if (req.method === 'DELETE' && url.pathname === '/api/history') {
+      // Offered because it is the operator's machine and their record.
+      clearCommandLog();
+      return this.#json(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/thresholds') {
+      return this.#json(res, 200, { thresholds: this.#readThresholds() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/thresholds') {
+      return this.#readJsonBody(req, res, payload => {
+        const thresholds = createAlertConfig({
+          cpu: safeInteger(payload.cpu, 80),
+          memory: safeInteger(payload.memory, 90),
+          disk: safeInteger(payload.disk, 85),
+          enabled: payload.enabled !== false,
+        });
+        fs.mkdirSync(path.dirname(this.#thresholdsPath()), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(this.#thresholdsPath(), `${JSON.stringify(thresholds, null, 2)}\n`, { mode: 0o600 });
+        this.#broadcast({ type: 'thresholds' });
+        return this.#json(res, 200, { thresholds });
+      });
+    }
     if (req.method === 'GET' && url.pathname === '/api/migration') return this.#migrationState(res);
     if (req.method === 'POST' && url.pathname === '/api/groups') return this.#saveGroup(req, res);
     if (req.method === 'DELETE' && url.pathname === '/api/groups') return this.#deleteGroup(url.searchParams.get('name'), res);
@@ -748,6 +795,31 @@ export class ControlPlane {
         error => this.#broadcast({ type: 'group-run', id, state: 'failed', error: error.message })
       );
     });
+  }
+
+
+  /** @returns {string} Where the thresholds live — beside the vault, not on the servers. */
+  #thresholdsPath() {
+    return path.join(path.dirname(this.store.vaultPath), 'thresholds.json');
+  }
+
+  /**
+   * The levels at which a machine is worth mentioning.
+   *
+   * Kept on this machine rather than pushed to each server, which is what the
+   * engine's `ssh_alert_setup` does: writing a config file onto twenty
+   * production boxes to hold three numbers is a lot of blast radius for a
+   * preference, and it only helps something that runs *there* — nothing does.
+   * The watching happens here.
+   *
+   * @returns {{cpu: number, memory: number, disk: number, enabled: boolean}}
+   */
+  #readThresholds() {
+    try {
+      return { ...createAlertConfig({}), ...JSON.parse(fs.readFileSync(this.#thresholdsPath(), 'utf8')) };
+    } catch {
+      return createAlertConfig({});
+    }
   }
 
   /**
@@ -1618,6 +1690,8 @@ export class ControlPlane {
       return this.#json(res, 200, { results: [] });
     }
 
+    const thresholds = this.#readThresholds();
+
     // In parallel: one slow or unreachable machine must not delay the others.
     const results = await Promise.all(targets.map(async serverName => {
       const config = { ...servers[serverName], name: serverName };
@@ -1630,7 +1704,14 @@ export class ControlPlane {
         await ssh.connect({ readyTimeout: 8000 });
         const result = await ssh.execCommand(buildComprehensiveHealthCheckCommand(), { timeout: 20000 });
         const health = parseComprehensiveHealthCheck(result.stdout);
-        return { server: serverName, host: config.host, reachable: true, tookMs: Date.now() - started, ...health };
+        // Crossings are computed here rather than in the page: the same answer
+        // has to serve a notification, and a threshold evaluated in a browser
+        // cannot raise one when nobody is looking at the browser.
+        const alerts = thresholds.enabled ? checkAlertThresholds(health, thresholds) : [];
+        return {
+          server: serverName, host: config.host, reachable: true,
+          tookMs: Date.now() - started, alerts, ...health,
+        };
       } catch (error) {
         // Unreachable is a legitimate answer, not an error: it is exactly what
         // the operator wants to see on the screen.
