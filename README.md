@@ -1,6 +1,17 @@
-# MCP SSH Manager - SSH Remote Server Management via Model Context Protocol 🚀
+<p align="center">
+  <img src="docs/images/icon.png" alt="" width="96">
+</p>
 
-A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI Codex** to manage multiple SSH connections. Execute commands, transfer files, manage databases, create backups, monitor health, and automate DevOps tasks across your servers — directly from your AI assistant.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/wordmark-dark.png">
+    <img src="docs/images/wordmark.png" alt="SSH Manager" width="380">
+  </picture>
+</p>
+
+<h1 align="center">You give your agents a shell,<br>and you see what they do with it.</h1>
+
+A Model Context Protocol (MCP) server that lets **Claude Code** and **OpenAI Codex** work on your servers — run commands, move files, manage databases, take backups, check health — and, from v4, a control plane that shows you what they are doing and lets you stop them before they do it.
 
 <div align="center">
 
@@ -41,9 +52,81 @@ The quoting helper now lives in one module (`src/shell-quote.js`) so "did this b
 
 ## 🎛️ The control plane (v4)
 
+<p align="center">
+  <img src="docs/images/icon.png" alt="" width="80">
+</p>
+
 > **On the `v4` branch, not yet released.** Everything below is opt-in: with no
 > vault, no `APPROVAL` setting and no control plane running, the engine behaves
 > exactly as it does today.
+
+An MCP SSH server is the most dangerous tool you can hand an agent: a shell on
+machines that matter. Today, when your agent runs something on production, you
+find out afterwards — if you find out at all.
+
+The control plane is a local application that shows you what your agents are
+doing on your servers, and lets you stop them before they do it.
+
+```bash
+ssh-manager control          # a local page, or open the desktop app
+```
+
+### See what an agent is doing, while it does it
+
+<p align="center">
+  <img src="docs/images/v4-live.png" alt="The Live screen: four commands, one still running, one expanded showing its coloured output" width="900">
+</p>
+
+Output is rendered by a terminal emulator, not printed as text — what an agent
+ran looks exactly like what you would have seen had you typed it yourself,
+colours included. Each stream keeps a bounded scrollback, so opening the screen
+mid-command shows what came before rather than starting blank.
+
+Nothing here is written to disk. A stream can carry secrets — a config being
+catted, a token echoed by a deploy script — so it lives in memory, capped, and
+disappears when the window closes.
+
+### Stop it before it runs
+
+<p align="center">
+  <img src="docs/images/v4-waiting.png" alt="The Waiting screen: a destructive command from an agent, with Refuse and Approve" width="900">
+</p>
+
+The agent pauses and waits. You see the machine, the user, the tool, and the
+command in full — wrapped, never truncated, because half a command is how you
+approve the wrong thing. A desktop notification fires when something is waiting,
+because the request that goes unseen is the one that times out and is denied.
+
+### Both filesystems, side by side
+
+<p align="center">
+  <img src="docs/images/v4-files.png" alt="The file browser: this machine on the left, a server on the right" width="900">
+</p>
+
+Files move directly between your machine and the server through the control
+plane — the browser never holds the bytes, which is both faster and the only way
+a multi-gigabyte file works at all.
+
+### Health, when you ask for it
+
+<p align="center">
+  <img src="docs/images/v4-health.png" alt="The Health screen: CPU, memory and disk per server, with a threshold crossed" width="900">
+</p>
+
+**Nothing is probed in the background.** Each check is an SSH handshake, and a
+dashboard that connects to every production box on a timer is worse than no
+dashboard. The button is the whole scheduling policy. Thresholds are yours to
+set, and crossing one is said plainly rather than encoded in a colour.
+
+### Servers, and everything else
+
+<p align="center">
+  <img src="docs/images/v4-servers.png" alt="The Servers screen: cards grouped by category" width="900">
+</p>
+
+Also on the same page: an interactive shell on any server, saved commands you
+pick from a list instead of retyping, groups you can run one command across, the
+audit trail of what agents ran and what you decided, and the known host keys.
 
 ### Credentials out of the clear-text `.env`
 
@@ -100,14 +183,22 @@ clicked through without being read, which is worse than no prompt at all:
 ### Install
 
 ```bash
-npm install -g mcp-ssh-manager
+npm install -g mcp-ssh-manager    # then: ssh-manager control
 # or
 brew tap bvisible/mcp-ssh-manager https://github.com/bvisible/mcp-ssh-manager
 brew install ssh-manager
 ```
 
-Both give the same binaries. See [ROADMAP-V4.md](ROADMAP-V4.md) for what is
-built and what is not.
+Both give the same binaries, and `ssh-manager control` opens the interface above
+in your browser — nothing is compiled at install time.
+
+**As a desktop application** (macOS, Windows, Linux): the app *is* the control
+plane rather than a window pointed at one, so it needs neither Node nor the npm
+package. Built from `desktop/electron` with `npm run build:mac`.
+
+See [ROADMAP-V4.md](ROADMAP-V4.md) for what is built and what is not, and
+[docs/MIGRATION.md](docs/MIGRATION.md) for what upgrading does to a `.env`
+(nothing).
 
 ---
 

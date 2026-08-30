@@ -17,7 +17,11 @@ import { FitAddon } from '@xterm/addon-fit';
 import { useTheme } from '@/stores/theme';
 import { TERMINAL_THEME } from '@/lib/terminal-theme';
 
-export function TerminalOutput({ content, rows = 16 }: { content: string; rows?: number }) {
+export function TerminalOutput({ content, rows }: { content: string; rows?: number }) {
+  // Sized to what there is to show, within reason. A fixed height leaves a
+  // panel of empty terminal under four lines of output, which reads as
+  // something having failed to load.
+  const measured = Math.min(24, Math.max(3, content.split('\n').length));
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
   // What has already been written, so an update appends rather than redraws —
@@ -37,7 +41,7 @@ export function TerminalOutput({ content, rows = 16 }: { content: string; rows?:
       disableStdin: true,
       cursorStyle: 'bar',
       cursorInactiveStyle: 'none',
-      rows,
+      rows: rows ?? 3,
       scrollback: 5000,
       convertEol: true,
     });
@@ -62,6 +66,15 @@ export function TerminalOutput({ content, rows = 16 }: { content: string; rows?:
     // would clear everything already written.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
+
+  // Growing with the output, without rebuilding: a live stream adds a line at a
+  // time, and recreating the emulator on each one would clear what it had
+  // already drawn.
+  useEffect(() => {
+    const instance = term.current?.term;
+    if (!instance || rows) return;
+    if (instance.rows !== measured) instance.resize(instance.cols, measured);
+  }, [measured, rows]);
 
   useEffect(() => {
     if (term.current) term.current.term.options.theme = TERMINAL_THEME[resolved];
