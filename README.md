@@ -11,101 +11,134 @@
 
 <h1 align="center">You give your agents a shell,<br>and you see what they do with it.</h1>
 
-A Model Context Protocol (MCP) server that lets **Claude Code** and **OpenAI Codex** work on your servers — run commands, move files, manage databases, take backups, check health — and, from v4, a control plane that shows you what they are doing and lets you stop them before they do it.
+<p align="center">
+  Let <b>Claude Code</b> and <b>OpenAI Codex</b> work on your real servers — run commands, move files,<br>
+  query databases, take backups, check health — and watch over their shoulder while they do it.
+</p>
 
 <div align="center">
 
-[![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![npm downloads](https://img.shields.io/npm/dt/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.8.5-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.5)
-[![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
-[![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
-[![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
-[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/bvisible/mcp-ssh-manager?style=for-the-badge&label=OpenSSF)](https://scorecard.dev/viewer/?uri=github.com/bvisible/mcp-ssh-manager)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
-
-[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fbvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/glama%2Fbvisible%2Fmcp-ssh-manager)
+[![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
+[![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
+[![Version](https://img.shields.io/badge/Version-3.8.5-brightgreen?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.5)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
+[![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
+[![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/bvisible/mcp-ssh-manager?style=flat-square&label=OpenSSF)](https://scorecard.dev/viewer/?uri=github.com/bvisible/mcp-ssh-manager)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
 </div>
-
-<p align="center">
-  <img src="docs/images/ssh-manager-cli-menu.png" alt="ssh-manager interactive CLI menu" width="900">
-</p>
-
----
-
-## 🎉 What's New in v3.8.5
-
-**🔒 Security release — three command-injection advisories fixed, one of which defeated `readonly` mode** (Released: August 28, 2026)
-
-**Upgrade if you use `ssh_backup_*`, `ssh_db_dump`, `ssh_service_status` or `ssh_tail` — and especially if you rely on the `readonly` / `restricted` security modes.**
-
-- **🔴 RCE bypassing `readonly` / `restricted`** (GHSA-m793-whw6-f537) — `ssh_service_status` and `ssh_tail` are read-only, so they stay enabled on servers you locked down, and neither quoted its arguments nor consulted the policy layer. A service name like `nginx; id > /tmp/pwned` executed. This defeated the exact control those modes exist to provide.
-- **🔴 RCE through `ssh_db_dump`** (GHSA-796j-h5q5-jx6p) — the `stat` command run after the dump interpolated the output path raw. The v3.6.7 patch had stopped one line short.
-- **🟠 RCE through every `ssh_backup_*` tool** (GHSA-qwwm-vrm9-4mw8) — `backup-manager.js` had **zero** shell escaping across its 9 builders, while `database-manager.js` had 95. The v3.6.7 fix was never extended to it.
-
-The quoting helper now lives in one module (`src/shell-quote.js`) so "did this builder quote its inputs?" has a single answer, and a new test drives **340 builder × argument × payload combinations** through a real shell to prove none of them execute.
-
-[Read full changelog →](CHANGELOG.md#385---2026-08-28)
-
----
-
-## 🎛️ The control plane (v4)
-
-<p align="center">
-  <img src="docs/images/icon.png" alt="" width="80">
-</p>
-
-> **On the `v4` branch, not yet released.** Everything below is opt-in: with no
-> vault, no `APPROVAL` setting and no control plane running, the engine behaves
-> exactly as it does today.
-
-An MCP SSH server is the most dangerous tool you can hand an agent: a shell on
-machines that matter. Today, when your agent runs something on production, you
-find out afterwards — if you find out at all.
-
-The control plane is a local application that shows you what your agents are
-doing on your servers, and lets you stop them before they do it.
 
 <p align="center">
   <img src="docs/images/control-plane.gif" alt="An agent asks to run rm -rf on production; the request is refused; a live command streams its output; every server is probed for health" width="900">
 </p>
 
 <p align="center">
-  <sub>Twenty seconds, unedited — <a href="docs/videos/control-plane.mp4">full size</a>. Three servers on the loopback, from <code>scripts/demo-env.mjs</code>.</sub>
+  <sub>Twenty seconds, unedited — <a href="docs/videos/control-plane.mp4">watch full size</a>.</sub>
 </p>
+
+---
+
+## The problem, in one line
+
+An MCP SSH server is the most dangerous tool you can hand an agent: a shell on machines that matter. Today, when your agent runs something on production, you find out afterwards — if you find out at all.
+
+**This one lets you watch, and lets you say no.** It is also, on the boring days, simply a very good way to let an assistant do the server work you were going to do yourself.
+
+---
+
+## Up and running in a minute
 
 ```bash
-ssh-manager control          # a local page, or open the desktop app
+npm install -g mcp-ssh-manager     # or: brew tap bvisible/mcp-ssh-manager https://github.com/bvisible/mcp-ssh-manager && brew install ssh-manager
+
+ssh-manager server add             # guided: host, user, key or password
+claude mcp add ssh-manager mcp-ssh-manager
 ```
 
-It is one thing in two wrappers. `ssh-manager control` prints a URL and the
-whole interface runs in a tab, with nothing to install beyond the package you
-already have:
+That's it. Restart Claude Code and ask it something.
+
+<details>
+<summary>Using Codex, a source checkout, or a project-scoped install?</summary>
+
+<br>
+
+**OpenAI Codex** — same install, then two files. In `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.ssh-manager]
+command = "mcp-ssh-manager"
+env = { SSH_CONFIG_PATH = "/Users/you/.codex/ssh-config.toml" }
+startup_timeout_ms = 20000
+```
+
+And your servers in `~/.codex/ssh-config.toml`:
+
+```toml
+[ssh_servers.production]
+host = "prod.example.com"
+user = "admin"
+key_path = "~/.ssh/id_rsa"
+default_dir = "/var/www"
+group = "production"
+```
+
+Everything below works identically from Codex — same 37 tools, same config fields.
+
+**From source:**
+
+```bash
+git clone https://github.com/bvisible/mcp-ssh-manager.git
+cd mcp-ssh-manager && npm install
+cd cli && ./install.sh
+claude mcp add ssh-manager node /absolute/path/to/mcp-ssh-manager/src/index.js
+```
+
+**Scopes** — `--scope project` writes an `.mcp.json` your team can commit; `--scope user` enables it everywhere for you.
+
+**Prerequisites** — Node 18+, on Linux, macOS or Windows. `rsync` for `ssh_sync`, `sshpass` only if you sync with password auth (`brew install hudochenkov/sshpass/sshpass`, or `apt-get install sshpass`).
+
+</details>
+
+---
+
+## Then just ask
+
+No syntax to learn. Your assistant already knows how to use the 37 tools; you talk to it in your own words.
+
+| You say | What happens |
+|---|---|
+| *"Why is production slow right now?"* | CPU, memory, disk, load average and the top processes, in one round trip |
+| *"Back up the database before I deploy."* | A compressed, timestamped MySQL/PostgreSQL/MongoDB dump with a retention policy |
+| *"Tail the nginx error log on staging."* | Live output, streamed as it happens |
+| *"Push ./dist to production:/var/www and restart nginx."* | rsync, then the restart — with permissions and a backup handled for you |
+| *"Which of my servers is running out of disk?"* | Every server in the group, checked in parallel |
+| *"Open a tunnel to the production database."* | Local port forward, so your GUI client just connects |
+| *"Run `docker ps` on everything tagged production."* | One command, the whole group, sequential or parallel |
 
 <p align="center">
-  <img src="docs/images/v4-servers-browser.png" alt="The same interface in a browser tab, served by ssh-manager control" width="820">
+  <img src="docs/images/ssh-manager-cli-menu.png" alt="The ssh-manager interactive CLI menu" width="820">
 </p>
-
-The desktop builds — macOS, Windows, Linux — are that same page with the engine
-inside them, so there is no Node to install and nothing listening beyond the
-window. Every screenshot below is from the desktop build; each one has a browser
-twin in [`docs/images/`](docs/images/).
-
-### See what an agent is doing, while it does it
 
 <p align="center">
-  <img src="docs/images/v4-live-app.png" alt="The Live screen: a command still running, expanded to show its coloured output" width="900">
+  <sub>There is a CLI too, for when you'd rather do it yourself: <code>ssh-manager</code> with no arguments opens this.</sub>
 </p>
 
-Output is rendered by a terminal emulator, not printed as text — what an agent
-ran looks exactly like what you would have seen had you typed it yourself,
-colours included. Each stream keeps a bounded scrollback, so opening the screen
-mid-command shows what came before rather than starting blank.
+---
 
-Nothing here is written to disk. A stream can carry secrets — a config being
-catted, a token echoed by a deploy script — so it lives in memory, capped, and
-disappears when the window closes.
+## Watch over its shoulder — the control plane
+
+> **On the `v4` branch, not released yet.** All of it is opt-in: with no vault, no `APPROVAL` setting and nothing running, the engine behaves exactly as it does today.
+
+```bash
+ssh-manager control          # prints a local URL — or open the desktop app
+```
+
+One thing in two wrappers. `ssh-manager control` runs the whole interface in a browser tab with nothing extra to install; the desktop builds for macOS, Windows and Linux are that same page with the engine inside them, so they need neither Node nor the npm package.
+
+<p align="center">
+  <img src="docs/images/v4-servers-browser.png" alt="The interface in a browser tab, served by ssh-manager control" width="820">
+</p>
 
 ### Stop it before it runs
 
@@ -113,10 +146,25 @@ disappears when the window closes.
   <img src="docs/images/v4-waiting-app.png" alt="The Waiting screen: a destructive command from an agent, with Refuse and Approve" width="900">
 </p>
 
-The agent pauses and waits. You see the machine, the user, the tool, and the
-command in full — wrapped, never truncated, because half a command is how you
-approve the wrong thing. A desktop notification fires when something is waiting,
-because the request that goes unseen is the one that times out and is denied.
+The agent pauses and waits. You see the machine, the user, the tool, and the command **in full** — wrapped, never truncated, because half a command is how you approve the wrong thing. A desktop notification fires when something is waiting, because the request that goes unseen is the one that times out and is denied.
+
+```env
+SSH_SERVER_PROD_APPROVAL=destructive   # never (default) | destructive | always
+```
+
+The `destructive` list is deliberately short. A prompt that cries wolf gets clicked through without being read, which is worse than no prompt at all: `systemctl restart` does not interrupt you, `systemctl stop` does.
+
+Every failure denies — timeout, unreachable socket, a control plane that hangs up mid-review. The one exception is *approval configured but nothing listening*: that allows and says so loudly in the audit log, because failing shut would break every agent the moment you close the window.
+
+### See what it's doing, while it does it
+
+<p align="center">
+  <img src="docs/images/v4-live-app.png" alt="The Live screen: a command still running, expanded to show its coloured output" width="900">
+</p>
+
+Output goes through a terminal emulator, not a `<pre>` tag — what your agent ran looks exactly like what you'd have seen had you typed it yourself, colours and all. Each stream keeps a bounded scrollback, so opening the screen mid-command shows what came before instead of starting blank.
+
+**Nothing here touches the disk.** A stream can carry secrets — a config being catted, a token echoed by a deploy script — so it lives in memory, capped, and disappears with the window.
 
 ### Both filesystems, side by side
 
@@ -124,9 +172,7 @@ because the request that goes unseen is the one that times out and is denied.
   <img src="docs/images/v4-files-app.png" alt="The file browser: this machine on the left, a server on the right" width="900">
 </p>
 
-Files move directly between your machine and the server through the control
-plane — the browser never holds the bytes, which is both faster and the only way
-a multi-gigabyte file works at all.
+Drag a file across and it moves directly between your machine and the server through the control plane. The browser never holds the bytes — which is faster, and the only way a multi-gigabyte file works at all.
 
 ### Health, when you ask for it
 
@@ -134,20 +180,40 @@ a multi-gigabyte file works at all.
   <img src="docs/images/v4-health-app.png" alt="The Health screen: CPU, memory and disk per server, with a threshold crossed" width="900">
 </p>
 
-**Nothing is probed in the background.** Each check is an SSH handshake, and a
-dashboard that connects to every production box on a timer is worse than no
-dashboard. The button is the whole scheduling policy. Thresholds are yours to
-set, and crossing one is said plainly rather than encoded in a colour.
+**Nothing is probed in the background.** Each check is an SSH handshake, and a dashboard that connects to every production box on a timer is worse than no dashboard. The button is the whole scheduling policy. Thresholds are yours to set, and crossing one is said in words rather than encoded in a colour.
 
-### Servers, and everything else
+### And the rest of it
 
 <p align="center">
   <img src="docs/images/v4-servers-app.png" alt="The Servers screen: cards grouped by category" width="900">
 </p>
 
-Also on the same page: an interactive shell on any server, saved commands you
-pick from a list instead of retyping, groups you can run one command across, the
-audit trail of what agents ran and what you decided, and the known host keys.
+On the same page: an interactive shell on any server, saved commands you pick from a list instead of retyping, groups you can run one command across, the audit trail of what agents ran and what you decided, and your known host keys.
+
+Every screenshot above is the desktop build; each has a browser twin in [`docs/images/`](docs/images/). See [ROADMAP-V4.md](ROADMAP-V4.md) for what is built and what isn't.
+
+---
+
+## Safe by default
+
+Other SSH MCP servers hand the agent a shell and wish you luck. This one assumes you'd like some say in the matter.
+
+### Decide how far it can go — per server
+
+| Mode | What the agent can do |
+|---|---|
+| `unrestricted` *(default)* | Everything. Same as any other SSH MCP server, zero overhead. |
+| `readonly` | Mutating tools are refused outright — no deploy, no upload, no sudo, no database import. Reads still work. |
+| `restricted` | Every command must match an allow pattern **and** no deny pattern. Anything else is refused before it reaches the host. |
+
+```env
+SSH_SERVER_PROD_MODE=readonly
+SSH_SERVER_STAGING_MODE=restricted
+SSH_SERVER_STAGING_ALLOW_PATTERNS=^systemctl (status|restart) myapp$;^tail -n \d+ /var/log/
+SSH_SERVER_PROD_AUDIT_LOG=~/.ssh-manager/audit.jsonl
+```
+
+This is a second layer under Claude Code's `autoApprove`, which is all-or-nothing per tool: once `ssh_execute` is approved, anything goes. Useful when you're sharing the MCP with a third-party agent, a CI bot, or working on a client's machine. Full reference in **[docs/SECURITY_MODES.md](docs/SECURITY_MODES.md)**.
 
 ### Credentials out of the clear-text `.env`
 
@@ -155,555 +221,156 @@ audit trail of what agents ran and what you decided, and the known host keys.
 ssh-manager vault import      # take what you already have, encrypted
 ssh-manager vault list        # see it, without ever printing a secret
 ssh-manager vault add prod    # add one interactively
-ssh-manager vault status      # where the vault and its key live
 ssh-manager vault backup FILE # a copy that survives a new machine
-ssh-manager vault restore FILE
 ```
 
-AES-256-GCM, master key in your OS keychain (a `0600` file where there is none —
-Windows, CI, containers). Only secret values are encrypted: hosts, users and
-modes stay readable so the file can still be inspected and diffed. GCM is
-authenticated, so a tampered vault fails loudly instead of returning a wrong
-password that would then be sent to a production server.
+AES-256-GCM, master key in your OS keychain (a `0600` file where there is none — Windows, CI, containers). Only secret *values* are encrypted: hosts, users and modes stay readable, so the file can still be inspected and diffed. GCM is authenticated, so a tampered vault fails loudly instead of handing a wrong password to a production server.
 
-The vault sits above your config files and below the process environment, so a
-credential you deliberately stored wins over one left in a `.env`, while an
-operator overriding for one run still wins over both. Your `.env` is never
-modified — not by `import`, not by the interface — and a setup half in each is
-a normal state, not a broken one.
+**The key belongs to this machine.** A vault copied to a new laptop is ciphertext nobody can open — `vault backup` writes a copy encrypted under a passphrase you choose, which is what makes the move survivable. Your `.env` is never modified, not by `import`, not by the interface, and a setup half in each is a normal state rather than a broken one. Upgrading changes nothing on its own: see **[docs/MIGRATION.md](docs/MIGRATION.md)**.
 
-**The key belongs to this machine.** It is in your keychain, not in the vault
-file, so a vault copied to a new laptop is ciphertext nobody can open.
-`vault backup` writes one copy encrypted under a passphrase you choose, which is
-what makes the move survivable — do that before removing anything from a `.env`.
-Upgrading changes nothing on its own: see **[docs/MIGRATION.md](docs/MIGRATION.md)**.
+### The unglamorous parts, which are the ones that bite
 
-### Approve what your agents do, before it runs
-
-```env
-SSH_SERVER_PROD_APPROVAL=destructive   # never (default) | destructive | always
-```
-
-```bash
-ssh-manager control            # opens a local page: the queue, and the timeline
-```
-
-`readonly` is a blunt yes/no decided in advance. Approval is a decision taken
-with the actual command in view: the engine pauses, shows you the machine and
-what is about to run, and waits.
-
-Every failure denies — timeout, unreachable socket, a control plane that hangs
-up mid-review, an unreadable reply. The one exception is *approval configured
-but nothing listening*: that allows and records it loudly in the audit log,
-because failing shut would break every agent the moment you close the window.
-
-The `destructive` list is deliberately short. A prompt that cries wolf gets
-clicked through without being read, which is worse than no prompt at all:
-`systemctl restart` does not interrupt you, `systemctl stop` does.
-
-### Install
-
-```bash
-npm install -g mcp-ssh-manager    # then: ssh-manager control
-# or
-brew tap bvisible/mcp-ssh-manager https://github.com/bvisible/mcp-ssh-manager
-brew install ssh-manager
-```
-
-Both give the same binaries, and `ssh-manager control` opens the interface above
-in your browser — nothing is compiled at install time.
-
-**As a desktop application** (macOS, Windows, Linux): the app *is* the control
-plane rather than a window pointed at one, so it needs neither Node nor the npm
-package. Built from `desktop/electron` with `npm run build:mac`.
-
-See [ROADMAP-V4.md](ROADMAP-V4.md) for what is built and what is not, and
-[docs/MIGRATION.md](docs/MIGRATION.md) for what upgrading does to a `.env`
-(nothing).
+- **Your sudo password never reaches the remote command line.** It travels on the SSH channel's stdin, so it isn't visible in `ps`, in `/proc/<pid>/cmdline`, or in an `auditd` trail — unlike the `echo "$pass" | sudo -S` pattern common in this category ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)).
+- **Every shell argument is quoted** through one central helper, with a test that drives **340 builder × argument × payload combinations** through a real shell to prove none of them execute.
+- **Read-only SQL is enforced, not suggested.** `ssh_db_query` refuses anything that isn't a `SELECT`.
+- **Vulnerabilities are published, not buried.** [SECURITY.md](SECURITY.md) has the reporting process and every advisory already fixed — including the three in v3.8.5, one of which defeated `readonly` mode.
+- **Reproducible installs.** The lockfile is committed, CI installs with `npm ci`, and a test enforces that every dependency resolves to registry.npmjs.org with an integrity hash and no unreviewed install scripts.
 
 ---
 
-## 🔐 Giving an agent SSH access, safely
-
-An MCP SSH server is the most dangerous tool you can hand an AI agent: a shell on
-machines that matter. This one is built so you decide how far the agent can go —
-**per server**, not globally.
-
-| Mode | What the agent can do |
-|---|---|
-| `unrestricted` *(default)* | Everything. Same behaviour as any other SSH MCP server. |
-| `readonly` | Mutating tools are refused outright — no deploy, no upload, no sudo, no database import. Read commands still work. |
-| `restricted` | Every command must match an allow pattern **and** no deny pattern. Anything else is refused before it reaches the host. |
-
-```env
-SSH_SERVER_PROD_MODE=readonly
-SSH_SERVER_STAGING_MODE=restricted
-SSH_SERVER_STAGING_ALLOW_PATTERNS=^systemctl (status|restart) myapp$;^tail -n \d+ /var/log/
-```
-
-Alongside that:
-
-- **The sudo password never reaches the remote command line.** It travels on the
-  SSH channel's stdin, so it is not visible in `ps`, in `/proc/<pid>/cmdline`, or
-  in an `auditd` trail — unlike the `echo "$pass" | sudo -S` pattern common in
-  this category ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)).
-- **Every database argument is shell-quoted** through one centralised helper,
-  guarded by a 648-combination injection test.
-- **Read-only SQL is enforced**, not suggested: `ssh_db_query` refuses anything
-  that is not a `SELECT`.
-- **Vulnerabilities are published, not buried.** See [SECURITY.md](SECURITY.md)
-  for the reporting process and the advisories already fixed.
-- **Reproducible installs**: the lockfile is committed, CI installs with
-  `npm ci`, and a test enforces that every dependency resolves to
-  registry.npmjs.org with an integrity hash and no unreviewed install scripts.
-
----
-
-## Previous Releases
+## Reference
 
 <details>
-<summary><b>📜 Release history — v3.8.4 down to v1.0.0</b> (click to expand)</summary>
+<summary><b>All 37 tools</b></summary>
 
-### v3.8.4 - Secrets stop reaching the log, CodeQL on every commit (August 28, 2026)
+<br>
 
-- **🔒 The logger no longer writes secrets in clear text** — it writes to `~/.ssh-manager.log` and stderr (which your MCP host captures), so one call site handing it a server config would have persisted a production password. Redaction now happens inside the logger. Also: CodeQL on every push, every action pinned by SHA, and a broken example that never parsed. [Full changelog →](CHANGELOG.md#384---2026-08-28)
+**Core** — always enabled
 
-### v3.8.2 / v3.8.3 - Sudo password leak fixed, MCP Registry, signed releases (August 28, 2026)
+| Tool | What it does |
+|---|---|
+| `ssh_list_servers` | Every configured server, with its group and mode |
+| `ssh_execute` | Run a command. Falls back to the server's `DEFAULT_DIR` when no `cwd` is given |
+| `ssh_upload` / `ssh_download` | Move a single file either way |
+| `ssh_sync` | Bidirectional rsync, with real transfer counts |
 
-- **🔒 The sudo password no longer reaches the remote command line** ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)) — it travelled through `echo "<password>" | sudo -S`, readable in `ps` and `/proc/<pid>/cmdline` by every account on the host. It now goes over the SSH channel's stdin. Also: listed in the **official MCP Registry** as `io.github.bvisible/mcp-ssh-manager`, releases published from CI with **SLSA provenance** and a CycloneDX SBOM, and the per-server security modes documented at last. [Full changelog →](CHANGELOG.md#383---2026-08-28)
+**Backup & restore** (v2.1+)
 
-### v3.8.1 - Reproducible installs and blocking quality gates (August 28, 2026)
+| Tool | What it does |
+|---|---|
+| `ssh_backup_create` | MySQL, PostgreSQL, MongoDB or files — compressed, with metadata and retention |
+| `ssh_backup_list` | Everything available, with size, date and retention |
+| `ssh_backup_restore` | Restore one, including across databases |
+| `ssh_backup_schedule` | Put it on cron, with automatic cleanup |
 
-- **Committed lockfile** ([#60](https://github.com/bvisible/mcp-ssh-manager/pull/60) — contributed by [@cudatuda](https://github.com/cudatuda)) plus `npm run test:lockfile` guarding it against drift and tampering. CI installs with `npm ci`; ESLint and the JSDoc typecheck became blocking gates after being purely decorative. [Full changelog →](CHANGELOG.md#381---2026-08-28)
+See the [Backup Guide](docs/BACKUP_GUIDE.md) and [examples/backup-workflow.md](examples/backup-workflow.md).
 
-### v3.8.0 - Groups in your config, `ssh_sync` on Windows, tunnel crash fix (August 14, 2026)
+**Health & monitoring** (v2.2+)
 
-- **👥 New optional `group` field per server** ([#56](https://github.com/bvisible/mcp-ssh-manager/pull/56) — contributed by [@ice616](https://github.com/ice616), requested in [#55](https://github.com/bvisible/mcp-ssh-manager/issues/55)) — tag a server with `group = "production"` and it *is* in that group: `ssh_execute_group` resolves members straight from your `.env`/TOML, union'd with any `.server-groups.json` you already keep. Also: `ssh_sync` fixed from a Windows host ([#59](https://github.com/bvisible/mcp-ssh-manager/pull/59) — contributed by [@2836603852](https://github.com/2836603852)), a tunnel on a busy port no longer takes the whole MCP server down, the `@modelcontextprotocol/sdk` floor raised to `^1.30.0` over three advisories, and JSDoc type-checking added to CI. [Full changelog →](CHANGELOG.md#380---2026-08-14)
+| Tool | What it does |
+|---|---|
+| `ssh_health_check` | CPU, memory, disk, network, uptime, load — with an overall verdict |
+| `ssh_service_status` | nginx, mysql, docker… on systemd or sysv |
+| `ssh_process_manager` | List, inspect or kill; sort by CPU or memory |
+| `ssh_alert_setup` | Thresholds, and what happens when one is crossed |
+| `ssh_monitor`, `ssh_tail` | Live resource monitoring and log following |
 
-### v3.7.0 - Per-server SSH agent forwarding (July 13, 2026)
+**Databases** (v2.3+)
 
-- **🔗 New opt-in `FORWARD_AGENT` / `forward_agent` option** ([#53](https://github.com/bvisible/mcp-ssh-manager/pull/53) — requested by [@raphaelbahat](https://github.com/raphaelbahat) in [#52](https://github.com/bvisible/mcp-ssh-manager/issues/52)) — the equivalent of OpenSSH's `ForwardAgent yes`, per server: processes on the remote host authenticate to *other* SSH hosts with the keys in your local `ssh-agent`, without copying any private key. Requires a running agent and defaults to `false`. [Full changelog →](CHANGELOG.md#370---2026-07-13)
+| Tool | What it does |
+|---|---|
+| `ssh_db_dump` | MySQL, PostgreSQL, MongoDB; optional gzip, optional table subset |
+| `ssh_db_import` | Import a dump, `.gz` handled automatically |
+| `ssh_db_list` | Databases, or the tables inside one |
+| `ssh_db_query` | **`SELECT` only** — enforced, not suggested |
 
-### v3.6.7 - Security: command injection fix in the database helpers (July 11, 2026)
+**Deployment & sessions**
 
-- **🔒 Every `ssh_db_*` argument is now shell-quoted** ([#51](https://github.com/bvisible/mcp-ssh-manager/pull/51) — responsibly disclosed by **Ugur Ozer, Aeon AI Risk Management** (http://airiskmanagement.ca), see [#48](https://github.com/bvisible/mcp-ssh-manager/issues/48)) — caller-controlled values (`ssh_db_list` most notably, which stayed allowed in `readonly`/`restricted` modes) were interpolated into shell-evaluated strings, allowing arbitrary command execution on the SSH target. A centralized `shellQuote()` now wraps every value across all 15 builders, guarded by a 648-combination injection test. [Full changelog →](CHANGELOG.md#367---2026-07-11)
+| Tool | What it does |
+|---|---|
+| `ssh_deploy` | Files out, with permissions, backup and restart handled — see the [Deployment Guide](docs/DEPLOYMENT_GUIDE.md) |
+| `ssh_execute_sudo` | Sudo, with the password on stdin rather than the command line |
+| `ssh_session_*` | Persistent shells that keep their context between commands |
+| `ssh_tunnel_*` | Local, remote and SOCKS forwarding |
 
-### v3.6.6 - `SUDO_PASSWORD` / `DEFAULT_DIR` / `ssh_sync` key auth work again (July 11, 2026)
+**Organisation**
 
-- **🔑 camelCase config field reads** ([#50](https://github.com/bvisible/mcp-ssh-manager/pull/50) — thanks [@egoan82](https://github.com/egoan82)) — since the v3.0.0 ConfigLoader refactor, `ssh_execute_sudo` ignored `SUDO_PASSWORD`, `DEFAULT_DIR` was ignored by `ssh_execute`/`ssh_group_execute`/`ssh_list_servers`, and `ssh_sync` never passed the configured SSH key to rsync. All aligned with the loader's camelCase fields, with a regression test locking the loader output shape. [Full changelog →](CHANGELOG.md#366---2026-07-11)
-
-### v3.6.5 - `ssh_db_query` shell-injection security fix + real row_count (June 30, 2026)
-
-- **🔒 Queries are delivered on stdin via a single-quoted heredoc** ([#44](https://github.com/bvisible/mcp-ssh-manager/pull/44), [#45](https://github.com/bvisible/mcp-ssh-manager/pull/45) — thanks [@technophile77](https://github.com/technophile77)) — the remote shell no longer parses backticks/`$(…)` inside queries (which corrupted backtick identifiers **and** let the "SELECT-only" tool run arbitrary shell commands), and `row_count` now reflects each engine's real output instead of counting wrapper lines. [Full changelog →](CHANGELOG.md#365---2026-06-30)
-
-### v3.6.4 - Internal cleanup + a dead-code quality gate (June 18, 2026)
-
-- **🧹 Dead-code removal (−343 lines), zero behavioral change** — removed 27 unused exports and 2 duplicate exports; the MCP server and CLI behave identically (command builders/parsers byte-identical, all 37 tools verified end-to-end). A calibrated `knip.json` plus a **blocking** `knip` CI step keep unused code from creeping back. [Full changelog →](CHANGELOG.md#364---2026-06-18)
-
-### v3.6.3 - `ssh_sync` reports the real transfer count (June 18, 2026)
-
-- **📊 No more false "No files needed to be transferred"** ([#42](https://github.com/bvisible/mcp-ssh-manager/pull/42) — thanks [@MakksSh](https://github.com/MakksSh)) — fixed rsync `--stats` parsing: `--stats` is always passed now, and rsync 2.x/3.x wording, openrsync's `B` suffix, and locale separators are all handled. [Full changelog →](CHANGELOG.md#363---2026-06-18)
-
-### v3.6.2 - Richer tool descriptions (June 9, 2026)
-
-- **📝 All 37 tool descriptions rewritten** — every MCP tool now documents its real behavior (side effects, destructive vs read-only nature, idempotency, sudo/auth requirements, security-mode gating, parameter semantics) instead of a 4-to-10-word summary. Agents now know the consequences before invoking a tool; no behavioral change — only `description` strings changed. [Full changelog →](CHANGELOG.md#362---2026-06-09)
-
-### v3.6.1 - Teardown hygiene follow-up (June 9, 2026)
-
-- **🔌 Module-level timers no longer pin the event loop** (follow-up to [#41](https://github.com/bvisible/mcp-ssh-manager/pull/41)) — `tunnel-manager.js` and `session-manager.js` registered module-level `setInterval`s that were never `unref()`'d, so importing either module kept Node's event loop alive. Both are now `unref()`'d. [Full changelog →](CHANGELOG.md#361---2026-06-09)
-
-### v3.6.0 - Live config hot reload + stdio lifecycle fix (June 9, 2026)
-
-- **♻️ Configuration hot reload** ([#40](https://github.com/bvisible/mcp-ssh-manager/pull/40) — thanks [@EnjoySR](https://github.com/EnjoySR)) — add or edit a server in your `.env`/TOML and the running MCP server picks it up on the next call, no restart. A `ServerConfigManager` reloads lazily on file-signature change (path + `mtime` + size); a failed reload keeps the last known-good config; real `process.env` vars keep top priority. No watcher, no polling.
-- **🔌 No more orphaned stdio processes** ([#41](https://github.com/bvisible/mcp-ssh-manager/pull/41) — thanks [@LegendaryGatz](https://github.com/LegendaryGatz)) — a stdio MCP server is torn down by stdin EOF / SIGTERM, not SIGINT; with only a `SIGINT` handler every session leaked a ~83 MB node process. Shutdown is now idempotent across `SIGINT`/`SIGTERM`/`SIGHUP`/stdin-close, timers are `unref()`'d, and the process exits **~10 ms** after teardown instead of never. [Full changelog →](CHANGELOG.md#360---2026-06-09)
-
-### v3.5.1 - Robust SSH ping health-check on Windows/OpenSSH (May 26, 2026)
-
-- **🪟 Healthy Windows sessions no longer reported as `Dead`** ([#39](https://github.com/bvisible/mcp-ssh-manager/pull/39) — thanks [@username77](https://github.com/username77)) — the liveness probe ran `echo "ping"` and `cmd.exe` echoed the quotes literally, failing a strict `=== 'ping'` check and needlessly rebuilding live connections. Now uses `echo ping` parsed by a null-safe `isPingAlive(stdout)` helper (CRLF/quote/case-normalized), covered by `tests/test-ssh-ping.js`. [Full changelog →](CHANGELOG.md#351---2026-05-26)
-
-### v3.5.0 - Per-server security modes — `readonly` / `restricted` + audit log (May 18, 2026)
-
-A second authorization layer that filters tool invocations **inside the MCP server**, complementing the existing client-side `autoApprove`. Useful when sharing the MCP with a third-party agent, a CI bot, or any client where `ssh_execute` shouldn't be unconditionally trusted.
-
-- **🔒 Three modes, opt-in per server** (no `MODE` field = identical to v3.4.x):
-  - **`unrestricted`** (default) — strict no-op. `evaluatePolicy()` early-returns on the first line, zero overhead.
-  - **`readonly`** — blocks mutating tools (`ssh_upload`, `ssh_deploy`, `ssh_sync`, `ssh_execute_sudo`, `ssh_backup_*`, `ssh_db_import/dump`, plus action-gated `ssh_key_manage accept|remove`, `ssh_alert_setup set`, `ssh_process_manager kill`) AND applies a built-in denylist on `ssh_execute` (rm, mv, dd, mkfs, chmod, chown, sudo, systemctl restart/stop, docker rm/stop, pipe-to-sh, redirect outside `/tmp`, curl|sh, etc.).
-  - **`restricted`** — every command must match at least one `ALLOW_PATTERNS` regex AND no `DENY_PATTERNS` regex. **DENY wins**. With no `ALLOW_PATTERNS` everything is refused (fail-closed).
-- **📝 Audit log** — opt-in JSONL per server (`SSH_SERVER_<N>_AUDIT_LOG=/path/to/audit.jsonl`). Records `ts`, `server`, `tool`, args, `allowed`, `reason` on denial, `exitCode`/`success` on execution. Sensitive arg fields (`password`, `passphrase`, `sudoPassword`, `token`, `secret`, `apikey`) are replaced with `***`.
-- **🪄 Command aliases expanded BEFORE policy evaluation** — a `DENY` pattern can't be bypassed via an alias.
-- **♻️ Backward-compatible by design** — a v3.4.x `.env` or TOML loads identically. No `MODE` field → zero behavior change. The interactive wizard (`ssh-manager server add`) defaults all three new prompts to skip. All 13 pre-existing tests pass unmodified. New `tests/test-policy.js` adds 26 tests covering modes, DENY > ALLOW precedence, invalid-regex handling, redaction, and the backward-compat fast path. [Full reference →](docs/SECURITY_MODES.md)
-
-### v3.4.1 - Modern OpenSSH 9.x compatibility (May 16, 2026)
-
-- **🔐 Expanded SSH algorithm list — handshake against OpenSSH 9.x out of the box** ([#32](https://github.com/bvisible/mcp-ssh-manager/pull/32))
-  - **KEX**: `curve25519-sha256` (+`@libssh.org`), `diffie-hellman-group15-sha512`, `diffie-hellman-group16-sha512`
-  - **Server host key**: `rsa-sha2-512`, `rsa-sha2-256` (RFC 8332)
-  - **Cipher**: `aes128-gcm@openssh.com`, `aes256-gcm@openssh.com`
-  - **HMAC**: `hmac-sha2-256-etm@openssh.com`, `hmac-sha2-512-etm@openssh.com`, `hmac-sha1-etm@openssh.com`
-  - Backward-compatible — legacy algorithms preserved at lower preference, older servers (CentOS 7, Debian 10) keep working. Thanks [@YoungHong1992](https://github.com/YoungHong1992).
-
-### v3.4.0 - Windows OpenSSH support + shell-agnostic session sync (May 7, 2026)
-
-- **🪟 Windows OpenSSH encoding & syntax fixes** — UTF-16LE base64 PowerShell payloads (Ansible-style) + `Set-Location` replacing `cd && ` ([#31](https://github.com/bvisible/mcp-ssh-manager/pull/31), thanks [@WenKingSu](https://github.com/WenKingSu))
-- **🎯 Marker-based SSH session sync** — UUID v4 protocol boundaries with `ECHO: 0` PTY, real `$?` exit codes, no more "Timeout waiting for shell prompt" on custom/slow/AIX shells ([#30](https://github.com/bvisible/mcp-ssh-manager/pull/30), thanks [@MakksSh](https://github.com/MakksSh))
-
-### v3.3.0 - ProxyCommand & Critical Fixes (May 2, 2026)
-
-- **🔌 ProxyCommand support** for SOCKS5 / custom proxy commands ([#24](https://github.com/bvisible/mcp-ssh-manager/pull/24))
-- **⏱️ `ssh_execute` timeout silently capped at 30 s** — fixed ([#28](https://github.com/bvisible/mcp-ssh-manager/issues/28), [#29](https://github.com/bvisible/mcp-ssh-manager/pull/29))
-- **🪟 Windows global install `/bin/bash` shim error** — fixed ([#22](https://github.com/bvisible/mcp-ssh-manager/issues/22), [#23](https://github.com/bvisible/mcp-ssh-manager/pull/23))
-- **🔧 `server add` blocked by missing `rsync`** — `rsync` now optional ([#26](https://github.com/bvisible/mcp-ssh-manager/pull/26))
-- **🔡 Hyphenated server names silently dropped** — validation hardened ([#25](https://github.com/bvisible/mcp-ssh-manager/issues/25), [#27](https://github.com/bvisible/mcp-ssh-manager/pull/27))
-
-### v3.2.2 - Global Install Fix & CLI Binary (April 7, 2026)
-
-- **🔧 Global install fixed**: `.env` path resolution now uses a fallback chain instead of hardcoded `__dirname` — works correctly with `npm install -g` ([#16](https://github.com/bvisible/mcp-ssh-manager/issues/16), [#19](https://github.com/bvisible/mcp-ssh-manager/issues/19))
-  - Fallback chain: `~/.ssh-manager/.env` → `cwd/.env` → `~/.env` → project `.env`
-  - Auto-creates `~/.ssh-manager/.env` on first `ssh-manager server add`
-- **📦 `ssh-manager` CLI registered as binary**: `npm install -g` now creates both `mcp-ssh-manager` and `ssh-manager` commands ([#18](https://github.com/bvisible/mcp-ssh-manager/issues/18))
-- **⚡ Race condition fix**: Server config is now fully loaded before the MCP server accepts requests
-
-### v3.2.0 - ProxyJump / Bastion Host Support (March 18, 2026)
-
-- **🔀 ProxyJump support**: Connect to servers behind bastion/jump hosts with a simple `PROXYJUMP` config field ([#15](https://github.com/bvisible/mcp-ssh-manager/issues/15))
-  - Chain multiple jumps (A → B → C) via recursive connections
-  - Circular dependency detection prevents infinite loops
-  - All tools work transparently through jump hosts
-- **📦 npx support fixed**: `npx mcp-ssh-manager` now works correctly ([#14](https://github.com/bvisible/mcp-ssh-manager/issues/14))
-
-### v3.1.5 - SSH Agent & Passphrase Support (March 5, 2026)
-
-- **🔑 SSH Agent support**: Automatically uses `ssh-agent` when `SSH_AUTH_SOCK` is available — passphrase-protected keys work transparently
-- **🔐 Passphrase configuration**: New `passphrase` field for both `.env` and TOML formats
-
-Thanks to [@snjax](https://github.com/snjax) for the original contribution ([#12](https://github.com/bvisible/mcp-ssh-manager/pull/12)).
-
-### v3.1.4 - Windows SSH Host Support (February 22, 2026)
-
-- **🪟 Windows SSH host fix**: Commands no longer fail on Windows hosts running OpenSSH ([#10](https://github.com/bvisible/mcp-ssh-manager/issues/10))
-- New per-server `platform` config field (`SSH_SERVER_FOO_PLATFORM=windows` or `platform = "windows"` in TOML)
-- When `platform=windows`, the Linux `timeout`/`sh -c` command wrapper is skipped and the SSH library's native timeout is used instead
-- All tools (`ssh_execute`, `ssh_tail`, `ssh_monitor`, `ssh_deploy`, `ssh_execute_sudo`, `ssh_group_execute`) are platform-aware
-
-### v3.1.2 - Windows Compatibility Fix (February 9, 2026)
-
-- **🪟 Windows support**: Fixed crash on Windows where `process.env.HOME` is undefined ([#8](https://github.com/bvisible/mcp-ssh-manager/issues/8))
-- Now uses `os.homedir()` for cross-platform compatibility (Linux, macOS, Windows)
-
-### v3.1.0 - Tool Activation System (November 15, 2025)
-
-### 🎯 Context Usage Optimization
-- **92% context reduction**: Enable only the tools you need (minimal mode: 5 tools vs all 37)
-- **Tool management CLI**: `ssh-manager tools list/configure/enable/disable`
-- **6 tool groups**: Core, Sessions, Monitoring, Backup, Database, Advanced
-- **Auto-approval export**: Generate Claude Code auto-approval configs
-
-### v3.0.0 - Enterprise DevOps Platform (October 1, 2025)
-
-This release adds **12 new MCP tools** transforming SSH Manager into a comprehensive DevOps automation platform:
-
-### 💾 Backup & Restore System (4 tools)
-- **Automated backups** for MySQL, PostgreSQL, MongoDB, and file systems
-- **Smart scheduling** with cron integration and retention policies
-- **One-click restore** with cross-database support
-- **Metadata tracking** for audit and compliance
-
-### 🏥 Health & Monitoring (4 tools)
-- **Real-time health checks** with CPU, RAM, Disk, and Network metrics
-- **Service monitoring** for nginx, mysql, docker, and custom services
-- **Process management** with CPU/RAM sorting and kill capabilities
-- **Alert thresholds** with configurable notifications
-
-### 🗄️ Database Management (4 tools)
-- **Safe database dumps** with compression and selective exports
-- **Database imports** with automatic decompression
-- **Schema exploration** listing databases, tables, and collections
-- **Secure queries** with SQL injection prevention (SELECT-only)
-
-**📊 Total: 37 MCP Tools** | **🔧 ~4,100 Lines of Code Added** | **✅ Production Ready**
-
-[Read Full Changelog →](CHANGELOG.md#300---2025-10-01)
+| Tool | What it does |
+|---|---|
+| `ssh_alias` | Short names for servers |
+| `ssh_command_alias` | Short names for commands you keep retyping |
+| `ssh_group_*`, `ssh_execute_group` | Run one thing across many machines |
+| `ssh_hooks` | Automation hooks around SSH operations — see [Aliases and Hooks](docs/ALIASES_AND_HOOKS.md) |
+| `ssh_profile` | Swap whole sets of aliases and hooks — `default`, `frappe`, `docker`, `nodejs`, or your own |
 
 </details>
 
----
+<details>
+<summary><b>Spending less context — tool groups</b></summary>
 
-## 📑 Table of Contents
+<br>
 
-- [Features](#-features)
-- [Tool Management](#-tool-management--context-optimization)
-- [Prerequisites](#-prerequisites)
-- [Quick Start - Claude Code](#-quick-start---claude-code)
-- [Quick Start - OpenAI Codex](#-quick-start---openai-codex)
-- [Available MCP Tools](#-available-mcp-tools)
-- [Configuration](#-configuration)
-- [Usage Examples](#-usage-examples)
-- [Security](#-security-best-practices)
-- [Troubleshooting](#-troubleshooting)
-- [Known Limitations](#known-limitations)
-- [Contributing](#-contributing)
-- [License](#-license)
-
----
-
-## 🌟 Features
-
-### Core Features
-- **🔗 Multiple SSH Connections** - Manage unlimited SSH servers from a single interface
-- **🔐 Secure Authentication** - Support for password, SSH key, and ssh-agent authentication (including passphrase-protected keys)
-- **🔀 ProxyJump / Bastion Host** - Connect to servers behind jump hosts with chained multi-hop support
-- **🔌 ProxyCommand / Custom Proxy** - Connect through SOCKS5 proxies or custom proxy commands (ncat, ssh -W, etc.)
-- **📁 File Operations** - Upload and download files between local and remote systems
-- **⚡ Command Execution** - Run commands on remote servers with working directory support
-- **📂 Default Directories** - Set default working directories per server for convenience
-- **🎯 Easy Configuration** - Simple `.env` file setup with guided configuration tool
-
-### Enterprise DevOps Features (v3.0) 🎉
-- **💾 Backup & Restore** - Automated backups for MySQL, PostgreSQL, MongoDB, and files
-- **🏥 Health Monitoring** - Real-time server health checks (CPU, RAM, Disk, Services)
-- **🗄️ Database Management** - Safe database operations with SQL injection prevention
-- **📊 Process Management** - Monitor and control server processes
-- **⚠️ Smart Alerts** - Configurable health thresholds and notifications
-
-### v2.0 Features
-- **🚀 Bash CLI** - Lightning-fast pure Bash CLI for server management
-- **📊 Advanced Logging** - Comprehensive logging system with levels and history
-- **🔄 Rsync Integration** - Bidirectional file sync with rsync support
-- **💻 Persistent Sessions** - Maintain shell context across multiple commands
-- **👥 Server Groups** - Execute commands on multiple servers simultaneously
-- **🔧 SSH Tunnels** - Local/remote port forwarding and SOCKS proxy support
-- **📈 System Monitoring** - Real-time monitoring of CPU, memory, disk, and network
-- **🏷️ Server Aliases** - Use short aliases instead of full server names
-- **🚀 Smart Deployment** - Automated file deployment with permission handling
-- **🔑 Sudo Support** - Execute commands with sudo privileges securely
-- **📝 OpenAI Codex Support** - Compatible with OpenAI Codex via TOML configuration
-
----
-
-## ⚙️ Tool Management & Context Optimization
-
-**NEW in v3.1**: Reduce Claude Code context usage by 92% with tool activation management!
-
-MCP SSH Manager includes **37 tools** organized into **6 groups**. By default, all tools are enabled, but you can optimize for your specific workflow:
-
-### Quick Setup
+All 37 tools cost roughly **43.5k tokens** of context. Most people don't need all of them.
 
 ```bash
-# Interactive configuration wizard
-ssh-manager tools configure
-
-# View current configuration
-ssh-manager tools list
-
-# Enable/disable specific groups
+ssh-manager tools configure     # interactive wizard
+ssh-manager tools list          # what's on right now
 ssh-manager tools enable monitoring
 ssh-manager tools disable backup
 ```
 
-### Configuration Modes
+| Mode | Tools | Context | Good for |
+|---|---|---|---|
+| **All** *(default)* | 37 | ~43.5k | The full set |
+| **Minimal** | 5 | ~3.5k | Just SSH, and 92% of the context back |
+| **Custom** | 5–37 | varies | Whatever you actually use |
 
-| Mode | Tools | Context Usage | Best For |
-|------|-------|---------------|----------|
-| **All** (default) | 37 tools | ~43.5k tokens | Full feature set, most users |
-| **Minimal** | 5 tools | ~3.5k tokens | Basic SSH operations only |
-| **Custom** | 5-37 tools | Varies | Tailored to your workflow |
+Groups: **core** (5, always on) · **sessions** (4) · **monitoring** (6) · **backup** (4) · **database** (4) · **advanced** (14).
 
-### Tool Groups
+Fewer tools also means fewer approval prompts and a faster start. `ssh-manager tools export-claude` writes the matching auto-approval block.
 
-- **Core** (5 tools) - Always enabled: list, execute, upload, download, sync
-- **Sessions** (4 tools) - Persistent SSH sessions
-- **Monitoring** (6 tools) - Health checks, service status, process management
-- **Backup** (4 tools) - Database and file backups
-- **Database** (4 tools) - MySQL, PostgreSQL, MongoDB operations
-- **Advanced** (14 tools) - Deployment, sudo, tunnels, groups, aliases, etc.
+📖 [Complete guide →](docs/TOOL_MANAGEMENT.md)
 
-### Benefits
+</details>
 
-- **92% context reduction** in minimal mode (~40k tokens saved)
-- **Fewer approval prompts** in Claude Code
-- **Faster loading** and cleaner interface
-- **Auto-approval configuration** export for Claude Code
+<details>
+<summary><b>Configuration — every field</b></summary>
 
-📖 [**Complete Tool Management Guide →**](docs/TOOL_MANAGEMENT.md)
+<br>
 
----
+Two interchangeable formats, read by the same loader: `.env` is the usual choice with Claude Code, TOML with Codex (from `SSH_CONFIG_PATH`, or `~/.codex/ssh-config.toml`). Both can coexist — the loader merges them.
 
-## 📋 Prerequisites
-
-- Node.js (v18 or higher)
-- npm (comes with Node.js)
-- **Platforms**: Linux, macOS, Windows
-- **For Claude Code**: Claude Code CLI installed
-- **For OpenAI Codex**: Codex CLI configured
-- Bash 4.0+ (for CLI management tools)
-- rsync (for file synchronization)
-- sshpass (optional, for rsync with password authentication)
-  - macOS: `brew install hudochenkov/sshpass/sshpass`
-  - Linux: `apt-get install sshpass`
-
-## 🚀 Quick Start - Claude Code
-
-### 1. Install MCP SSH Manager
-
-**Option A: Install from npm (recommended)**
-
-```bash
-# Install globally from npm
-npm install -g mcp-ssh-manager
-
-# Or install locally
-npx mcp-ssh-manager
+```env
+SSH_SERVER_[NAME]_HOST=hostname_or_ip
+SSH_SERVER_[NAME]_USER=username
+SSH_SERVER_[NAME]_PASSWORD=password          # or use a key
+SSH_SERVER_[NAME]_KEYPATH=~/.ssh/key
+SSH_SERVER_[NAME]_PASSPHRASE=key_passphrase  # optional
+SSH_SERVER_[NAME]_PORT=22                    # optional
+SSH_SERVER_[NAME]_DEFAULT_DIR=/var/www       # optional working directory
+SSH_SERVER_[NAME]_SUDO_PASSWORD=…            # optional, for automated deploys
+SSH_SERVER_[NAME]_DESCRIPTION=…              # optional
+SSH_SERVER_[NAME]_GROUP=production           # optional, free-form label
+SSH_SERVER_[NAME]_PLATFORM=windows           # optional: linux (default) | windows
+SSH_SERVER_[NAME]_PROXYJUMP=bastion          # optional: another server, as jump host
+SSH_SERVER_[NAME]_PROXYCOMMAND=…             # optional: ncat, ssh -W, …
+SSH_SERVER_[NAME]_FORWARD_AGENT=true         # optional, and a real security trade-off
+SSH_SERVER_[NAME]_MODE=readonly              # optional: unrestricted | readonly | restricted
+SSH_SERVER_[NAME]_APPROVAL=destructive       # optional: never | destructive | always
+SSH_SERVER_[NAME]_AUDIT_LOG=~/audit.jsonl    # optional JSONL trail
 ```
 
-**Option B: Install from source**
-
-```bash
-# Clone and install
-git clone https://github.com/bvisible/mcp-ssh-manager.git
-cd mcp-ssh-manager
-npm install
-
-# Install the Bash CLI
-cd cli && ./install.sh
-
-# Configure your first server
-ssh-manager server add
-```
-
-### 2. Install to Claude Code
-
-```bash
-# For personal use (current user only)
-claude mcp add ssh-manager node /path/to/mcp-ssh-manager/src/index.js
-
-# For team sharing (creates .mcp.json in project)
-claude mcp add ssh-manager --scope project node /path/to/mcp-ssh-manager/src/index.js
-
-# For all your projects
-claude mcp add ssh-manager --scope user node /path/to/mcp-ssh-manager/src/index.js
-```
-
-### 3. Configure Auto-Approval (Optional but Recommended)
-
-To avoid being prompted for approval on every SSH command, add auto-approve configuration:
-
-Edit `~/.config/claude-code/claude_code_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "ssh-manager": {
-      "command": "node",
-      "args": ["/path/to/mcp-ssh-manager/src/index.js"],
-      "autoApprove": [
-        "mcp__ssh-manager__ssh_execute",
-        "mcp__ssh-manager__ssh_list_servers",
-        "mcp__ssh-manager__ssh_upload",
-        "mcp__ssh-manager__ssh_download",
-        "mcp__ssh-manager__ssh_sync",
-        "mcp__ssh-manager__ssh_alias"
-      ]
-    }
-  }
-}
-```
-
-**Important**: Restart Claude Code after making this change.
-
-For full auto-approval of all SSH tools, see the complete list in [examples/claude-code-config.example.json](examples/claude-code-config.example.json).
-
-### 3.5. Security Modes (Optional, v3.5.0+)
-
-`autoApprove` is all-or-nothing per tool: once `ssh_execute` is approved, anything goes. If you want a **second layer** that filters what the MCP server actually accepts to run — useful when sharing the MCP with a third-party agent, a CI bot, or a client's server — declare a per-server **security mode**.
-
-```bash
-# In your .env — three optional fields. Omit them all to keep v3.4.x behavior exactly.
-SSH_SERVER_CLIENT_PROD_HOST=client-prod.example.com
-SSH_SERVER_CLIENT_PROD_USER=consultant
-SSH_SERVER_CLIENT_PROD_KEYPATH=~/.ssh/consultant_ed25519
-
-SSH_SERVER_CLIENT_PROD_MODE=readonly                          # unrestricted | readonly | restricted
-SSH_SERVER_CLIENT_PROD_AUDIT_LOG=~/.ssh-manager/audit.jsonl   # opt-in JSONL audit trail
-# For mode=restricted, provide an allowlist of regex (DENY wins over ALLOW):
-# SSH_SERVER_CI_ALLOW_PATTERNS="^docker (ps|logs);^kubectl get "
-```
-
-- **`unrestricted`** (default, no field needed) — identical to pre-v3.5.0 behavior. Zero overhead.
-- **`readonly`** — blocks `ssh_upload`, `ssh_deploy`, `ssh_sync`, `ssh_execute_sudo`, backup/db write tools, and built-in destructive commands (`rm`, `mv`, `sudo`, `systemctl restart`, redirects outside `/tmp`, `curl | sh`, …).
-- **`restricted`** — every `ssh_execute` command must match at least one `ALLOW_PATTERNS` regex AND no `DENY_PATTERNS` regex.
-
-Existing configs are unaffected — no field is mandatory, no behavior changes unless you opt in. See **[docs/SECURITY_MODES.md](docs/SECURITY_MODES.md)** for the full reference, recipes, and limitations.
-
-### 4. Start Using!
-
-In Claude Code, you can now:
-
-```
-"List all my SSH servers"
-"Execute 'ls -la' on production server"  # Uses default directory if set
-"Run 'docker ps' on staging"
-"Upload config.json to production:/etc/app/config.json"
-"Download logs from staging:/var/log/app.log"
-```
-
-**With Default Directories:**
-If you set `/var/www/html` as default for production, these commands are equivalent:
-- `"Run 'ls' on production"` → executes in `/var/www/html`
-- `"Run 'ls' on production in /tmp"` → executes in `/tmp` (overrides default)
-
----
-
-## 🚀 Quick Start - OpenAI Codex
-
-### 1. Install MCP SSH Manager
-
-Same installation as Claude Code (see above), then configure for Codex:
-
-```bash
-# Set up Codex integration
-ssh-manager codex setup
-
-# Migrate existing servers to TOML format (if you have .env servers)
-ssh-manager codex migrate
-
-# Test the integration
-ssh-manager codex test
-```
-
-### 2. Manual Configuration (Optional)
-
-If you prefer manual setup, add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.ssh-manager]
-command = "node"
-args = ["/absolute/path/to/mcp-ssh-manager/src/index.js"]
-env = { SSH_CONFIG_PATH = "/Users/you/.codex/ssh-config.toml" }
-startup_timeout_ms = 20000
-```
-
-### 3. Configure Servers in TOML Format
-
-Create or edit `~/.codex/ssh-config.toml`:
+The same thing in TOML:
 
 ```toml
 [ssh_servers.production]
 host = "prod.example.com"
 user = "admin"
-password = "secure_password"  # or use key_path
-key_path = "~/.ssh/id_rsa"   # for SSH key auth (recommended)
-passphrase = "key_passphrase" # optional, for passphrase-protected keys
+key_path = "~/.ssh/id_rsa"
 port = 22
 default_dir = "/var/www"
-group = "production"          # optional, free-form label for grouping/import-export
+group = "production"
 description = "Production server"
-
-[ssh_servers.staging]
-host = "staging.example.com"
-user = "deploy"
-key_path = "~/.ssh/staging_key"
-port = 2222
-default_dir = "/home/deploy/app"
 
 [ssh_servers.winhost]
 host = "192.168.1.90"
@@ -711,665 +378,163 @@ user = "svc-ssh"
 key_path = "~/.ssh/winhost_key"
 port = 2222
 platform = "windows"
-description = "Windows host via OpenSSH"
-
-[ssh_servers.bastion]
-host = "bastion.example.com"
-user = "jumpuser"
-key_path = "~/.ssh/bastion_key"
 
 [ssh_servers.internal]
 host = "10.0.0.5"
 user = "admin"
-key_path = "~/.ssh/internal_key"
 proxy_jump = "bastion"
-description = "Private server behind bastion"
 ```
 
-💡 **See [examples/codex-ssh-config.example.toml](examples/codex-ssh-config.example.toml) for more complete examples!**
+**Loading order**, highest priority first: process environment → `.env` → the encrypted vault → TOML. A credential you deliberately put in the vault beats one left in a `.env`; an operator overriding for a single run still beats both.
 
-### 4. Start Using in Codex!
+**Profiles** bundle aliases and hooks per project type. Set one with `export SSH_MANAGER_PROFILE=frappe`, or write the name into a `.ssh-manager-profile` file. Ships with `default`, `frappe`, `docker` and `nodejs`; add your own in `profiles/`.
 
-In OpenAI Codex, you can now:
+More examples: [examples/codex-ssh-config.example.toml](examples/codex-ssh-config.example.toml).
 
-```
-"List my SSH servers"
-"Execute 'docker ps' on production"
-"Upload file.txt to staging:/tmp/"
-"Monitor CPU usage on all servers"
-"Download production:/var/log/app.log to ./logs/"
-```
+</details>
 
-### Converting Between Formats
+<details>
+<summary><b>Getting to machines you can't reach directly</b></summary>
 
-Switch easily between Claude Code (.env) and Codex (TOML):
+<br>
 
-```bash
-# Convert .env to TOML (for Codex)
-ssh-manager codex convert to-toml
-
-# Convert TOML back to .env (for Claude Code)
-ssh-manager codex convert to-env
-```
-
-Both formats can coexist! The system supports both simultaneously.
-
----
-
-## 🛠️ Available MCP Tools
-
-### Core Tools
-
-#### `ssh_list_servers`
-Lists all configured SSH servers with their details.
-
-#### `ssh_execute`
-Execute commands on remote servers.
-- Parameters: `server` (name), `command`, `cwd` (optional working directory)
-- **Note**: If no `cwd` is provided, uses the server's default directory if configured
-
-#### `ssh_upload`
-Upload files to remote servers.
-- Parameters: `server`, `local_path`, `remote_path`
-
-#### `ssh_download`
-Download files from remote servers.
-- Parameters: `server`, `remote_path`, `local_path`
-
-### Backup & Restore Tools (v2.1+) 🔄
-
-#### `ssh_backup_create`
-Create backup of database or files on remote server.
-- Types: MySQL, PostgreSQL, MongoDB, Files
-- Parameters: `server`, `type`, `name`, `database`, `paths`, `retention`
-- Automatic compression and metadata tracking
-- See [Backup Guide](docs/BACKUP_GUIDE.md) for detailed usage
-
-#### `ssh_backup_list`
-List all available backups on remote server.
-- Parameters: `server`, `type` (optional filter)
-- Returns backup details with size, date, and retention info
-
-#### `ssh_backup_restore`
-Restore from a previous backup.
-- Parameters: `server`, `backupId`, `database`, `targetPath`
-- Supports cross-database restoration
-
-#### `ssh_backup_schedule`
-Schedule automatic backups using cron.
-- Parameters: `server`, `schedule` (cron format), `type`, `name`
-- Automatic cleanup based on retention policy
-
-### Health & Monitoring Tools (v2.2+) 🏥
-
-#### `ssh_health_check`
-Perform comprehensive health check on remote server.
-- Checks: CPU, Memory, Disk, Network, Uptime, Load average
-- Returns overall health status (healthy/warning/critical)
-- Optional detailed mode for extended metrics
-
-#### `ssh_service_status`
-Check status of services (nginx, mysql, docker, etc.).
-- Parameters: `server`, `services` (array)
-- Returns running/stopped status for each service
-- Works with both systemd and sysv init systems
-
-#### `ssh_process_manager`
-List, monitor, or kill processes on remote server.
-- Actions: list (top processes), kill (terminate), info (details)
-- Sort by CPU or memory usage
-- Filter processes by name
-
-#### `ssh_alert_setup`
-Configure health monitoring alerts and thresholds.
-- Actions: set (configure), get (view), check (test thresholds)
-- Configurable CPU, memory, and disk thresholds
-- Automatic alert triggering when thresholds exceeded
-
-### Database Management Tools (v2.3+) 🗄️
-
-#### `ssh_db_dump`
-Create database dump/backup on remote server.
-- Supports: MySQL, PostgreSQL, MongoDB
-- Parameters: `server`, `type`, `database`, `outputFile`, `dbUser`, `dbPassword`, `dbHost`, `dbPort`
-- Optional: `compress` (gzip), `tables` (specific tables only)
-- Returns dump size and location
-
-#### `ssh_db_import`
-Import SQL dump or restore database on remote server.
-- Supports: MySQL, PostgreSQL, MongoDB
-- Parameters: `server`, `type`, `database`, `inputFile`, `dbUser`, `dbPassword`, `dbHost`, `dbPort`
-- Handles compressed (.gz) files automatically
-- Optional: `drop` (drop database before restore for MongoDB)
-
-#### `ssh_db_list`
-List databases or tables on remote server.
-- Parameters: `server`, `type`, `database` (optional), `dbUser`, `dbPassword`, `dbHost`, `dbPort`
-- Without database: lists all databases (filters system DBs)
-- With database: lists all tables/collections
-- Returns structured list with count
-
-#### `ssh_db_query`
-Execute read-only SQL queries on remote database.
-- Parameters: `server`, `type`, `database`, `query`, `dbUser`, `dbPassword`, `dbHost`, `dbPort`
-- **Security**: Only SELECT queries allowed for safety
-- MongoDB: Use `collection` parameter for find queries
-- Returns query results with row count
-
-### Deployment Tools (v1.2+)
-
-#### `ssh_deploy` 🚀
-Deploy files with automatic permission and backup handling.
-- Parameters: `server`, `files` (array), `options` (owner, permissions, backup, restart)
-- Automatically handles permission issues and creates backups
-
-#### `ssh_execute_sudo` 🔐
-Execute commands with sudo privileges.
-- Parameters: `server`, `command`, `password` (optional), `cwd` (optional)
-- Securely handles sudo password without exposing in logs
-
-### Server Management
-
-#### `ssh_alias` 🏷️
-Manage server aliases for easier access.
-- Parameters: `action` (add/remove/list), `alias`, `server`
-- Example: Create alias "prod" for "production" server
-
-#### `ssh_command_alias` 📝
-Manage command aliases for frequently used commands.
-- Parameters: `action` (add/remove/list/suggest), `alias`, `command`
-- Aliases loaded from active profile
-- Example: Custom aliases for your project
-
-#### `ssh_hooks` 🎣
-Manage automation hooks for SSH operations.
-- Parameters: `action` (list/enable/disable/status), `hook`
-- Hooks loaded from active profile
-- Example: Project-specific validation and automation
-
-#### `ssh_profile` 📚
-Manage configuration profiles for different project types.
-- Parameters: `action` (list/switch/current), `profile`
-- Available profiles: default, frappe, docker, nodejs
-- Example: Switch between different project configurations
-
-## 🔧 Configuration
-
-### Profiles
-
-SSH Manager uses profiles to configure aliases and hooks for different project types:
-
-1. **Set active profile**: 
-   - Environment variable: `export SSH_MANAGER_PROFILE=frappe`
-   - Configuration file: Create `.ssh-manager-profile` with profile name
-   - Default: Uses `default` profile if not specified
-
-2. **Available profiles**:
-   - `default` - Basic SSH operations
-   - `frappe` - Frappe/ERPNext specific
-   - `docker` - Docker container management
-   - `nodejs` - Node.js applications
-   - Create custom profiles in `profiles/` directory
-
-### Environment Variables
-
-Servers are configured in the `.env` file with this pattern:
+**Through a bastion** — the tunnel is transparent, every tool works as usual:
 
 ```env
-# Server configuration pattern
-SSH_SERVER_[NAME]_HOST=hostname_or_ip
-SSH_SERVER_[NAME]_USER=username
-SSH_SERVER_[NAME]_PASSWORD=password  # For password auth
-SSH_SERVER_[NAME]_KEYPATH=~/.ssh/key  # For SSH key auth
-SSH_SERVER_[NAME]_PASSPHRASE=key_passphrase  # Optional, for passphrase-protected keys
-SSH_SERVER_[NAME]_PORT=22  # Optional, defaults to 22
-SSH_SERVER_[NAME]_DEFAULT_DIR=/path/to/dir  # Optional, default working directory
-SSH_SERVER_[NAME]_DESCRIPTION=Description  # Optional
-SSH_SERVER_[NAME]_GROUP=production  # Optional, free-form label for grouping/import-export
-SSH_SERVER_[NAME]_PLATFORM=windows  # Optional: "linux" (default) or "windows"
-SSH_SERVER_[NAME]_PROXYJUMP=bastion  # Optional: name of another server to use as jump host
-SSH_SERVER_[NAME]_PROXYCOMMAND=command  # Optional: custom proxy command (ncat, ssh -W, etc.)
-SSH_SERVER_[NAME]_FORWARD_AGENT=true  # Optional: forward local ssh-agent to remote (needs SSH_AUTH_SOCK; security risk — see SSH Agent section)
-
-# Example: Linux server
-SSH_SERVER_PRODUCTION_HOST=prod.example.com
-SSH_SERVER_PRODUCTION_USER=admin
-SSH_SERVER_PRODUCTION_PASSWORD=secure_password
-SSH_SERVER_PRODUCTION_PORT=22
-SSH_SERVER_PRODUCTION_DEFAULT_DIR=/var/www/html
-SSH_SERVER_PRODUCTION_DESCRIPTION=Production Server
-SSH_SERVER_PRODUCTION_SUDO_PASSWORD=secure_sudo_pass  # Optional, for automated deployments
-
-# Example: Windows server (OpenSSH for Windows)
-SSH_SERVER_WINHOST_HOST=192.168.1.90
-SSH_SERVER_WINHOST_USER=svc-ssh
-SSH_SERVER_WINHOST_KEYPATH=~/.ssh/winhost_key
-SSH_SERVER_WINHOST_PORT=2222
-SSH_SERVER_WINHOST_PLATFORM=windows
-SSH_SERVER_WINHOST_DESCRIPTION=Windows host via OpenSSH
-
-# Example: Server behind a bastion/jump host
 SSH_SERVER_BASTION_HOST=bastion.example.com
 SSH_SERVER_BASTION_USER=jumpuser
 SSH_SERVER_BASTION_KEYPATH=~/.ssh/bastion_key
 
-SSH_SERVER_INTERNAL_HOST=10.0.0.5
-SSH_SERVER_INTERNAL_USER=admin
-SSH_SERVER_INTERNAL_KEYPATH=~/.ssh/internal_key
-SSH_SERVER_INTERNAL_PROXYJUMP=bastion
-SSH_SERVER_INTERNAL_DESCRIPTION=Private server behind bastion
-```
-
-### Server Management Tool
-
-The Python management tool (`tools/server_manager.py`) provides:
-
-1. **List servers** - View all configured servers
-2. **Add server** - Interactive server configuration
-3. **Test connection** - Verify server connectivity
-4. **Remove server** - Delete server configuration
-5. **Update Claude Code** - Configure MCP in Claude Code
-6. **Install dependencies** - Setup required packages
-
-## 📁 Project Structure
-
-```
-mcp-ssh-manager/
-├── src/
-│   ├── index.js              # Main MCP server (37 tools)
-│   ├── ssh-manager.js        # SSH connection handling
-│   ├── config-loader.js      # .env & TOML config loading
-│   ├── session-manager.js    # Persistent SSH sessions
-│   ├── backup-manager.js     # Backup & restore
-│   ├── health-monitor.js     # Health checks & alerts
-│   ├── database-manager.js   # Database operations
-│   ├── tunnel-manager.js     # SSH tunnel management
-│   ├── server-groups.js      # Group operations
-│   └── ...
-├── cli/
-│   ├── ssh-manager           # Bash CLI entrypoint
-│   ├── commands/              # CLI command modules
-│   └── lib/                   # CLI libraries
-├── profiles/                  # Configuration profiles (frappe, docker, nodejs...)
-├── examples/                  # Example configs
-├── docs/                      # Documentation
-└── package.json
-```
-
-## 🧪 Testing
-
-### Test Server Connection
-
-```bash
-python tools/test-connection.py production
-```
-
-### Verify MCP Installation
-
-```bash
-claude mcp list
-```
-
-### Check Server Status in Claude Code
-
-```
-/mcp
-```
-
-## 🔒 Security Best Practices
-
-1. **Never commit `.env` files** - Always use `.env.example` as template
-2. **Use SSH keys when possible** - More secure than passwords
-3. **Limit server access** - Use minimal required permissions
-4. **Rotate credentials** - Update passwords and keys regularly
-
-### 🔑 Passphrase-Protected SSH Keys
-
-MCP SSH Manager supports passphrase-protected SSH keys in two ways:
-
-**Option 1: SSH Agent (recommended)**
-
-If your SSH key is loaded into `ssh-agent`, MCP SSH Manager will use it automatically — no configuration changes needed:
-
-```bash
-# Add your key to the agent (enter passphrase once)
-ssh-add ~/.ssh/your_key
-
-# Verify the key is loaded
-ssh-add -l
-```
-
-The server detects the `SSH_AUTH_SOCK` environment variable and connects to the running agent. This is the same mechanism that regular `ssh` uses for GUI passphrase prompts.
-
-**Option 2: Passphrase in configuration**
-
-You can store the passphrase directly in the server config:
-
-`.env` format:
-```env
-SSH_SERVER_MYSERVER_KEYPATH=~/.ssh/id_rsa
-SSH_SERVER_MYSERVER_PASSPHRASE="your_passphrase"
-```
-
-TOML format:
-```toml
-[ssh_servers.myserver]
-key_path = "~/.ssh/id_rsa"
-passphrase = "your_passphrase"
-```
-
-> **Note:** SSH Agent is preferred over storing passphrases in config files for better security.
-
-### 🔗 SSH Agent Forwarding
-
-Enable per-server agent forwarding (the equivalent of OpenSSH's `ForwardAgent yes`) so processes on the remote host can authenticate to *other* SSH hosts using the keys in your **local** `ssh-agent` — e.g. `git clone` over SSH on a remote server using your local GitHub key, without copying any private key to the server.
-
-It is **opt-in per server** and defaults to `false`. It requires a running local agent (`SSH_AUTH_SOCK` present); when the agent is unavailable the flag is simply ignored.
-
-`.env` format:
-```env
-SSH_SERVER_MYSERVER_FORWARD_AGENT=true
-```
-
-TOML format:
-```toml
-[ssh_servers.myserver]
-forward_agent = true
-```
-
-> ⚠️ **Security warning:** agent forwarding lets any process that can read the forwarded agent socket on the remote host — including anyone with **root** there — use your loaded keys to impersonate you against other hosts *for the life of the connection*. Only enable it for servers you trust, mirroring the same caution `ssh_config(5)` advises for `ForwardAgent`.
-
-## 📚 Advanced Usage
-
-### ProxyJump / Bastion Host
-
-Connect to servers behind a bastion or jump host. The connection is tunneled through the jump server transparently — all tools (execute, upload, download, sync) work as usual.
-
-```env
-# Define the bastion server
-SSH_SERVER_BASTION_HOST=bastion.example.com
-SSH_SERVER_BASTION_USER=jumpuser
-SSH_SERVER_BASTION_KEYPATH=~/.ssh/bastion_key
-
-# Point the target server to the bastion
 SSH_SERVER_PRIVATE_HOST=10.0.0.5
 SSH_SERVER_PRIVATE_USER=admin
 SSH_SERVER_PRIVATE_PROXYJUMP=bastion
 ```
 
-Or in TOML:
-```toml
-[ssh_servers.bastion]
-host = "bastion.example.com"
-user = "jumpuser"
-key_path = "~/.ssh/bastion_key"
+Chains work: if `bastion` itself has a `PROXYJUMP`, it's followed recursively. Circular references are detected and rejected.
 
-[ssh_servers.private]
-host = "10.0.0.5"
-user = "admin"
-proxy_jump = "bastion"
-```
-
-**Chained jumps** are supported: if `bastion` itself has a `proxy_jump`, the chain is followed recursively. Circular references are detected and rejected.
-
-### ProxyCommand / Custom Proxy
-
-Connect through SOCKS5 proxies or custom proxy commands. The proxy command executes locally and forwards traffic to the remote host.
+**Through a SOCKS proxy or a custom command** — it runs locally and forwards to the host, with `%h` and `%p` for host and port:
 
 ```env
-# SOCKS5 proxy via ncat
-SSH_SERVER_SOCKS_HOST=target.example.com
-SSH_SERVER_SOCKS_USER=admin
 SSH_SERVER_SOCKS_PROXYCOMMAND="ncat --proxy 127.0.0.1:1080 --proxy-type socks5 %h %p"
-
-# Windows SSH proxy command
-SSH_SERVER_WINPROXY_HOST=internal.example.com
-SSH_SERVER_WINPROXY_USER=admin
 SSH_SERVER_WINPROXY_PROXYCOMMAND="C:\Windows\System32\OpenSSH\ssh.exe -W %h:%p user@jump-host"
 ```
 
-Or in TOML:
-```toml
-[ssh_servers.socks]
-host = "target.example.com"
-user = "admin"
-proxy_command = "ncat --proxy 127.0.0.1:1080 --proxy-type socks5 %h %p"
+**Passphrase-protected keys** — load the key into `ssh-agent` and nothing else is needed; `SSH_AUTH_SOCK` is picked up automatically, the same mechanism plain `ssh` uses. Storing `PASSPHRASE` in the config works too, and is the less good option.
 
-[ssh_servers.winproxy]
-host = "internal.example.com"
-user = "admin"
-proxy_command = "C:\\Windows\\System32\\OpenSSH\\ssh.exe -W %h:%p user@jump-host"
-```
+**Agent forwarding** (`FORWARD_AGENT=true`, off by default, per server) lets a process on the remote host authenticate to *other* hosts with your local keys — `git clone` over SSH on a server without copying a private key there.
 
-The proxy command must be a valid command that reads from stdin and writes to stdout, accepting `%h` and `%p` placeholders for host and port.
+> ⚠️ Anyone who can read the forwarded socket on that host — **root included** — can impersonate you against other hosts for the life of the connection. Only for servers you trust, exactly as `ssh_config(5)` advises.
 
-### Server Groups
-
-Tag a server with `group` and it becomes part of that group — no extra file to maintain. The label is free-form and travels with the server definition, so it survives an export to (or import from) another tool.
+**Groups** — tag servers and they become a group, with no extra file to maintain:
 
 ```env
-SSH_SERVER_WEB1_HOST=10.0.0.1
-SSH_SERVER_WEB1_USER=deploy
 SSH_SERVER_WEB1_GROUP=production
-
-SSH_SERVER_WEB2_HOST=10.0.0.2
-SSH_SERVER_WEB2_USER=deploy
 SSH_SERVER_WEB2_GROUP=production
 ```
 
-Or in TOML:
-```toml
-[ssh_servers.web1]
-host = "10.0.0.1"
-user = "deploy"
-group = "production"
+Groups created with `ssh_group_manage` live in `.server-groups.json` and additionally carry execution settings (strategy, delay, stop-on-error). When a name exists in both places, **membership is the union** and the stored settings apply. Names are case-insensitive. A group that exists only through the `group` field is read-only for `ssh_group_manage` — change membership by editing the servers.
+
+</details>
+
+<details>
+<summary><b>When something goes wrong</b></summary>
+
+<br>
+
+**Claude Code freezes or shows "Interrupted"** — almost always an output too large for the context. Output is auto-truncated and the default timeout is two minutes, but you can tune it:
+
+```env
+MCP_SSH_MAX_OUTPUT_LENGTH=5000    # default 10000 characters
+MCP_SSH_DEFAULT_TIMEOUT=180000    # default 120000 ms
+MCP_SSH_COMPACT_JSON=true         # fewer tokens per response
 ```
 
-Both servers are then reachable as a group:
+And prefer `tail -n 100 huge.log` over `cat huge.log` — the same advice you'd give a colleague.
 
-```
-Run "uptime" on the production group     → ssh_execute_group
-List my server groups                    → ssh_group_manage (action: list)
-```
+**Tools don't show up** — `claude mcp list`, then restart Claude Code. `/mcp` inside Claude Code shows the live status.
 
-`ssh_list_servers` also reports the group of each server, so you can see membership without opening the config.
+**Connection failed** — `ssh-manager server test <name>` first; it tells you whether it's DNS, the firewall, or the credentials.
 
-**How it combines with `ssh_group_manage`:** groups you create with `ssh_group_manage` live in `.server-groups.json` and carry execution settings (strategy, delay, stop-on-error). Groups implied by the `group` field carry membership only. When a name exists on both sides, **membership is the union** — the stored list plus every server tagged with that name — and the stored execution settings apply. Group names are case-insensitive.
+**Permission denied** — check `chmod 600 ~/.ssh/your_key`, then the username, then what that user is allowed to do on the host.
 
-A group that exists only through the `group` field is read-only for `ssh_group_manage`: to change who belongs to it, edit the servers' `group` in your `.env`/TOML. Creating a group of the same name with `ssh_group_manage` is still allowed and simply adds stored members and settings on top.
+Still stuck? [Open an issue](https://github.com/bvisible/mcp-ssh-manager/issues) — include the server's `PLATFORM` and what `ssh-manager server test` said.
 
-### Documentation
-- [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Deployment strategies and permission handling
-- [ALIASES_AND_HOOKS.md](docs/ALIASES_AND_HOOKS.md) - Command aliases and automation hooks
-- Real-world examples and best practices
+**Known limitations, honestly:**
 
-## 🐛 Troubleshooting
+- **Command timeouts are advisory.** ssh2 can't kill a remote process; on Linux and macOS hosts a `timeout` wrapper does it properly. On Windows hosts set `PLATFORM=windows` to skip that wrapper, which OpenSSH for Windows doesn't understand.
+- **`ssh_sync` with password auth needs `sshpass`.** Keys are better anyway. On a Windows host, pass native paths like `local:C:\project` — drive-letter and UNC paths are converted to MSYS2 form, and a path already written as `/c/...` is passed through untouched rather than converted twice.
+- **Connections are pooled and reused.** A stale one reconnects on next use; force it with `ssh_connection_status` and the `reconnect` action.
 
-### Claude Code Crashes / Interruptions
+</details>
 
-**Symptoms:**
-- Claude shows "Interrupted: What should Claude do instead?"
-- MCP tools execute but Claude stops working
-- Commands succeed but Claude freezes
+<details>
+<summary><b>Working on the project</b></summary>
 
-**Solution:** v3.1.1 includes automatic fixes:
-- ✅ Output auto-truncated to prevent context overflow
-- ✅ Timeout increased to 2 minutes (default), max 5 minutes
-- ✅ Standardized error responses
-
-**Performance Tuning** (add to `.env`):
-```bash
-# Reduce output size (default: 10000 characters)
-MCP_SSH_MAX_OUTPUT_LENGTH=5000
-
-# Increase timeout for slow commands (default: 120000ms)
-MCP_SSH_DEFAULT_TIMEOUT=180000
-
-# Use compact JSON to save tokens (default: false)
-MCP_SSH_COMPACT_JSON=true
-```
-
-**For large outputs:**
-```bash
-# Instead of: cat huge-log.txt
-# Use: tail -n 100 huge-log.txt
-# Or: grep ERROR huge-log.txt | tail -n 50
-```
-
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for complete guide.
-
-### MCP Tools Not Available
-
-1. Ensure MCP is installed: `claude mcp list`
-2. Restart Claude Code after installation
-3. Check server logs for errors
-
-### Connection Failed
-
-1. Test connection: `ssh-manager server test [server_name]`
-2. Verify network connectivity
-3. Check firewall rules
-4. Ensure SSH service is running on remote server
-
-### Permission Denied
-
-1. Verify username and password/key
-2. Check SSH key permissions: `chmod 600 ~/.ssh/your_key`
-3. Ensure user has necessary permissions on remote server
-
-## 📚 Usage Examples
-
-### Backup & Restore
-
-```
-"Backup production MySQL database before deployment"
-"List all backups on production server"
-"Restore backup from yesterday"
-"Schedule daily database backup at 2 AM"
-"Backup website files excluding cache and logs"
-```
-
-For detailed backup examples, see [examples/backup-workflow.md](examples/backup-workflow.md) and [docs/BACKUP_GUIDE.md](docs/BACKUP_GUIDE.md).
-
-### Using the Bash CLI
+<br>
 
 ```bash
-# Basic server management
-ssh-manager server list
-ssh-manager server add
-ssh-manager ssh prod1
+git clone https://github.com/bvisible/mcp-ssh-manager.git
+cd mcp-ssh-manager && npm ci
+./scripts/setup-hooks.sh      # pre-commit checks, including secret detection
 
-# File synchronization
-ssh-manager sync push prod1 ./app /var/www/
-ssh-manager sync pull prod1 /var/log/app.log ./
-
-# SSH tunnels
-ssh-manager tunnel create prod1 local 3307:localhost:3306
-ssh-manager tunnel list
-
-# Execute commands
-ssh-manager exec prod1 "docker ps"
+npm test                      # 33 suites
+npm run typecheck             # JSDoc through tsc, no build step
+npm run test:all              # both, plus ./scripts/validate.sh
 ```
 
-### Using in Claude Code or OpenAI Codex
+The layout:
 
-Once installed, simply ask your AI assistant:
+```
+src/          index.js is the MCP server and its 37 tools; one module per domain
+              (ssh-manager, config-loader, session-manager, backup-manager,
+               health-monitor, database-manager, tunnel-manager, server-groups…)
+cli/          the Bash CLI, plus the Node wrapper that makes it work on Windows
+ui/           the control plane's React interface (v4)
+desktop/      the Electron build (v4)
+profiles/     frappe, docker, nodejs — and room for yours
+scripts/      validation, and the rig that regenerates every screenshot and the video
+docs/         guides, migration notes, security modes
+```
 
-**Claude Code examples:**
-- "List my SSH servers"
-- "Execute 'df -h' on production server"
-- "Upload this file to staging:/var/www/"
-- "Create an SSH tunnel to access remote MySQL"
-- "Monitor CPU usage on all servers"
-- "Start a persistent session on prod1"
+Pull requests are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) has the details. The screenshots and the demo video in this README are generated by `scripts/demo-env.mjs` and friends, against three fake SSH servers on the loopback, so they can be regenerated rather than retaken by hand.
 
-**OpenAI Codex examples:**
-- "Show my SSH servers"
-- "Run df -h on production"
-- "Upload file.txt to staging:/tmp/"
-- "Check CPU usage on all servers"
-
-Both AI assistants support the same MCP tools! 🚀
+</details>
 
 ---
 
-## 🤝 Contributing
+## What's new
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+**v3.8.5 — a security release.** Three command-injection advisories fixed, one of which defeated `readonly` mode. Upgrade if you use `ssh_backup_*`, `ssh_db_dump`, `ssh_service_status` or `ssh_tail`.
 
-### Development Setup
+- **RCE bypassing `readonly` / `restricted`** ([GHSA-m793-whw6-f537](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-m793-whw6-f537)) — `ssh_service_status` and `ssh_tail` are read-only, so they stay enabled on servers you locked down, and neither quoted its arguments nor consulted the policy layer. A service name like `nginx; id > /tmp/pwned` executed.
+- **RCE through `ssh_db_dump`** ([GHSA-796j-h5q5-jx6p](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-796j-h5q5-jx6p)) — the `stat` run after the dump interpolated the output path raw. The v3.6.7 patch had stopped one line short.
+- **RCE through every `ssh_backup_*` tool** ([GHSA-qwwm-vrm9-4mw8](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-qwwm-vrm9-4mw8)) — `backup-manager.js` had zero shell escaping across its nine builders while `database-manager.js` had 95.
 
-1. Fork the repository
-2. Clone and install dependencies
-3. **Setup pre-commit hooks** for code quality:
-   ```bash
-   ./scripts/setup-hooks.sh
-   ```
-4. Create your feature branch
-5. Make your changes (hooks will validate on commit)
-6. Push to your branch
-7. Open a Pull Request
+Quoting now lives in one module so "did this builder quote its inputs?" has a single answer.
 
-### Code Quality
-
-This project uses automated quality checks:
-- **ESLint** for JavaScript linting
-- **Black** for Python formatting
-- **Flake8** for Python linting
-- **Prettier** for code formatting
-- **Pre-commit hooks** for automated validation
-- **Secret detection** to prevent credential leaks
-
-Run validation manually: `./scripts/validate.sh`
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built for [Claude Code](https://claude.ai/code)
-- Uses the [Model Context Protocol](https://modelcontextprotocol.io)
-- SSH handling via [node-ssh](https://www.npmjs.com/package/node-ssh)
-- Server management with [Paramiko](https://www.paramiko.org)
-
----
-
-## Known Limitations
-
-### Command Timeout
-- The timeout parameter for SSH commands is advisory only
-- Due to SSH2 library limitations, commands may continue running on the server even after timeout
-- On Linux/macOS hosts, a system `timeout` wrapper is used for reliable command termination
-- **Windows hosts**: Set `PLATFORM=windows` in your server config to skip the Linux `timeout`/`sh -c` wrapper (which is incompatible with Windows OpenSSH)
-
-### SSH Sync (rsync)
-- Password authentication requires `sshpass` to be installed
-- SSH key authentication is recommended for better security and reliability
-- **Windows MCP hosts**: pass native local paths such as `local:C:\project` or `local:.\project`; `ssh_sync` converts drive-letter and UNC paths to MSYS2 format before launching rsync. Prefer native paths, since Node checks them on disk using Windows path semantics — a path already written as `/c/...` or `//server/share` is passed through to rsync untouched rather than converted twice.
-- Large file transfers may take time and appear to hang - be patient
-
-### Connection Management
-- Connections are pooled and reused for performance
-- If a connection becomes stale, it will be automatically reconnected on next use
-- Force reconnection by using the `ssh_connection_status` tool with `reconnect` action
-
-## 📧 Support
-
-For issues, questions, or suggestions:
-- Open an issue on [GitHub Issues](https://github.com/bvisible/mcp-ssh-manager/issues)
-- Check existing issues before creating new ones
+[Full changelog, every release back to v1.0.0 →](CHANGELOG.md)
 
 ---
 
 <div align="center">
 
+**[Documentation](docs/)** · **[Changelog](CHANGELOG.md)** · **[Security policy](SECURITY.md)** · **[Roadmap](ROADMAP-V4.md)** · **[Issues](https://github.com/bvisible/mcp-ssh-manager/issues)**
+
+<br>
+
+Built on the [Model Context Protocol](https://modelcontextprotocol.io), with [ssh2](https://github.com/mscdex/ssh2) doing the hard part.
+MIT licensed — see [LICENSE](LICENSE).
+
+<br>
+
 Made with ❤️ for the Claude Code community
 
-<br/><br/>
+<br><br>
 
 <a href="https://glama.ai/mcp/servers/@bvisible/mcp-ssh-manager">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@bvisible/mcp-ssh-manager/badge" alt="SSH Manager MCP server" />
 </a>
+
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fbvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/glama%2Fbvisible%2Fmcp-ssh-manager)
 
 </div>

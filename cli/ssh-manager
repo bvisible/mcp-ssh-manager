@@ -102,6 +102,18 @@ ${BOLD}COMMANDS:${NC}
         reset       Reset to default (all tools enabled)
         export      Export Claude Code auto-approval config
 
+    ${CYAN}vault${NC}       Encrypted credential store
+        import      Take the servers already in .env / TOML, encrypted
+        list        Show what is stored, without printing a secret
+        add         Add one server interactively
+        remove      Drop one from the vault
+        status      Where the vault and its key live
+        backup      Write a copy encrypted under a passphrase
+        restore     Read one back
+
+    ${CYAN}control${NC}     Run the control plane — watch what your agents do,
+                and decide on commands before they run
+
 ${BOLD}OPTIONS:${NC}
     -h, --help      Show this help message
     -v, --version   Show version
@@ -126,6 +138,9 @@ ${BOLD}EXAMPLES:${NC}
     
     # Monitor server
     ssh-manager monitor prod1 cpu
+    
+    # Watch what your agents are doing
+    ssh-manager control
 
 ${BOLD}CONFIGURATION:${NC}
     Config directory: ${SSH_MANAGER_HOME:-~/.ssh-manager}
