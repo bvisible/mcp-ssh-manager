@@ -14,6 +14,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Without this, GitHub's own six-hour ceiling is the only limit — which is
+    # what a hung keychain call cost this project before anyone noticed the job
+    # had been running all afternoon. The suite takes about 90 seconds.
+    timeout-minutes: 15
 
     strategy:
       # 18.x and 20.x are the required status checks on main; 22.x is the
@@ -64,6 +68,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

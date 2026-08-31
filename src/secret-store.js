@@ -52,6 +52,20 @@ export function defaultVaultPath() {
 }
 
 /**
+ * How long a keychain call may take before it is abandoned.
+ *
+ * These helpers talk to a user session, and this software mostly runs where
+ * there is not one: a server over SSH, a container, a CI runner, a launchd
+ * agent. `secret-tool` with no D-Bus to answer it, or `security` raising a
+ * modal in a process that has no window, can sit there indefinitely — and the
+ * vault read is on the path of every command, so everything sits with it.
+ *
+ * Five seconds, then give up: the answer after five hours would be the same
+ * one, and falling back to the key file is already the supported path.
+ */
+const KEYCHAIN_TIMEOUT_MS = 5000;
+
+/**
  * Read the master key from the OS keychain.
  *
  * macOS uses `security`, Linux `secret-tool` (libsecret), both of which ship
@@ -66,18 +80,19 @@ function readKeyFromKeychain() {
     if (process.platform === 'darwin') {
       const out = execFileSync('security', [
         'find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w'
-      ], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+      ], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8', timeout: KEYCHAIN_TIMEOUT_MS });
       return Buffer.from(out.trim(), 'base64');
     }
     if (process.platform === 'linux') {
       const out = execFileSync('secret-tool', [
         'lookup', 'service', KEYCHAIN_SERVICE, 'account', KEYCHAIN_ACCOUNT
-      ], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+      ], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8', timeout: KEYCHAIN_TIMEOUT_MS });
       const trimmed = out.trim();
       return trimmed ? Buffer.from(trimmed, 'base64') : null;
     }
   } catch {
-    // No entry, no tool, or the user declined the keychain prompt.
+    // No entry, no tool, the user declined the prompt, or the deadline passed.
+    // All of them mean the same thing here: no key from the keychain.
   }
   return null;
 }
@@ -94,14 +109,14 @@ function writeKeyToKeychain(key) {
       execFileSync('security', [
         'add-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT,
         '-w', encoded, '-U'
-      ], { stdio: 'ignore' });
+      ], { stdio: 'ignore', timeout: KEYCHAIN_TIMEOUT_MS });
       return true;
     }
     if (process.platform === 'linux') {
       execFileSync('secret-tool', [
         'store', '--label=MCP SSH Manager vault key',
         'service', KEYCHAIN_SERVICE, 'account', KEYCHAIN_ACCOUNT
-      ], { input: encoded, stdio: ['pipe', 'ignore', 'ignore'] });
+      ], { input: encoded, stdio: ['pipe', 'ignore', 'ignore'], timeout: KEYCHAIN_TIMEOUT_MS });
       return true;
     }
   } catch {

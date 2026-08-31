@@ -107,8 +107,21 @@ function testTrimming() {
 
 function testAWriteFailureDoesNotThrow() {
   // A log that cannot be written must never take down the thing it records.
+  //
+  // The unwritable path is a regular file with a directory path hung off it, so
+  // the failure is ENOTDIR. That is deliberate: it fails the same way for every
+  // user on every platform, root included.
+  //
+  // This used to be '/proc/nonexistent-and-unwritable', which was fine on macOS
+  // (no /proc, so mkdirSync failed at once) and hung *forever* on Linux, where
+  // /proc is procfs and a recursive mkdir under it never returns. Three CI jobs
+  // sat on this line for six hours. Every other unwritable path tried —
+  // /root, /sys, a chmod 500 directory — fails in under a millisecond; procfs
+  // alone does this. Do not reach for a virtual filesystem to mean "unwritable".
   const original = process.env.SSH_MANAGER_HOME;
-  process.env.SSH_MANAGER_HOME = '/proc/nonexistent-and-unwritable';
+  const blocked = path.join(scratch, 'a-file-not-a-directory');
+  fs.writeFileSync(blocked, 'occupied');
+  process.env.SSH_MANAGER_HOME = path.join(blocked, 'home');
   assert.doesNotThrow(() =>
     appendCommand({ ts: new Date().toISOString(), server: 'p', command: 'c', code: 0 }));
   assert.deepStrictEqual(readCommandLog(), []);
