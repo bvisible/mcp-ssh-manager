@@ -111,7 +111,7 @@ No syntax to learn. Your assistant already knows how to use the 37 tools; you ta
 | *"Why is production slow right now?"* | CPU, memory, disk, load average and the top processes, in one round trip |
 | *"Back up the database before I deploy."* | A compressed, timestamped MySQL/PostgreSQL/MongoDB dump with a retention policy |
 | *"Tail the nginx error log on staging."* | Live output, streamed as it happens |
-| *"Push ./dist to production:/var/www and restart nginx."* | rsync, then the restart — with permissions and a backup handled for you |
+| *"Push ./dist to production:/var/www and restart nginx."* | The files out, then the restart — with ownership, permissions and a rollback copy handled |
 | *"Which of my servers is running out of disk?"* | Every server in the group, checked in parallel |
 | *"Open a tunnel to the production database."* | Local port forward, so your GUI client just connects |
 | *"Run `docker ps` on everything tagged production."* | One command, the whole group, sequential or parallel |
