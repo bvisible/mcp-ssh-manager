@@ -30,7 +30,10 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/control-plane.gif" alt="An agent asks to run rm -rf on production; the request is refused; a live command streams its output; every server is probed for health" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/control-plane-dark.gif">
+    <img src="docs/images/control-plane.gif" alt="An agent asks to run rm -rf on production; the request is refused; a live command streams its output; every server is probed for health" width="900">
+  </picture>
 </p>
 
 <p align="center">
@@ -499,6 +502,8 @@ docs/         guides, migration notes, security modes
 Pull requests are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) has the details.
 
 Nothing in this README's imagery is taken by hand. `scripts/demo-env.mjs` stands up three real ssh2 servers on the loopback with a seeded vault, a pending approval and a live stream; `capture-screenshots.mjs` and `record-demo.mjs` drive Chrome over the DevTools protocol against it; `frame-screenshots.py` draws the browser and application windows, and `macbook-mockup.py` draws the laptop. After a UI change, re-run them rather than editing an image.
+
+The hero animation ships twice, light and dark, swapped by `<picture>` on `prefers-color-scheme`. A single transparent GIF would have been simpler, but GIF alpha is one bit and transparency defeats its inter-frame compression: the same clip came out at **11.4 MB** transparent against 357 KB on a solid ground.
 
 </details>
 

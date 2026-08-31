@@ -99,19 +99,25 @@ def layout(screen_w, screen_h):
     }
 
 
-def chrome(screen_w, screen_h):
-    """The laptop, with a transparent hole where the screen goes."""
+def chrome(screen_w, screen_h, shadow=True):
+    """The laptop, with a transparent hole where the screen goes.
+
+    `shadow=False` for formats whose alpha is one bit (GIF): a soft shadow there
+    does not fade, it bands into a grey halo with a hard edge, which looks worse
+    than no shadow at all.
+    """
     L = layout(screen_w, screen_h)
     canvas = Image.new('RGBA', L['canvas'], (0, 0, 0, 0))
 
     # A soft shadow on the ground, wider and flatter than the machine itself.
-    shadow = Image.new('RGBA', L['canvas'], (0, 0, 0, 0))
-    bx = L['pad'] + round(L['base'][0] * 0.02)
-    by = L['pad'] + L['lid'][1]
-    ImageDraw.Draw(shadow).rounded_rectangle(
-        [bx, by, L['canvas'][0] - bx, by + L['base'][1] + round(L['pad'] * 0.55)],
-        radius=L['base'][1], fill=(10, 10, 14, 120))
-    canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(L['pad'] * 0.30)))
+    if shadow:
+        cast = Image.new('RGBA', L['canvas'], (0, 0, 0, 0))
+        bx = L['pad'] + round(L['base'][0] * 0.02)
+        by = L['pad'] + L['lid'][1]
+        ImageDraw.Draw(cast).rounded_rectangle(
+            [bx, by, L['canvas'][0] - bx, by + L['base'][1] + round(L['pad'] * 0.55)],
+            radius=L['base'][1], fill=(10, 10, 14, 120))
+        canvas.alpha_composite(cast.filter(ImageFilter.GaussianBlur(L['pad'] * 0.30)))
 
     # The lid, in three layers, outside in: a thin aluminium rim, the black
     # glass front that covers rim-to-screen, and then a hole.
@@ -183,8 +189,28 @@ def wrap_image(src: pathlib.Path, dst: pathlib.Path):
     return dst
 
 
+def ground_for(name, size):
+    """The surface the laptop stands on.
+
+    `transparent` returns None and the caller keeps the alpha channel — but it
+    is a trap for this particular job, kept only because it is occasionally the
+    right answer for a still. GIF alpha is one bit, and transparency defeats the
+    inter-frame compression that makes an animated GIF small: this clip is
+    **11.4 MB** transparent against 357 KB on a solid ground. The README ships a
+    light and a dark version instead, swapped by `prefers-color-scheme`.
+    """
+    if name == 'transparent':
+        return None
+    if name == 'stage':
+        return stage(size).convert('RGBA')
+    fill = {'light': (255, 255, 255, 255), 'dark': (13, 17, 23, 255)}.get(name)
+    if fill is None:
+        fill = tuple(int(name.lstrip('#')[i:i + 2], 16) for i in (0, 2, 4)) + (255,)
+    return Image.new('RGBA', size, fill)
+
+
 def wrap_video(src: pathlib.Path, out_mp4: pathlib.Path, out_gif: pathlib.Path,
-               gif_width=1000, fps=12):
+               gif_width=1000, fps=12, background='light'):
     """Composite every frame into the laptop, then re-encode.
 
     ffmpeg could overlay a PNG in one pass, but the frame has a transparent
@@ -203,27 +229,45 @@ def wrap_video(src: pathlib.Path, out_mp4: pathlib.Path, out_gif: pathlib.Path,
             raise SystemExit('ffmpeg produced no frames')
 
         with Image.open(shots[0]) as first:
-            frame, L = chrome(*first.size)
+            frame, L = chrome(*first.size, shadow=(background != 'transparent'))
 
-        ground = stage(L['canvas']).convert('RGBA')
+        ground = ground_for(background, L['canvas'])
+        mp4_stem = 'mp4' if ground is None else 'out'
         for i, shot in enumerate(shots):
             with Image.open(shot) as content:
-                canvas = ground.copy()
+                canvas = (ground.copy() if ground is not None
+                          else Image.new('RGBA', L['canvas'], (0, 0, 0, 0)))
                 canvas.alpha_composite(content.convert('RGBA'), L['screen_xy'])
                 canvas.alpha_composite(frame)
-            canvas.convert('RGB').save(work / f'out-{i:05d}.png')
+            if ground is None:
+                # Keep the alpha for the GIF, and write a second, white-backed
+                # copy for the mp4: h264 has no alpha channel, and handing
+                # ffmpeg transparent frames makes it flatten them onto black.
+                canvas.save(work / f'out-{i:05d}.png')
+                flat = Image.new('RGB', canvas.size, (255, 255, 255))
+                flat.paste(canvas, mask=canvas.getchannel('A'))
+                flat.save(work / f'mp4-{i:05d}.png')
+            else:
+                canvas.convert('RGB').save(work / f'out-{i:05d}.png')
 
         subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(fps),
-                        '-i', str(work / 'out-%05d.png'),
+                        '-i', str(work / f'{mp4_stem}-%05d.png'),
                         '-vf', 'scale=2000:-2:flags=lanczos,format=yuv420p',
                         '-c:v', 'libx264', '-crf', '20', '-preset', 'slow',
                         '-movflags', '+faststart', '-r', '24', str(out_mp4)], check=True)
 
+        # GIF alpha is one bit: a pixel is either fully there or fully gone.
+        # reserve_transparent keeps a palette slot for "gone", alpha_threshold
+        # decides the cut. Anything soft — the drop shadow especially — has to
+        # go, or it bands into a grey halo.
+        gif_palette = ':reserve_transparent=1' if background == 'transparent' else ''
+        gif_use = ':alpha_threshold=128' if background == 'transparent' else ''
         subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(fps),
                         '-i', str(work / 'out-%05d.png'),
                         '-vf', f'scale={gif_width}:-2:flags=lanczos,'
-                               'split[a][b];[a]palettegen=max_colors=192[p];'
-                               '[b][p]paletteuse=dither=bayer:bayer_scale=3',
+                               'split[a][b];'
+                               f'[a]palettegen=max_colors=192{gif_palette}[p];'
+                               f'[b][p]paletteuse=dither=bayer:bayer_scale=3{gif_use}',
                         '-loop', '0', str(out_gif)], check=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -238,8 +282,10 @@ def main():
         out = wrap_image(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
         print(f'  {out}  {out.stat().st_size // 1024} Ko')
     elif mode == 'video':
+        background = sys.argv[5] if len(sys.argv) > 5 else 'light'
         mp4, gif = wrap_video(pathlib.Path(sys.argv[2]),
-                              pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4]))
+                              pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4]),
+                              background=background)
         for f in (mp4, gif):
             print(f'  {f}  {f.stat().st_size // 1024} Ko')
     else:
