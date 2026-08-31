@@ -27,6 +27,26 @@ extraResources:
     to: engine
     filter:
       - '**/*'
+      # node_modules has to be named explicitly. electron-builder's matcher
+      # treats it specially — `**/*` does not reach into it — so without this
+      # line the engine ships as bare source with no dependencies, and the app
+      # dies on launch with "Cannot find package 'dotenv'". 30 MB became 2.2 MB
+      # and nothing said so.
+      - 'node_modules/**/*'
+      - '!**/{test,tests,__tests__,example,examples,docs,doc}/**'
+      - '!**/*.{md,map,ts}'
+      - '!**/.bin/**'
+
+  # node_modules needs its own entry. electron-builder never descends into a
+  # directory called node_modules while copying an extraResource — with or
+  # without a filter — so the engine shipped as bare source and the app died on
+  # launch with "Cannot find package 'dotenv'". Naming the directory as the
+  # *root* of a copy sidesteps the rule, because there is then nothing to
+  # descend into.
+  - from: engine/node_modules
+    to: engine/node_modules
+    filter:
+      - '**/*'
       - '!**/{test,tests,__tests__,example,examples,docs,doc}/**'
       - '!**/*.{md,map,ts}'
       - '!**/.bin/**'

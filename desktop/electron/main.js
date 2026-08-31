@@ -380,11 +380,18 @@ app.whenReady().then(async () => {
     // A failure here means no interface at all, so it is a dialog rather than a
     // line in a log nobody is reading — most often an over-long socket path or
     // another copy already running.
-    dialog.showErrorBox(
-      'SSH Manager could not start',
-      `${error.message}\n\nThis usually means another copy is already running, `
-      + 'or the socket path is too long for this system.'
-    );
+    // The hint has to match the failure. A packaged build once shipped without
+    // its dependencies and died on "Cannot find package 'dotenv'" — while this
+    // box confidently suggested another copy was running, which sent the reader
+    // looking in the wrong place entirely.
+    const guess = /Cannot find (package|module)/i.test(error.message)
+      ? 'The application is missing part of itself. This is a packaging fault, '
+        + 'not something you can fix here — please report it with this message.'
+      : error.code === 'EADDRINUSE' || /already running|EADDRINUSE/i.test(error.message)
+        ? 'Another copy is already running, or a stale socket is in the way.'
+        : 'The socket path may be too long for this system, or the port could '
+          + 'not be opened.';
+    dialog.showErrorBox('SSH Manager could not start', `${error.message}\n\n${guess}`);
     app.quit();
   }
 
