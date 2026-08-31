@@ -20,7 +20,7 @@
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.8.5-brightgreen?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.5)
+[![Version](https://img.shields.io/badge/Version-4.0.0-brightgreen?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -139,6 +139,11 @@ ssh-manager control          # prints a local URL — or open the desktop app
 
 One thing in two wrappers. `ssh-manager control` runs the whole interface in a browser tab with nothing extra to install; the desktop builds for macOS, Windows and Linux are that same page with the engine inside them, so they need neither Node nor the npm package.
 
+The desktop build adds the two things a browser tab cannot do:
+
+- **It lives in the menu bar.** The icon carries a count when something is waiting, and its menu lists what is blocked on you, which shells and commands are open right now, and your servers — so "is anything waiting on me?" costs a glance instead of a window switch. Closing the window leaves it there rather than quitting.
+- **It posts real system notifications**, with the application's own identity, so macOS and Windows show and route them properly. Destructive requests stay on screen instead of fading after four seconds. macOS asks your permission the first time it needs to.
+
 <p align="center">
   <img src="docs/images/v4-servers-browser.png" alt="The interface in a browser tab, served by ssh-manager control" width="820">
 </p>
@@ -151,9 +156,18 @@ One thing in two wrappers. `ssh-manager control` runs the whole interface in a b
 
 The agent pauses and waits. You see the machine, the user, the tool, and the command **in full** — wrapped, never truncated, because half a command is how you approve the wrong thing. A desktop notification fires when something is waiting, because the request that goes unseen is the one that times out and is denied.
 
-```env
-SSH_SERVER_PROD_APPROVAL=destructive   # never (default) | destructive | always
+Approval is switched on **from the interface, per server** — not from a file:
+
 ```
+Servers → the server → Approval → never (default) | destructive | always
+```
+
+It is deliberately the one setting you cannot put in a `.env`. It exists to make
+an agent stop and wait for you, and a switch sitting in a plain-text file next to
+the code is a switch the agent can flip on its own: one `sed -i` and the gate is
+gone. It lives in the encrypted vault, and the control plane is the only thing
+that writes it. If you had `SSH_SERVER_*_APPROVAL` set in a file, the engine says
+so on every start rather than quietly leaving you unprotected.
 
 The `destructive` list is deliberately short. A prompt that cries wolf gets clicked through without being read, which is worse than no prompt at all: `systemctl restart` does not interrupt you, `systemctl stop` does.
 
@@ -359,7 +373,9 @@ SSH_SERVER_[NAME]_PROXYJUMP=bastion          # optional: another server, as jump
 SSH_SERVER_[NAME]_PROXYCOMMAND=…             # optional: ncat, ssh -W, …
 SSH_SERVER_[NAME]_FORWARD_AGENT=true         # optional, and a real security trade-off
 SSH_SERVER_[NAME]_MODE=readonly              # optional: unrestricted | readonly | restricted
-SSH_SERVER_[NAME]_APPROVAL=destructive       # optional: never | destructive | always
+# Approval is NOT a field here — it is set per server from the control plane and
+# stored in the vault, so that a shell on one of your machines cannot switch off
+# the gate that exists to stop it.
 SSH_SERVER_[NAME]_AUDIT_LOG=~/audit.jsonl    # optional JSONL trail
 ```
 

@@ -164,6 +164,8 @@ export class ConfigLoader {
     // Load from environment variables (highest priority, overwrites everything)
     this.loadEnvironmentVariables();
 
+    this.#rejectFileApproval();
+
     // Determine primary config source
     if (loadedFromVault) {
       this.configSource = 'vault';
@@ -179,6 +181,30 @@ export class ConfigLoader {
     }
 
     return this.servers;
+  }
+
+  /**
+   * Tell anyone who set approval in a file that it no longer does anything.
+   *
+   * Silently ignoring it would be the worst outcome available: they would
+   * believe an agent stops and waits for them on that server, and it would not.
+   * Better to say so on every start until they move it.
+   */
+  #rejectFileApproval() {
+    const named = new Set();
+    for (const key of Object.keys(process.env)) {
+      const match = key.match(/^SSH_SERVER_(.+)_APPROVAL$/);
+      if (match) named.add(match[1].toLowerCase());
+    }
+    if (process.env.SSH_MANAGER_APPROVAL) named.add('(all servers)');
+    if (named.size === 0) return;
+    logger.warn(
+      'Approval can no longer be set from a file or the environment, and these '
+      + 'settings are being ignored. Set it in the control plane instead: '
+      + '`ssh-manager control`, then the server\'s Approval field. It moved so '
+      + 'that a shell on one of your machines cannot turn off the gate that '
+      + 'exists to stop it.',
+      { ignored: [...named] });
   }
 
   /**
@@ -224,7 +250,8 @@ export class ConfigLoader {
           proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
           forwardAgent: parseBool(serverConfig.forward_agent),
           mode,
-          approval: serverConfig.approval,
+          // approval is deliberately NOT read here — see loadEnvConfig below.
+
           allowPatterns: tomlAllow,
           denyPatterns: tomlDeny,
           auditLog: serverConfig.audit_log,
@@ -298,7 +325,18 @@ export class ConfigLoader {
           proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
           forwardAgent: parseBool(env[`SSH_SERVER_${match[1]}_FORWARD_AGENT`]),
           mode,
-          approval: env[`SSH_SERVER_${match[1]}_APPROVAL`],
+          // approval is deliberately NOT read from files. It is the switch
+          // that makes an agent stop and wait for a human, and a switch that
+          // lives in a plain-text file next to the code is a switch the agent
+          // can flip on its own: one `sed -i` in .env and the gate it was meant
+          // to pass is gone. It lives in the vault instead, and the control
+          // plane is the only thing that writes it — a deliberate act by the
+          // person the gate exists to protect.
+          //
+          // This is defence in depth, not a wall: the vault key sits in the
+          // same user's keychain, so the same shell can in principle reach it.
+          // What it removes is the trivial path, which is the one that gets
+          // taken. See rejectFileApproval() for what happens to an old setting.
           allowPatterns: envAllow,
           denyPatterns: envDeny,
           auditLog: env[`SSH_SERVER_${match[1]}_AUDIT_LOG`],
@@ -418,7 +456,8 @@ export class ConfigLoader {
       if (server.denyPatterns && server.denyPatterns.length > 0) {
         lines.push(`SSH_SERVER_${upperName}_DENY_PATTERNS="${server.denyPatterns.join(';')}"`);
       }
-      if (server.approval) lines.push(`SSH_SERVER_${upperName}_APPROVAL=${server.approval}`);
+      // Not exported: writing APPROVAL into a .env would produce a file that
+      // looks like it configures approval and silently does not.
       if (server.auditLog) lines.push(`SSH_SERVER_${upperName}_AUDIT_LOG=${server.auditLog}`);
       lines.push('');
     }

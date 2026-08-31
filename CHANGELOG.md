@@ -5,6 +5,55 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-08-31
+
+The control plane: a local application that shows what your agents are doing on
+your servers, and lets you stop them before they do it.
+
+**Upgrading changes nothing on its own.** With no vault, no approval set and
+nothing running, the engine behaves exactly as 3.8.5 did — verified end to end
+by `scripts/test-upgrade-from-published.mjs`, which installs 3.8.5 from the
+registry, asks it what it sees over MCP, installs this version over the top and
+asks again. Same servers, same fields, byte-identical `.env`, no files created.
+
+### Added
+
+- **The control plane** (`ssh-manager control`, or the desktop app): what an
+  agent is running right now with its output through a terminal emulator, a
+  queue of commands waiting on your decision, a dual-pane file browser, health
+  on demand with thresholds, an interactive shell on any server, saved commands,
+  groups, and the audit trail.
+- **Desktop builds** for macOS, Windows and Linux. The app *is* the control
+  plane rather than a window pointed at one, so it needs neither Node nor the
+  npm package.
+  - A **menu-bar item** carrying a count when something is waiting, listing what
+    is blocked on you, which shells and commands are open, and your servers.
+  - **Native notifications** posted by the application itself, so macOS and
+    Windows show and route them correctly. Destructive requests stay on screen.
+- **An encrypted vault** (AES-256-GCM, key in the OS keychain) for credentials,
+  sitting above your config files and below the process environment. Your `.env`
+  is never modified.
+- **Human approval**, per server: the engine pauses, shows you the machine and
+  the command in full, and waits. Every failure denies.
+- `ssh-manager vault` and `ssh-manager control` in the CLI, and the control
+  plane in the interactive menu.
+
+### Changed
+
+- **Approval can no longer be set from a file or the environment.** It is the
+  one switch whose purpose is to constrain the agent, so the agent must not be
+  able to turn it off: a `.env` next to the code is the first thing a shell can
+  reach. It lives in the vault and only the control plane writes it. An existing
+  `SSH_SERVER_*_APPROVAL` is reported loudly on start rather than silently
+  ignored. Never released before this version, so no published behaviour changes.
+- Keychain lookups now time out after five seconds instead of blocking forever
+  on a host with no user session — a server over SSH, a container, a CI runner.
+
+### Fixed
+
+- `mkdirSync` under an unwritable path could hang indefinitely on Linux, which
+  cost this project's CI a six-hour job before anyone looked.
+
 ## [3.8.5] - 2026-08-28
 
 ### Security

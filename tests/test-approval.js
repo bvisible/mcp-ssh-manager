@@ -25,6 +25,8 @@ import {
   VALID_APPROVAL_MODES
 } from '../src/approval.js';
 import { sanitize } from '../src/audit.js';
+import { ConfigLoader } from '../src/config-loader.js';
+import { SecretStore } from '../src/secret-store.js';
 
 let passed = 0;
 function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); passed++; }
@@ -217,8 +219,63 @@ function testListeningDetection() {
   ok('a socket path over the 104-byte limit is rejected with a clear warning');
 }
 
+/**
+ * Approval must not be settable from anywhere an agent can write.
+ *
+ * This is the one setting whose whole purpose is to constrain the agent, so the
+ * agent must not be able to turn it off. A `.env` sitting in the project is the
+ * first thing a shell can reach; the vault is not.
+ */
+async function testApprovalCannotComeFromAFile() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approval-src-'));
+  const envPath = path.join(dir, '.env');
+  fs.writeFileSync(envPath,
+    'SSH_SERVER_PROD_HOST=prod.example.com\n'
+    + 'SSH_SERVER_PROD_USER=deploy\n'
+    + 'SSH_SERVER_PROD_APPROVAL=never\n');
+
+  const previous = { ...process.env };
+  process.env.SSH_MANAGER_HOME = dir;
+  process.env.SSH_MANAGER_KEY_SOURCE = 'file';
+  delete process.env.SSH_MANAGER_APPROVAL;
+
+  try {
+    const loaded = await new ConfigLoader().load(
+      { envPath, tomlPath: path.join(dir, 'none.toml'), vaultPath: path.join(dir, 'vault.json') });
+    assert.strictEqual(loaded.get('prod').approval, undefined,
+      'a .env must not be able to set approval');
+    assert.strictEqual(approvalMode(loaded.get('prod')), 'never',
+      'and the effective mode falls back to the default');
+    ok('approval in a .env is ignored, not honoured');
+
+    // The environment is even easier to set from a compromised shell.
+    process.env.SSH_MANAGER_APPROVAL = 'never';
+    assert.strictEqual(approvalMode({ name: 'prod', approval: 'always' }), 'always',
+      'the environment must not override a stored setting');
+    delete process.env.SSH_MANAGER_APPROVAL;
+    assert.strictEqual(approvalMode({ name: 'prod' }), 'never');
+    ok('SSH_MANAGER_APPROVAL cannot weaken or set a mode');
+
+    // The vault is the one source that counts.
+    const store = new SecretStore(path.join(dir, 'vault.json'));
+    store.setServer('prod', { host: 'prod.example.com', user: 'deploy', approval: 'destructive' });
+    const withVault = await new ConfigLoader().load(
+      { envPath, tomlPath: path.join(dir, 'none.toml'), vaultPath: path.join(dir, 'vault.json') });
+    assert.strictEqual(approvalMode(withVault.get('prod')), 'destructive',
+      'the vault is where approval lives, and it must be honoured');
+    ok('approval set in the vault — which only the control plane writes — is honoured');
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previous)) delete process.env[key];
+    }
+    Object.assign(process.env, previous);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   try {
+    await testApprovalCannotComeFromAFile();
     testDefaultIsOff();
     testModes();
     testDestructiveClassification();

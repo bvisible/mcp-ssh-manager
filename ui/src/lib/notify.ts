@@ -34,6 +34,12 @@ let permission: NotificationPermission | 'unsupported' =
  * app grants it without asking, since installing the app was the consent.
  */
 export async function ensurePermission(): Promise<boolean> {
+  // Inside the desktop app the main process posts these instead, with the
+  // application's own identity — see announce() in desktop/electron/main.js.
+  // A Web Notification raised here would either be a duplicate or, more often,
+  // silently dropped for want of an authorisation macOS never granted the
+  // renderer. The `shell` parameter is what the desktop build appends.
+  if (new URLSearchParams(window.location.search).has('shell')) return false;
   if (permission === 'unsupported') return false;
   if (permission === 'granted') return true;
   if (permission === 'denied') return false;

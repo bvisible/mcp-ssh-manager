@@ -79,7 +79,10 @@ export function defaultSocketPath() {
  * @returns {string} One of VALID_APPROVAL_MODES
  */
 export function approvalMode(serverConfig) {
-  const raw = serverConfig?.approval ?? process.env.SSH_MANAGER_APPROVAL ?? ASK_NEVER;
+  // Only the vault reaches this field: ConfigLoader does not read `approval`
+  // from a .env, a TOML file or the environment. An environment variable would
+  // be the easiest of all to set from inside a compromised shell.
+  const raw = serverConfig?.approval ?? ASK_NEVER;
   const normalized = String(raw).toLowerCase();
   if (!VALID_APPROVAL_MODES.has(normalized)) {
     logger.warn(`Unknown approval mode "${raw}", falling back to "${ASK_NEVER}"`, {

@@ -12,6 +12,12 @@ directories:
 files:
   - main.js
   - package.json
+  # The menu-bar glyph is loaded at runtime from __dirname/resources, so it has
+  # to be inside the asar with main.js. `resources` is also buildResources,
+  # which electron-builder excludes by default — leaving the packaged app with
+  # a Tray it cannot give an icon to, and therefore no menu bar item at all.
+  - resources/trayTemplate.png
+  - resources/trayTemplate@2x.png
 
 extraResources:
   # Assembled by prepare-engine.mjs, which installs only the production

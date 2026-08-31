@@ -568,6 +568,23 @@ interactive_mode() {
                 # Help
                 show_help | less
                 ;;
+            9)
+                # The control plane runs in the foreground and holds the approval
+                # socket, so it takes over this terminal until Ctrl-C. Say so
+                # first: a menu entry that appears to hang is a menu entry people
+                # kill and never try again.
+                echo
+                print_info "The control plane runs here until you stop it with Ctrl-C."
+                echo "It opens a local page showing what your agents are doing on"
+                echo "your servers, and lets you approve or refuse a command before"
+                echo "it runs. Closing it puts everything back the way it was."
+                echo
+                read -p "Start it? [Y/n] " start_control
+                case "$start_control" in
+                    n|N) ;;
+                    *) node "$SCRIPT_DIR/control.js" ;;
+                esac
+                ;;
             0|q|Q)
                 print_info "Goodbye!"
                 exit 0
