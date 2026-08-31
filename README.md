@@ -71,10 +71,23 @@ doing on your servers, and lets you stop them before they do it.
 ssh-manager control          # a local page, or open the desktop app
 ```
 
+It is one thing in two wrappers. `ssh-manager control` prints a URL and the
+whole interface runs in a tab, with nothing to install beyond the package you
+already have:
+
+<p align="center">
+  <img src="docs/images/v4-servers-browser.png" alt="The same interface in a browser tab, served by ssh-manager control" width="820">
+</p>
+
+The desktop builds — macOS, Windows, Linux — are that same page with the engine
+inside them, so there is no Node to install and nothing listening beyond the
+window. Every screenshot below is from the desktop build; each one has a browser
+twin in [`docs/images/`](docs/images/).
+
 ### See what an agent is doing, while it does it
 
 <p align="center">
-  <img src="docs/images/v4-live.png" alt="The Live screen: four commands, one still running, one expanded showing its coloured output" width="900">
+  <img src="docs/images/v4-live-app.png" alt="The Live screen: a command still running, expanded to show its coloured output" width="900">
 </p>
 
 Output is rendered by a terminal emulator, not printed as text — what an agent
@@ -89,7 +102,7 @@ disappears when the window closes.
 ### Stop it before it runs
 
 <p align="center">
-  <img src="docs/images/v4-waiting.png" alt="The Waiting screen: a destructive command from an agent, with Refuse and Approve" width="900">
+  <img src="docs/images/v4-waiting-app.png" alt="The Waiting screen: a destructive command from an agent, with Refuse and Approve" width="900">
 </p>
 
 The agent pauses and waits. You see the machine, the user, the tool, and the
@@ -100,7 +113,7 @@ because the request that goes unseen is the one that times out and is denied.
 ### Both filesystems, side by side
 
 <p align="center">
-  <img src="docs/images/v4-files.png" alt="The file browser: this machine on the left, a server on the right" width="900">
+  <img src="docs/images/v4-files-app.png" alt="The file browser: this machine on the left, a server on the right" width="900">
 </p>
 
 Files move directly between your machine and the server through the control
@@ -110,7 +123,7 @@ a multi-gigabyte file works at all.
 ### Health, when you ask for it
 
 <p align="center">
-  <img src="docs/images/v4-health.png" alt="The Health screen: CPU, memory and disk per server, with a threshold crossed" width="900">
+  <img src="docs/images/v4-health-app.png" alt="The Health screen: CPU, memory and disk per server, with a threshold crossed" width="900">
 </p>
 
 **Nothing is probed in the background.** Each check is an SSH handshake, and a
@@ -121,7 +134,7 @@ set, and crossing one is said plainly rather than encoded in a colour.
 ### Servers, and everything else
 
 <p align="center">
-  <img src="docs/images/v4-servers.png" alt="The Servers screen: cards grouped by category" width="900">
+  <img src="docs/images/v4-servers-app.png" alt="The Servers screen: cards grouped by category" width="900">
 </p>
 
 Also on the same page: an interactive shell on any server, saved commands you

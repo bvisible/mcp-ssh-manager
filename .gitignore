@@ -80,3 +80,6 @@ ui/node_modules/
 desktop/electron/dist/
 desktop/electron/engine/
 desktop/electron/node_modules/
+
+# Screenshot intermediates: regenerate with scripts/capture-screenshots.mjs
+docs/images/.raw/
