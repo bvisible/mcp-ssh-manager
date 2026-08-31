@@ -67,6 +67,14 @@ find out afterwards — if you find out at all.
 The control plane is a local application that shows you what your agents are
 doing on your servers, and lets you stop them before they do it.
 
+<p align="center">
+  <img src="docs/images/control-plane.gif" alt="An agent asks to run rm -rf on production; the request is refused; a live command streams its output; every server is probed for health" width="900">
+</p>
+
+<p align="center">
+  <sub>Twenty seconds, unedited — <a href="docs/videos/control-plane.mp4">full size</a>. Three servers on the loopback, from <code>scripts/demo-env.mjs</code>.</sub>
+</p>
+
 ```bash
 ssh-manager control          # a local page, or open the desktop app
 ```
