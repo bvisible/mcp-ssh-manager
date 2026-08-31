@@ -515,7 +515,7 @@ scripts/      validation, and the rig that regenerates every screenshot and the 
 docs/         guides, migration notes, security modes
 ```
 
-Pull requests are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) has the details.
+Pull requests are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) has the details. Shipping the desktop builds — signing, notarization, and why the Mac App Store is a different product rather than a further step — is in [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
 
 Nothing in this README's imagery is taken by hand. `scripts/demo-env.mjs` stands up three real ssh2 servers on the loopback with a seeded vault, a pending approval and a live stream; `capture-screenshots.mjs` and `record-demo.mjs` drive Chrome over the DevTools protocol against it; `frame-screenshots.py` draws the browser and application windows, and `macbook-mockup.py` draws the laptop. After a UI change, re-run them rather than editing an image.
 
