@@ -81,6 +81,19 @@ xcrun stapler validate "dist/SSH Manager-4.0.0-arm64.dmg"
 Never commit the key or the password. They belong in the shell, or in GitHub
 Actions secrets.
 
+### Checking the result
+
+```bash
+./scripts/verify-mac-build.sh
+```
+
+One command instead of remembering four. It checks the bundle identifier, that
+the signature verifies all the way down, that it is a Developer ID and not a
+development certificate, that Gatekeeper accepts it, that the ticket is stapled,
+that the engine carries its dependencies, that the interface is bundled, and
+that the menu-bar icon reached the asar. Every one of those has failed here at
+least once, and none of them showed up in a build log that exited 0.
+
 ## The Mac App Store is a different product
 
 Not a further step along this path — a different one, and this application does
