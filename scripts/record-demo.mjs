@@ -36,8 +36,10 @@ import { spawn, execFileSync } from 'child_process';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const PORT = 9334;
+// 16:10 — the aspect of every MacBook screen, so the recording drops into the
+// mockup frame without letterboxing or a stretch.
 const WIDTH = 1440;
-const HEIGHT = 880;
+const HEIGHT = 900;
 /** Capture cadence. Ten a second is smooth enough for an interface and cheap. */
 const FPS = 10;
 const FRAME_MS = 1000 / FPS;
