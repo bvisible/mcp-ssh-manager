@@ -114,6 +114,16 @@ ${BOLD}COMMANDS:${NC}
     ${CYAN}control${NC}     Run the control plane — watch what your agents do,
                 and decide on commands before they run
 
+    ${CYAN}import${NC}      Bring servers in from somewhere else
+        <file>      A spreadsheet, CSV, ~/.ssh/config, FileZilla, PuTTY,
+                    Termius or MobaXterm export — the format is detected
+        --from      Read where a tool keeps its own list:
+                    ssh-config · filezilla · transmit
+        --template  Write a spreadsheet to fill in and import back
+
+    ${CYAN}export${NC}      Write your servers out as .xlsx, .csv, .env or .toml
+                (never with passwords)
+
 ${BOLD}OPTIONS:${NC}
     -h, --help      Show this help message
     -v, --version   Show version
@@ -391,6 +401,12 @@ main() {
         control)
             # v4 control plane: approval socket + local page.
             node "$SCRIPT_DIR/control.js" "$@"
+            ;;
+        import|export)
+            # Bringing servers in from other tools, and taking them out again.
+            # Node, because it writes through the same SecretStore the engine
+            # reads — one code path, so the two cannot disagree.
+            node "$SCRIPT_DIR/portability.js" "$command" "$@"
             ;;
         vault)
             # v4 encrypted credential store. Implemented in Node because it uses

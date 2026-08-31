@@ -351,6 +351,52 @@ Fewer tools also means fewer approval prompts and a faster start. `ssh-manager t
 </details>
 
 <details>
+<summary><b>Bringing servers in from somewhere else</b></summary>
+
+<br>
+
+Nobody starts here. You have a `~/.ssh/config` with forty hosts, or a FileZilla
+site manager, or a spreadsheet a colleague sent you.
+
+```bash
+ssh-manager import ~/.ssh/config          # the format is worked out for you
+ssh-manager import --from transmit        # or read where a tool keeps its list
+ssh-manager import --template servers.xlsx   # or get a form to fill in
+```
+
+| Source | How |
+|---|---|
+| **Spreadsheet** (`.xlsx`) | `--template` writes one with the columns filled in and three examples to type over |
+| **CSV** | Comma or semicolon — Excel writes both, depending on where you live |
+| **`~/.ssh/config`** | `Host`, `HostName`, `User`, `Port`, `IdentityFile`, `ProxyJump`. Wildcards are skipped, aliases collapse to one server |
+| **FileZilla** | `sitemanager.xml`. SFTP sites only — an FTP bookmark is not an SSH server |
+| **PuTTY** | An exported `.reg`. A `.ppk` key is refused with the `puttygen` line that converts it |
+| **Termius** | JSON export, groups included |
+| **MobaXterm** | `.mxtsessions`, folder becomes the group |
+| **Transmit** | Its favourites, read directly (macOS) |
+
+**Import is additive.** A name you already have comes back as "already
+configured — left alone", never a silent overwrite; `--replace` if that is what
+you want. Two rows with the same name become `web` and `web_2` rather than one.
+
+**No password is ever read.** FileZilla keeps them base64-encoded, Transmit in
+the keychain, PuTTY not at all. Copying a credential out of another
+application's store is not a favour — it moves a secret you had forgotten into a
+second place you now have to think about. Hosts, users, ports and key paths come
+across; you are asked for a password once, when you first connect.
+
+Going the other way:
+
+```bash
+ssh-manager export servers.xlsx     # or .csv, .env, .toml
+```
+
+Exports carry no passwords, no passphrases, no sudo passwords — an export is a
+file people email each other and commit by accident.
+
+</details>
+
+<details>
 <summary><b>Configuration — every field</b></summary>
 
 <br>
