@@ -590,6 +590,10 @@ export const hostKeys = {
  */
 export const QUEUE_EVENTS = ['pending', 'resolved', 'expired'] as const;
 
+/** Subscribers to the single event stream, and the stream itself. */
+const handlers = new Set<(event: { type: string; [key: string]: unknown }) => void>();
+let shared: EventSource | null = null;
+
 export const state = {
   get: () => get<{ pending: PendingRequest[]; timeline: TimelineEntry[] }>('/api/state'),
   streams: () => get<{ streams: LiveStream[] }>('/api/streams'),
@@ -600,14 +604,31 @@ export const state = {
   /**
    * The live channel. One connection carries approvals, timeline entries,
    * command output and transfer progress; the caller filters by `type`.
+   *
+   * One connection for the whole page, shared between callers. There are eight
+   * subscription sites in this interface and a browser allows six concurrent
+   * HTTP/1.1 connections per origin — a connection per subscriber does not
+   * merely waste sockets, it eventually starves the page of the ability to
+   * fetch anything at all. It also made the server unable to answer a simple
+   * question: an event held for a page that had not connected yet was handed
+   * to whichever subscriber opened first, which was rarely the one that cared.
    */
   subscribe(handler: (event: { type: string; [key: string]: unknown }) => void): () => void {
-    const source = new EventSource(url('/api/events'));
-    const listener = (event: MessageEvent) => {
-      try { handler(JSON.parse(event.data)); } catch { /* a malformed frame is not worth a crash */ }
+    handlers.add(handler);
+    if (!shared) {
+      shared = new EventSource(url('/api/events'));
+      shared.addEventListener('message', (event: MessageEvent) => {
+        let parsed;
+        try { parsed = JSON.parse(event.data); } catch { return; } // a malformed frame is not worth a crash
+        // A copy, so a handler that unsubscribes on the way through does not
+        // change the set being walked.
+        for (const listener of [...handlers]) listener(parsed);
+      });
+    }
+    return () => {
+      handlers.delete(handler);
+      if (handlers.size === 0) { shared?.close(); shared = null; }
     };
-    source.addEventListener('message', listener);
-    return () => { source.removeEventListener('message', listener); source.close(); };
   },
 };
 
