@@ -90,7 +90,10 @@ function respond(command, persona) {
     ['/proc/net/dev', () =>
       '{"interface":"eth0:","rx_bytes":84213904,"tx_bytes":19288471}\n'],
     ['load average', () => `${load}\n`],
-    ['uptime -p', () => `${uptime}\n`],
+    // Matched before the health command's `uptime -p`, because a person in the
+    // shell types `uptime` and expects the familiar one-liner.
+    ['uptime', () => ` ${new Date().toUTCString().slice(17, 22)} up ${uptime.replace(/^up /, '')},`
+      + `  2 users,  load average: ${load}\n`],
     ['systemctl', () => 'ACTIVE\nENABLED\n1284\nactive (running) since\n'],
     ['ps aux', () =>
       '{"user":"root","pid":1,"cpu":0.0,"mem":0.1,"vsz":168420,"rss":13284,"command":"/sbin/init"}\n' +
@@ -216,6 +219,14 @@ function startHost(persona, root) {
           stream.exit(0);
           stream.end();
         });
+        // ssh2's client sends `pty-req` before `shell`, and a server that does
+        // not answer it fails the whole request — "Unable to request a
+        // pseudo-terminal", which is what this demo showed for a while. Only
+        // found by opening a shell and typing in it; every automated check
+        // until then had called the handler directly.
+        session.on('pty', accept => accept && accept());
+        session.on('window-change', accept => accept && accept());
+
         // An interactive shell, just enough of one to type into on camera.
         session.on('shell', a => {
           const stream = a();
