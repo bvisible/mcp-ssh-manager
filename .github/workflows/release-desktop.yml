@@ -15,8 +15,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Git tag to build and attach to (e.g. v4.0.0). Must already exist.'
+        description: 'Tag or branch to build (e.g. v4.0.0, or v4 for a dry run).'
         required: true
+      publish:
+        description: 'Attach the result to the GitHub Release. Off = build and sign only.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -94,7 +98,11 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           # electron-builder uploads to the release itself when this is set.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ${{ matrix.build }} -- --publish always
+        # `never` on a dry run: signing and notarization are the parts worth
+        # rehearsing, and a rehearsal that creates a draft release in the
+        # repository is not a rehearsal. The artifacts are uploaded below either
+        # way, so a dry run still hands back something to install and try.
+        run: ${{ matrix.build }} -- --publish ${{ inputs.publish && 'always' || 'never' }}
 
       # electron-builder notarizes the .app *before* packaging it, so Apple has
       # no ticket for the disk image and Gatekeeper has to phone home when
