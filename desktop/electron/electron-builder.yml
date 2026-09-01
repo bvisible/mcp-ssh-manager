@@ -18,6 +18,27 @@ files:
   # a Tray it cannot give an icon to, and therefore no menu bar item at all.
   - resources/trayTemplate.png
   - resources/trayTemplate@2x.png
+  # A shell on *this* machine needs a pseudo-terminal, and allocating one needs
+  # a native module. It lives here rather than in the engine on purpose: the
+  # engine is published on npm and installs on machines with no compiler, while
+  # this is built with a toolchain. node-pty ships N-API prebuilds, so Electron
+  # loads them as they are — nothing is rebuilt.
+  - node_modules/node-pty/lib/**/*
+  - node_modules/node-pty/package.json
+  - node_modules/node-pty/prebuilds/**/*
+  # Sources, headers and the winpty tree: needed to *build* node-pty, never to
+  # run it.
+  - '!node_modules/node-pty/{src,deps,scripts,third_party,typings}/**'
+
+# The pty binary and its spawn helper are executed, and nothing executes from
+# inside an asar — it is an archive, not a filesystem.
+asarUnpack:
+  - node_modules/node-pty/prebuilds/**
+
+# node-pty's tarball ships spawn-helper without its executable bit, and without
+# it every local shell dies on `posix_spawnp failed`. Restored before signing,
+# because a nested Mach-O executable has to be signed as one.
+afterPack: ./after-pack.cjs
 
 extraResources:
   # Assembled by prepare-engine.mjs, which installs only the production
@@ -52,6 +73,8 @@ extraResources:
       - '!**/.bin/**'
 
 mac:
+  files:
+    - '!node_modules/node-pty/prebuilds/win32-*/**'
   category: public.app-category.developer-tools
   target:
     - target: dmg
@@ -80,6 +103,8 @@ dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
 
 win:
+  files:
+    - '!node_modules/node-pty/prebuilds/darwin-*/**'
   target:
     - target: nsis
       arch: [x64, arm64]

@@ -345,9 +345,12 @@ const encoder = new TextEncoder();
 const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const fromBase64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 
+/** Which machine a shell runs on. `local` is this one. */
+export type ShellTarget = { local: true } | { server: string };
+
 export const shells = {
-  async open(server: string, cols: number, rows: number): Promise<ShellHandle> {
-    const { id } = await post<{ id: string }>('/api/terminal', { server, cols, rows });
+  async open(target: ShellTarget, cols: number, rows: number): Promise<ShellHandle> {
+    const { id } = await post<{ id: string }>('/api/terminal', { ...target, cols, rows });
     const source = new EventSource(url('/api/terminal/stream', { id }));
     let onExit: (() => void) | null = null;
 
@@ -573,6 +576,12 @@ export interface Options {
   }[];
   tunnels: { id: string; description?: string }[];
   tunnelsStale: boolean;
+  /**
+   * Whether a shell on *this* machine can be opened. False for the interface
+   * served by `ssh-manager control` in a browser, where allocating one is not
+   * possible — and, over a network, would not be desirable either.
+   */
+  localShell: boolean;
 }
 
 export const hostKeys = {

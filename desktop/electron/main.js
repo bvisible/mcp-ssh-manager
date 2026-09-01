@@ -22,7 +22,10 @@
  * trap this project climbed out of when the single-file page was deleted.
  */
 import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, Tray, nativeImage, Notification } from 'electron';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { createRequire } from 'module';
 // electron-updater is CommonJS: named imports do not resolve through the bridge.
 import electronUpdater from 'electron-updater';
 import { fileURLToPath } from 'url';
@@ -34,6 +37,81 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * `app.asar.unpacked` in a packaged build. Resolved rather than assumed,
  * because getting it wrong produces a blank window and no clue why.
  */
+// The engine defaults its log and history to files beside its own source, which
+// here is *inside the application bundle*. One file added there breaks the code
+// signature — `codesign --verify` then reports a sealed resource as invalid and
+// Gatekeeper refuses the app — and it happened: a single launch was enough.
+// Set before the engine is imported, because the logger reads these once.
+const userData = app.getPath('userData');
+// Electron does not create this until something asks it to, and the logger
+// appends without making directories.
+fs.mkdirSync(userData, { recursive: true });
+process.env.SSH_LOG_FILE ||= path.join(userData, 'ssh-manager.log');
+process.env.SSH_HISTORY_FILE ||= path.join(userData, 'command-history.json');
+
+// node-pty is CommonJS with a native binding; `import` of a .node through the
+// ESM bridge does not resolve. createRequire is the supported way in.
+const require = createRequire(import.meta.url);
+
+/**
+ * A shell on this machine, for the control plane to hand to the interface.
+ *
+ * This is the whole reason the desktop build differs from the npm one. A
+ * pseudo-terminal needs `forkpty`, a native module; the engine has none and is
+ * not going to grow one, because it installs on machines with no compiler.
+ * Here there is a toolchain, node-pty ships N-API prebuilds that Electron loads
+ * as they are, and the result is a real terminal — colours, `vim`, Ctrl-C and
+ * a window size that follows the pane.
+ *
+ * Returns null when the module is missing rather than throwing: a build without
+ * it is a build with no local shell, not a broken application. The interface
+ * asks the control plane whether one exists before offering it.
+ *
+ * @returns {import('../../src/control-plane.js').LocalShellFactory|null}
+ */
+function localShellProvider() {
+  /** @type {typeof import('node-pty')} */
+  let pty;
+  try {
+    pty = require('node-pty');
+  } catch (error) {
+    console.error('No local shell in this build:', error.message);
+    return null;
+  }
+
+  return async ({ cols, rows, cwd }) => {
+    // The user's own login shell, because that is what "a terminal on this
+    // machine" means to them — their aliases, their prompt, their PATH.
+    const shellPath = process.platform === 'win32'
+      ? process.env.COMSPEC || 'powershell.exe'
+      : process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
+
+    const env = { ...process.env, TERM: 'xterm-256color' };
+    // Electron sets this when it runs as a plain Node process; inherited by a
+    // shell it makes every `electron` the user runs behave as node instead.
+    delete env.ELECTRON_RUN_AS_NODE;
+
+    const term = pty.spawn(shellPath, [], {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd: cwd || os.homedir(),
+      env,
+    });
+
+    return {
+      shell: path.basename(shellPath),
+      onData: handler => term.onData(handler),
+      onExit: handler => term.onExit(() => handler()),
+      // node-pty writes strings. What arrives is the UTF-8 of exactly what the
+      // user typed, so decoding it back is lossless.
+      write: data => term.write(data.toString('utf8')),
+      resize: (nextCols, nextRows) => term.resize(nextCols, nextRows),
+      kill: () => term.kill(),
+    };
+  };
+}
+
 function engineRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'engine')
@@ -65,6 +143,7 @@ async function startControlPlane() {
     // tree; the control plane resolves it relative to its own file, so nothing
     // extra is needed here.
   });
+  plane.setLocalShellProvider(localShellProvider());
   return plane.start();
 }
 

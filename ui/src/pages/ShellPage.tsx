@@ -10,14 +10,19 @@ import { CommandDialog } from '@/components/commands/CommandDialog';
 
 
 /**
- * A real shell. The PTY is allocated by the remote sshd — ssh2 asks for it — so
- * this side only has to draw bytes and send keystrokes.
+ * A real shell, remote or local.
+ *
+ * Remote, the pseudo-terminal is allocated by the far sshd and ssh2 asks for
+ * it. Local, the desktop shell allocates one with node-pty. Either way this
+ * side only draws bytes and sends keystrokes, which is why one component
+ * serves both.
  *
  * `hidden` rather than unmounting: the pane stays alive when you switch to
  * another session, because disposing it would close the connection and lose
  * everything on screen.
  */
-export function ShellPage({ server, hidden = false }: { server: string; hidden?: boolean }) {
+export function ShellPage({ server, local = false, hidden = false }:
+  { server: string; local?: boolean; hidden?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const resolved = useTheme(s => s.resolved);
   const [savingCommand, setSavingCommand] = useState(false);
@@ -41,7 +46,7 @@ export function ShellPage({ server, hidden = false }: { server: string; hidden?:
 
     let disposed = false;
     void shells
-      .open(server, term.cols, term.rows)
+      .open(local ? { local: true } : { server }, term.cols, term.rows)
       .then(opened => {
         // The pane can be closed while the connection is still being made.
         if (disposed) return void opened.close();
@@ -72,7 +77,7 @@ export function ShellPage({ server, hidden = false }: { server: string; hidden?:
     // drop the connection and everything on screen. The effect below repaints
     // it instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [server]);
+  }, [server, local]);
 
   // Following the theme without tearing the session down.
   useEffect(() => {
@@ -109,13 +114,19 @@ export function ShellPage({ server, hidden = false }: { server: string; hidden?:
     <>
       <header className="flex items-center gap-2 border-b border-border px-6 py-3">
         <h1 className="text-sm font-medium">{server}</h1>
-        <span className="text-xs text-muted-foreground">interactive shell</span>
-        <div className="ml-auto">
-          <CommandsDropdown server={server} onPick={insert} onManage={() => setSavingCommand(true)} />
-        </div>
+        <span className="text-xs text-muted-foreground">
+          {local ? 'a shell on this machine' : 'interactive shell'}
+        </span>
+        {/* Saved commands belong to servers — they are chosen per server and
+            stored against their names — so a local shell has none to offer. */}
+        {!local && (
+          <div className="ml-auto">
+            <CommandsDropdown server={server} onPick={insert} onManage={() => setSavingCommand(true)} />
+          </div>
+        )}
       </header>
 
-      {savingCommand && (
+      {savingCommand && !local && (
         <CommandDialog server={server} onClose={() => setSavingCommand(false)} />
       )}
       <div ref={hostRef} className="min-h-0 flex-1 p-2"

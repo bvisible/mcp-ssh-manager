@@ -100,6 +100,20 @@ done
   && pass "the interface is bundled" \
   || fail "no dist/ui — the window would load nothing"
 
+# --- the local shell ---------------------------------------------------------
+# node-pty runs spawn-helper for every pseudo-terminal it opens, and the npm
+# tarball ships it as 644. Without the bit, the first local shell dies on
+# `posix_spawnp failed` — in the packaged build only, because a developer's
+# checkout usually has a chmod'd copy from somewhere.
+HELPER=$(find "$APP/Contents/Resources" -name spawn-helper -type f 2>/dev/null | head -1)
+if [ -z "$HELPER" ]; then
+  warn "no local shell in this build (node-pty is not packaged)"
+elif [ -x "$HELPER" ]; then
+  pass "the local shell's spawn helper is executable"
+else
+  fail "spawn-helper is not executable — every local shell would fail to start"
+fi
+
 # --- the pieces the app reads at runtime -------------------------------------
 ASAR="$APP/Contents/Resources/app.asar"
 # `asar` is a dependency of electron-builder, so it lives under the desktop

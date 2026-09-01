@@ -92,6 +92,104 @@ async function startPlane() {
   return { plane, base: url.split('/?')[0] };
 }
 
+/**
+ * A shell on this machine.
+ *
+ * The control plane cannot open one itself — that needs a pseudo-terminal, and
+ * the engine ships no native module — so a host process hands one down. Which
+ * makes this testable without node-pty: the contract is the factory, and a
+ * stand-in exercises every line of the control plane's half.
+ */
+async function testLocalShell() {
+  const { plane, base } = await startPlane();
+  const q = `token=${plane.token}`;
+
+  // --- before anything offers one ---
+  const refused = await fetch(`${base}/api/terminal?${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ local: true, cols: 80, rows: 24 }),
+  });
+  assert.strictEqual(refused.status, 501, 'without a provider a local shell must be refused, not faked');
+  const offered = await (await fetch(`${base}/api/options?${q}`)).json();
+  assert.strictEqual(offered.localShell, false, 'the page must be told there is no local shell');
+  ok('with no provider, a local shell is refused and the interface is told not to offer one');
+
+  // --- with one ---
+  const fake = { written: [], resized: [], killed: false, emit: null, opened: null };
+  plane.setLocalShellProvider(async ({ cols, rows, cwd }) => {
+    fake.opened = { cols, rows, cwd };
+    return {
+      shell: 'zsh',
+      onData: handler => { fake.emit = handler; },
+      onExit: () => {},
+      write: data => fake.written.push(data.toString('utf8')),
+      resize: (nextCols, nextRows) => fake.resized.push({ cols: nextCols, rows: nextRows }),
+      kill: () => { fake.killed = true; },
+    };
+  });
+
+  const nowOffered = await (await fetch(`${base}/api/options?${q}`)).json();
+  assert.strictEqual(nowOffered.localShell, true, 'once a provider exists the page must be told');
+
+  const opened = await fetch(`${base}/api/terminal?${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ local: true, cols: 111, rows: 33 }),
+  });
+  const session = await opened.json();
+  assert.strictEqual(opened.status, 200, `a local shell must open, got ${JSON.stringify(session)}`);
+  assert.strictEqual(session.local, true, 'the answer must say which machine this is');
+  assert.deepStrictEqual(
+    { cols: fake.opened.cols, rows: fake.opened.rows }, { cols: 111, rows: 33 },
+    'the pane\u2019s size must reach the pseudo-terminal, or the first draw is wrong');
+  ok('a local shell opens at the size the pane asked for');
+
+  // --- bytes out ---
+  const stream = await fetch(`${base}/api/terminal/stream?id=${session.id}&${q}`);
+  const reader = stream.body.getReader();
+  await until(() => fake.emit);
+  fake.emit(Buffer.from('h\u00e9llo \u001b[32mgreen\u001b[0m'));
+  // The stream opens with a `: connected` comment, so read until a data frame
+  // rather than assuming the first chunk is one.
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let seenText = '';
+  for (let attempt = 0; attempt < 5 && !seenText; attempt += 1) {
+    buffer += decoder.decode((await reader.read()).value ?? new Uint8Array());
+    const line = buffer.split('\n').find(candidate => candidate.startsWith('data: '));
+    if (line) seenText = Buffer.from(JSON.parse(line.slice(6)).chunk, 'base64').toString();
+  }
+  assert.strictEqual(seenText, 'h\u00e9llo \u001b[32mgreen\u001b[0m',
+    'escape sequences and multi-byte characters must survive the trip');
+  ok('output reaches the page byte for byte, colours and accents included');
+
+  // --- keystrokes in, and the window size ---
+  await fetch(`${base}/api/terminal/input?id=${session.id}&${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ data: Buffer.from('ls -l\n').toString('base64') }),
+  });
+  assert.deepStrictEqual(fake.written, ['ls -l\n'], 'keystrokes must arrive as typed');
+
+  await fetch(`${base}/api/terminal/resize?id=${session.id}&${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cols: 140, rows: 45 }),
+  });
+  // node-pty takes (cols, rows) and ssh2 takes (rows, cols); getting the order
+  // wrong garbles every full-screen program and nothing else complains.
+  assert.deepStrictEqual(fake.resized, [{ cols: 140, rows: 45 }], 'a resize must arrive the right way round');
+  ok('keystrokes and window size reach the shell, with cols and rows the right way round');
+
+  // --- closing ---
+  await reader.cancel().catch(() => {});
+  const closed = await fetch(`${base}/api/terminal?id=${session.id}&${q}`, { method: 'DELETE' });
+  assert.strictEqual(closed.status, 200, 'closing must succeed');
+  assert.strictEqual(fake.killed, true, 'closing the pane must kill the process, not leak it');
+  ok('closing the pane kills the local process');
+}
+
 async function main() {
   try {
     const { port, seen } = await startSshServer();
@@ -204,6 +302,8 @@ async function main() {
     const bundleWithoutToken = await fetch(`${base}/app.js`);
     assert.strictEqual(bundleWithoutToken.status, 401, 'even the bundle requires the token');
     ok('the built interface is served, nothing outside it is, and it needs the token');
+
+    await testLocalShell();
 
     console.log(`\n✅ terminal tests passed (${passed} checks)`);
   } finally {

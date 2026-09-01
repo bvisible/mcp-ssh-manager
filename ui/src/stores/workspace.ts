@@ -16,15 +16,17 @@ import { create } from 'zustand';
 
 export type ViewId = 'servers' | 'terminal' | 'waiting' | 'health' | 'live' | 'activity' | 'options';
 
-/** The two kinds of session a server can have open. Named as TransHub names
- *  them, so its components keep working. */
-export type TabType = 'dual-browser' | 'ssh-terminal';
+/** The kinds of session that can be open. The first two are named as TransHub
+ *  names them, so its components keep working. `local-terminal` is the one
+ *  TransHub has that this did not: a shell on the machine in front of you. */
+export type TabType = 'dual-browser' | 'ssh-terminal' | 'local-terminal';
 
 export interface WorkspaceTab {
   id: string;
   type: TabType;
   title: string;
-  serverId: string;
+  /** Absent on a local shell, which belongs to no server. */
+  serverId?: string;
   closable?: boolean;
   badge?: number;
 }

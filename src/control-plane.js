@@ -169,6 +169,32 @@ function describe(dir, item) {
  * megabyte is far more than any of them needs and still refuses anything that
  * looks like an attempt to fill memory.
  */
+/**
+ * One open shell, remote or local. `close` releases whatever is behind it.
+ *
+ * @typedef {Object} TerminalEntry
+ * @property {string} label - What to call it in a log line
+ * @property {(data: Buffer) => void} write - Keystrokes in
+ * @property {(rows: number, cols: number) => void} resize - Window size
+ * @property {() => void} close - Release the shell and its connection
+ * @property {Set<import('http').ServerResponse>} subscribers - Attached pages
+ * @property {string[]} backlog - Frames kept for a page that attaches late
+ * @property {number} backlogBytes - Size of that backlog
+ */
+
+/**
+ * Opens a pseudo-terminal on the machine this process runs on.
+ *
+ * @typedef {(options: {cols: number, rows: number, cwd?: string}) => Promise<{
+ *   onData: (handler: (chunk: Buffer|string) => void) => void,
+ *   onExit: (handler: () => void) => void,
+ *   write: (data: Buffer) => void,
+ *   resize: (cols: number, rows: number) => void,
+ *   kill: () => void,
+ *   shell: string,
+ * }>} LocalShellFactory
+ */
+
 const MAX_BODY_BYTES = 1024 * 1024;
 
 // How long an announcement nobody heard is kept for the first page that opens.
@@ -195,9 +221,18 @@ export class ControlPlane {
     // window opened mid-command still shows what came before.
     this.streams = new StreamRegistry();
     this.streamServer = null;
-    // Interactive shells opened from the terminal screen, keyed by id.
-    /** @type {Map<string, {ssh: any, stream: any, server: string, subscribers: Set<import('http').ServerResponse>, backlog: string[], backlogBytes: number}>} */
+    // Interactive shells opened from the terminal screen, keyed by id. An
+    // entry hides where it came from behind write/resize/close, because a
+    // local shell and a remote one differ only in how they were opened.
+    /** @type {Map<string, TerminalEntry>} */
     this.terminals = new Map();
+
+    // Set by a desktop shell that can allocate a local pseudo-terminal. Left
+    // null everywhere else — the engine ships no native module and will not
+    // grow one, so a shell on *this* machine is something the host process
+    // offers, not something the control plane can conjure.
+    /** @type {LocalShellFactory|null} */
+    this.localShell = null;
 
     // SFTP connections, kept alive between requests. A file manager makes tens
     // of calls to browse one directory tree, and an SSH handshake per `ls` —
@@ -707,6 +742,25 @@ export class ControlPlane {
       return;
     }
     this.#broadcast(event);
+  }
+
+  /**
+   * Offer a shell on the machine this process runs on.
+   *
+   * The second door for a host process, beside `announce()`. A pseudo-terminal
+   * cannot be allocated from plain Node — it needs `forkpty`, which means a
+   * native module — and the engine deliberately has none: it is published on
+   * npm and installs on machines with no compiler. So the desktop shell, which
+   * is built with a toolchain and already rebuilds native modules for Electron,
+   * hands one down instead.
+   *
+   * Nothing calls this in the npm package, and the interface asks before it
+   * offers: no local shell is not a broken local shell.
+   *
+   * @param {LocalShellFactory|null} factory - Opens a local pseudo-terminal
+   */
+  setLocalShellProvider(factory) {
+    this.localShell = factory;
   }
 
   /**
@@ -1288,6 +1342,10 @@ export class ControlPlane {
    */
   #openTerminal(req, res) {
     this.#readJsonBody(req, res, async payload => {
+      const cols = payload.cols || 80;
+      const rows = payload.rows || 24;
+      if (payload.local) return this.#openLocalTerminal(res, cols, rows, payload.cwd);
+
       const name = String(payload.server || '').toLowerCase();
       /** @type {Record<string, any>} */
       let servers = {};
@@ -1305,33 +1363,23 @@ export class ControlPlane {
         await ssh.connect({ readyTimeout: 15000 });
         const stream = await new Promise((resolve, reject) => {
           ssh.client.shell(
-            { term: 'xterm-256color', cols: payload.cols || 80, rows: payload.rows || 24 },
+            { term: 'xterm-256color', cols, rows },
             (error, channel) => (error ? reject(error) : resolve(channel))
           );
         });
 
-        const entry = { ssh, stream, server: name, subscribers: new Set(), backlog: [], backlogBytes: 0 };
-        this.terminals.set(id, entry);
+        const entry = this.#registerTerminal(id, {
+          label: name,
+          write: data => stream.write(data),
+          resize: (nextRows, nextCols) => stream.setWindow(nextRows, nextCols, 0, 0),
+          close: () => {
+            try { stream.end(); } catch { /* already closed */ }
+            try { ssh.dispose(); } catch { /* best effort */ }
+          },
+        });
 
-        const push = (channel, chunk) => {
-          const payloadLine = `data: ${JSON.stringify({ channel, chunk: chunk.toString('base64') })}\n\n`;
-          // Kept so a screen that attaches after the shell opened still shows
-          // the login banner and the first prompt, which arrive in the gap
-          // between the shell opening and the browser subscribing. Bounded, or
-          // a `tail -f` left running would grow the process without limit.
-          entry.backlog.push(payloadLine);
-          entry.backlogBytes += payloadLine.length;
-          while (entry.backlogBytes > TERMINAL_BACKLOG_BYTES && entry.backlog.length > 1) {
-            entry.backlogBytes -= entry.backlog.shift().length;
-          }
-          for (const subscriber of entry.subscribers) {
-            try { subscriber.write(payloadLine); } catch { entry.subscribers.delete(subscriber); }
-          }
-        };
-        // Base64 because terminal output is bytes, not text: escape sequences
-        // and partial UTF-8 do not survive a round trip through JSON strings.
-        stream.on('data', chunk => push('stdout', chunk));
-        stream.stderr?.on('data', chunk => push('stderr', chunk));
+        stream.on('data', chunk => entry.push('stdout', chunk));
+        stream.stderr?.on('data', chunk => entry.push('stderr', chunk));
         stream.on('close', () => this.#disposeTerminal(id));
 
         logger.info('Interactive shell opened', { server: name });
@@ -1341,6 +1389,80 @@ export class ControlPlane {
         return this.#json(res, 502, { error: error.message });
       }
     });
+  }
+
+  /**
+   * A shell on the machine this process is running on.
+   *
+   * Only when a host has offered one. `ssh-manager ui` served in a browser has
+   * no local shell and says so plainly rather than pretending: the page asks
+   * the options endpoint first and does not offer what cannot be given.
+   *
+   * Not gated by the readonly/restricted modes, for the same reason the remote
+   * shell is not: those constrain an *agent*, and whoever holds this token is
+   * the person sitting at the machine.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   * @param {number} cols - Terminal width
+   * @param {number} rows - Terminal height
+   * @param {string} [cwd] - Where to start
+   */
+  async #openLocalTerminal(res, cols, rows, cwd) {
+    if (!this.localShell) {
+      return this.#json(res, 501, { error: 'No local shell here — this build cannot open one' });
+    }
+    const id = crypto.randomUUID();
+    try {
+      const pty = await this.localShell({ cols, rows, cwd });
+      const entry = this.#registerTerminal(id, {
+        label: `local:${pty.shell}`,
+        write: data => pty.write(data),
+        resize: (nextRows, nextCols) => pty.resize(nextCols, nextRows),
+        close: () => { try { pty.kill(); } catch { /* already gone */ } },
+      });
+      pty.onData(chunk => entry.push('stdout', Buffer.from(chunk)));
+      pty.onExit(() => this.#disposeTerminal(id));
+      logger.info('Local shell opened', { shell: pty.shell });
+      return this.#json(res, 200, { id, server: 'This machine', local: true });
+    } catch (error) {
+      return this.#json(res, 500, { error: error.message });
+    }
+  }
+
+  /**
+   * Everything an open shell needs that has nothing to do with where it runs:
+   * the subscriber set, the bounded backlog, and the frame format.
+   *
+   * @param {string} id - Terminal id
+   * @param {{label: string, write: (data: Buffer) => void, resize: (rows: number, cols: number) => void, close: () => void}} plumbing - What differs
+   * @returns {TerminalEntry & {push: (channel: string, chunk: Buffer) => void}}
+   */
+  #registerTerminal(id, plumbing) {
+    const entry = /** @type {any} */ ({
+      ...plumbing,
+      subscribers: new Set(),
+      backlog: [],
+      backlogBytes: 0,
+    });
+    // Base64 because terminal output is bytes, not text: escape sequences and
+    // partial UTF-8 do not survive a round trip through JSON strings.
+    entry.push = (channel, chunk) => {
+      const line = `data: ${JSON.stringify({ channel, chunk: chunk.toString('base64') })}\n\n`;
+      // Kept so a screen that attaches after the shell opened still shows the
+      // login banner and the first prompt, which arrive in the gap between the
+      // shell opening and the browser subscribing. Bounded, or a `tail -f` left
+      // running would grow the process without limit.
+      entry.backlog.push(line);
+      entry.backlogBytes += line.length;
+      while (entry.backlogBytes > TERMINAL_BACKLOG_BYTES && entry.backlog.length > 1) {
+        entry.backlogBytes -= entry.backlog.shift().length;
+      }
+      for (const subscriber of entry.subscribers) {
+        try { subscriber.write(line); } catch { entry.subscribers.delete(subscriber); }
+      }
+    };
+    this.terminals.set(id, entry);
+    return entry;
   }
 
   /**
@@ -1373,7 +1495,7 @@ export class ControlPlane {
     if (!entry) return this.#json(res, 404, { error: 'No such terminal' });
     this.#readJsonBody(req, res, payload => {
       try {
-        entry.stream.write(Buffer.from(String(payload.data || ''), 'base64'));
+        entry.write(Buffer.from(String(payload.data || ''), 'base64'));
         return this.#json(res, 200, { ok: true });
       } catch (error) {
         return this.#json(res, 500, { error: error.message });
@@ -1393,7 +1515,7 @@ export class ControlPlane {
       try {
         // Without this, a full-screen program draws for the wrong window size
         // and the display is garbled the moment anyone resizes.
-        entry.stream.setWindow(payload.rows || 24, payload.cols || 80, 0, 0);
+        entry.resize(payload.rows || 24, payload.cols || 80);
         return this.#json(res, 200, { ok: true });
       } catch (error) {
         return this.#json(res, 500, { error: error.message });
@@ -1422,9 +1544,8 @@ export class ControlPlane {
     for (const subscriber of entry.subscribers) {
       try { subscriber.end(); } catch { /* already gone */ }
     }
-    try { entry.stream.end(); } catch { /* already closed */ }
-    try { entry.ssh.dispose(); } catch { /* best effort */ }
-    logger.info('Interactive shell closed', { server: entry.server });
+    try { entry.close(); } catch { /* best effort */ }
+    logger.info('Interactive shell closed', { shell: entry.label });
   }
 
 
@@ -1827,7 +1948,16 @@ export class ControlPlane {
     // process that is no longer running — showing those as open would be a lie.
     const tunnelState = readPublishedTunnels();
 
-    this.#json(res, 200, { groups, hostKeys, tunnels: tunnelState.tunnels, tunnelsStale: tunnelState.stale });
+    this.#json(res, 200, {
+      groups,
+      hostKeys,
+      tunnels: tunnelState.tunnels,
+      tunnelsStale: tunnelState.stale,
+      // Whether a shell on *this* machine can be opened at all. False for a
+      // control plane served over the network, where it would be a stranger's
+      // shell on somebody's laptop.
+      localShell: Boolean(this.localShell),
+    });
   }
 
   /**

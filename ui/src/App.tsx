@@ -17,6 +17,7 @@ import { ensurePermission, notifyApproval, clearApproval, clearAll } from '@/lib
 import { needsTitleBarRoom } from '@/lib/desktop';
 import { DroppedFilesDialog } from '@/components/DroppedFilesDialog';
 import { Wizard, wizardSeen } from '@/components/Wizard';
+import { SessionTabs } from '@/components/layout/SessionTabs';
 
 export function App() {
   const { view, tabs, activeTabId, setPendingCount } = useWorkspace();
@@ -94,7 +95,8 @@ export function App() {
   }), []);
 
 
-  const nameFor = (serverId: string) => servers.find(s => s.id === serverId)?.name ?? serverId;
+  const nameFor = (serverId?: string) =>
+    servers.find(s => s.id === serverId)?.name ?? serverId ?? '';
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -114,7 +116,9 @@ export function App() {
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
       <Sidebar />
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <SessionTabs />
+        <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Sessions stay mounted and are hidden rather than unmounted. Two
             reasons, and the second is not cosmetic: switching away would lose
             the directory you had navigated to, and it would *close the shell* —
@@ -132,7 +136,9 @@ export function App() {
             // technology while it is still the focus.
             inert={activeTabId !== tab.id}
           >
-            {tab.type === 'ssh-terminal' ? (
+            {tab.type === 'local-terminal' ? (
+              <ShellPage server={tab.title} local hidden={activeTabId !== tab.id} />
+            ) : tab.type === 'ssh-terminal' ? (
               <ShellPage server={nameFor(tab.serverId)} hidden={activeTabId !== tab.id} />
             ) : (
               <FilesPage server={nameFor(tab.serverId)} />
@@ -151,6 +157,7 @@ export function App() {
             {view === 'options' && <OptionsPage />}
           </div>
         )}
+        </div>
       </main>
       </div>
     {/* Not over a drop. Somebody who dropped a file on the icon asked for
