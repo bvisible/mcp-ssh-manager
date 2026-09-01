@@ -83,3 +83,6 @@ desktop/electron/node_modules/
 
 # Screenshot intermediates: regenerate with scripts/capture-screenshots.mjs
 docs/images/.raw/
+
+# Debris from extracting an asar to inspect it
+asar-up/
