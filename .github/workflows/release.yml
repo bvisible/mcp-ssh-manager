@@ -73,7 +73,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           URL="https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-${VERSION}.tgz"
           # Wait for the registry to serve the version we just published.
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsL --head "$URL" >/dev/null 2>&1; then break; fi
             sleep 5
           done

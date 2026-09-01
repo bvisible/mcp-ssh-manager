@@ -48,10 +48,12 @@ jobs:
 
     - name: Create test .env file
       run: |
-        echo "SSH_SERVER_TEST_HOST=localhost" > .env
-        echo "SSH_SERVER_TEST_USER=test" >> .env
-        echo "SSH_SERVER_TEST_PASSWORD=test" >> .env
-        echo "SSH_SERVER_TEST_PORT=22" >> .env
+        cat > .env <<'EOF'
+        SSH_SERVER_TEST_HOST=localhost
+        SSH_SERVER_TEST_USER=test
+        SSH_SERVER_TEST_PASSWORD=test
+        SSH_SERVER_TEST_PORT=22
+        EOF
 
     # Runs every tests/ suite, including test:lockfile.
     - name: Run JavaScript tests
@@ -89,6 +91,24 @@ jobs:
 
     - name: Typecheck (JSDoc via tsc)
       run: npm run typecheck
+
+    # A YAML parser accepts a workflow that GitHub then refuses: expression
+    # contexts are only valid in some places, and using one where it does not
+    # exist is rejected at dispatch, not at parse. Three release runs went to
+    # exactly that — a step `if:` cannot read its own `env:`, `env.HOME` is
+    # empty inside ${{ }}, and `runner` does not exist in a job-level `env:`.
+    # actionlint finds all three offline, in a second.
+    - name: Lint the workflows
+      env:
+        ACTIONLINT_VERSION: 1.7.12
+        ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      run: |
+        curl -fsSL -o actionlint.tar.gz \
+          "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+        echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+        tar -xzf actionlint.tar.gz actionlint
+        ./actionlint
+        rm -f actionlint actionlint.tar.gz
 
     - name: Check for secrets
       run: |
