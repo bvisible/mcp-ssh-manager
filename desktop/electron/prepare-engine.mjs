@@ -45,11 +45,26 @@ fs.writeFileSync(path.join(out, 'package.json'), `${JSON.stringify(manifest, nul
 fs.copyFileSync(path.join(repo, 'package-lock.json'), path.join(out, 'package-lock.json'));
 
 console.log('Installing the engine’s production dependencies…');
-// `npm` on Windows is `npm.cmd`, and execFileSync does not consult PATHEXT —
-// so this threw `spawnSync npm ENOENT` for anybody building there, CI included.
-execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'], {
+
+// Windows has no `npm` — it has `npm.cmd`, and reaching it from here is
+// genuinely awkward. `execFileSync('npm', …)` does not consult PATHEXT and
+// throws ENOENT; naming `npm.cmd` outright then throws EINVAL, because Node
+// has refused to spawn a .bat or .cmd without a shell since the fix for
+// CVE-2024-27980. Both of those failed a real build here.
+//
+// The way out is not to spawn npm at all: `npm_execpath` is npm's own CLI
+// script, set by the `npm run build:*` that got us here, and running it with
+// the Node we are already inside needs no shell and no file extension. The
+// fallback covers someone calling this file directly with `node`.
+const npmCli = process.env.npm_execpath;
+const viaNpmCli = Boolean(npmCli && npmCli.endsWith('.js'));
+const bin = viaNpmCli ? process.execPath : 'npm';
+execFileSync(bin, [...(viaNpmCli ? [npmCli] : []), 'install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'], {
   cwd: out,
   stdio: 'inherit',
+  // Only on the fallback path, and only where `npm` means `npm.cmd`. Every
+  // argument above is a literal, so there is nothing for a shell to expand.
+  shell: !viaNpmCli && process.platform === 'win32',
 });
 
 // --ignore-scripts above skips ssh2's optional native build. That is deliberate:
