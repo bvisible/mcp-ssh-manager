@@ -101,3 +101,13 @@ linux:
   category: Development
   maintainer: bvisible
   artifactName: ${productName}-${version}-${arch}.${ext}
+
+# Where the application looks for updates, and where the release workflow puts
+# them. GitHub Releases rather than a server of our own: the repository is
+# already public, the releases already live there, and there is nothing to run
+# or pay for. electron-updater reads latest-mac.yml / latest.yml from the
+# release assets, which electron-builder writes beside the installers.
+publish:
+  provider: github
+  owner: bvisible
+  repo: mcp-ssh-manager

@@ -1,0 +1,14 @@
+{
+  "name": "ssh-manager-desktop",
+  "productName": "SSH Manager",
+  "version": "4.0.0",
+  "private": true,
+  "description": "The SSH Manager control plane as a desktop application",
+  "main": "main.js",
+  "type": "module",
+  "author": "bvisible",
+  "license": "MIT",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}
