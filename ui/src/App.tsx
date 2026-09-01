@@ -153,7 +153,10 @@ export function App() {
         )}
       </main>
       </div>
-    {showWizard && <Wizard onClose={() => setShowWizard(false)} />}
+    {/* Not over a drop. Somebody who dropped a file on the icon asked for
+        something; an unsolicited introduction is not an answer to it. The
+        wizard comes back once the question is dealt with. */}
+    {showWizard && !droppedFiles && <Wizard onClose={() => setShowWizard(false)} />}
 
     {droppedFiles && (
         <DroppedFilesDialog paths={droppedFiles} onClose={() => setDroppedFiles(null)} />

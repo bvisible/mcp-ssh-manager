@@ -70,6 +70,44 @@ function rawGet(port, pathAndQuery, host) {
   });
 }
 
+/**
+ * Read server-sent events off a raw request until `want` of them arrive or the
+ * deadline passes. EventSource is a browser API; this is the same wire format
+ * read by hand.
+ *
+ * @param {number} port - Port to hit
+ * @param {string} token - Plane token
+ * @param {number} want - How many data frames to wait for
+ * @param {number} ms - How long to wait
+ * @returns {Promise<{events: any[], close: () => void}>}
+ */
+function openEventStream(port, token, want, ms) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: '127.0.0.1', port, path: `/api/events?token=${token}`, method: 'GET' },
+      res => {
+        /** @type {any[]} */
+        const events = [];
+        let buffer = '';
+        const done = () => resolve({ events, close: () => req.destroy() });
+        const timer = setTimeout(done, ms);
+        timer.unref?.();
+        res.on('data', chunk => {
+          buffer += chunk;
+          for (const frame of buffer.split('\n\n')) {
+            if (!frame.startsWith('data: ')) continue;
+            events.push(JSON.parse(frame.slice(6)));
+          }
+          buffer = buffer.slice(buffer.lastIndexOf('\n\n') + 2);
+          if (events.length >= want) { clearTimeout(timer); done(); }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function testTokenIsRequired() {
   const { plane, base } = await startPlane();
 
@@ -450,6 +488,44 @@ async function testPublishedTunnels() {
   fs.rmSync(statePath, { force: true });
 }
 
+/**
+ * A file dropped on a *cold* Dock icon launches the application, so the shell
+ * announces it a second or two before the interface has a stream open. Sending
+ * it to nobody and moving on lost the drop entirely — reproduced on the
+ * packaged 4.0.0: warm drops opened the dialog, cold ones vanished.
+ */
+async function testAnnouncementSurvivesAColdStart() {
+  const { plane, url } = await startPlane();
+  const port = Number(new URL(url).port);
+
+  // Nobody is listening yet — this is the cold start.
+  plane.announce({ type: 'dropped-files', paths: ['/tmp/runbook.md'] });
+  assert.strictEqual(plane.subscribers.size, 0, 'no page should be connected yet');
+
+  const first = await openEventStream(port, plane.token, 1, 2000);
+  assert.deepStrictEqual(
+    first.events,
+    [{ type: 'dropped-files', paths: ['/tmp/runbook.md'] }],
+    'the first page to connect must be handed what it missed'
+  );
+  ok('an announcement made before any page exists reaches the first one that opens');
+
+  // Once delivered it is gone: opening a second window must not re-ask.
+  const second = await openEventStream(port, plane.token, 1, 400);
+  assert.deepStrictEqual(second.events, [], 'a held event must be delivered once, not replayed');
+  ok('a held announcement is handed over once, not to every page that opens');
+  second.close();
+
+  // And with somebody listening, nothing is held back for later.
+  plane.announce({ type: 'dropped-files', paths: ['/tmp/notes.txt'] });
+  assert.strictEqual(plane.undelivered.length, 0, 'a delivered event must not also be buffered');
+  const third = await openEventStream(port, plane.token, 1, 400);
+  assert.deepStrictEqual(third.events, [], 'nothing should be waiting once a page is connected');
+  ok('an announcement with a page connected is not also queued for the next one');
+  third.close();
+  first.close();
+}
+
 async function main() {
   try {
     await testTokenIsRequired();
@@ -465,6 +541,7 @@ async function main() {
     await testHealthProbe();
     await testOptionsAndHostKeys();
     await testPublishedTunnels();
+    await testAnnouncementSurvivesAColdStart();
     console.log(`\n✅ control plane tests passed (${passed} checks)`);
   } finally {
     for (const plane of planes) {

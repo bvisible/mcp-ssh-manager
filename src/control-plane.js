@@ -171,6 +171,13 @@ function describe(dir, item) {
  */
 const MAX_BODY_BYTES = 1024 * 1024;
 
+// How long an announcement nobody heard is kept for the first page that opens.
+// Sized for the worst real case: a file dropped on a *cold* Dock icon launches
+// the application, so the event exists long before there is an interface to
+// tell. Long enough for a slow machine to get a window up; short enough that
+// nobody is asked about a file they dropped in another session.
+const ANNOUNCE_REPLAY_MS = 30 * 1000;
+
 export class ControlPlane {
   /**
    * @param {Object} options - Configuration
@@ -210,6 +217,8 @@ export class ControlPlane {
     this.timeline = [];
     /** @type {Set<import('http').ServerResponse>} */
     this.subscribers = new Set();
+    /** @type {{event: Record<string, any>, at: number}[]} */
+    this.undelivered = [];
 
     this.socketServer = null;
     this.httpServer = null;
@@ -619,6 +628,15 @@ export class ControlPlane {
     res.write(': connected\n\n');
     this.subscribers.add(res);
     res.on('close', () => this.subscribers.delete(res));
+
+    // Anything the shell said while there was nobody to hear it. Drained
+    // whether or not it is still fresh, so a stale event is discarded rather
+    // than kept for the next page.
+    const held = this.undelivered.splice(0, this.undelivered.length);
+    const now = Date.now();
+    for (const item of held) {
+      if (now - item.at < ANNOUNCE_REPLAY_MS) this.#broadcast(item.event);
+    }
   }
 
   /**
@@ -675,9 +693,19 @@ export class ControlPlane {
    * for that, and deliberately the only one: everything else the page needs, it
    * fetches.
    *
+   * An announcement made while no page is listening would simply vanish, and
+   * that is exactly the case that matters: the drop is what *launched* the
+   * application, so the event is ready a second or two before the interface
+   * has connected its stream. Held, then, and handed to the first page that
+   * arrives — once, and only if it arrives soon.
+   *
    * @param {Record<string, any>} event - Must carry a `type` the page knows
    */
   announce(event) {
+    if (this.subscribers.size === 0) {
+      this.undelivered.push({ event, at: Date.now() });
+      return;
+    }
     this.#broadcast(event);
   }
 

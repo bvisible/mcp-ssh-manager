@@ -102,7 +102,15 @@ done
 
 # --- the pieces the app reads at runtime -------------------------------------
 ASAR="$APP/Contents/Resources/app.asar"
-ASAR_LIST=$(npx --no-install asar list "$ASAR" 2>/dev/null || true)
+# `asar` is a dependency of electron-builder, so it lives under the desktop
+# shell and not at the repository root — `npx --no-install asar` from here
+# finds nothing and this check quietly degraded to a warning, in CI included.
+ASAR_BIN="$(dirname "$0")/../desktop/electron/node_modules/.bin/asar"
+ASAR_LIST=$(
+  if [ -x "$ASAR_BIN" ]; then "$ASAR_BIN" list "$ASAR" 2>/dev/null
+  else npx --no-install asar list "$ASAR" 2>/dev/null
+  fi || true
+)
 case "$ASAR_LIST" in
   *trayTemplate.png*) pass "the menu-bar icon is in the asar" ;;
   '')                 warn "could not read the asar (is @electron/asar installed?)" ;;
