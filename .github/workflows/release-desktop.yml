@@ -1,0 +1,139 @@
+# Build the desktop applications, notarize the macOS one, and attach everything
+# to an existing GitHub Release — which is also the feed the installed app reads
+# to find its own updates.
+#
+# Deliberately separate from release.yml, which publishes the npm package. The
+# two fail for entirely different reasons: npm publish needs an OTP somebody has
+# to type, and this needs Apple to be having a good day. Coupling them means a
+# notarization queue blocks a package release, and nobody wants to debug that at
+# the wrong moment.
+#
+# Run it after the tag exists and the npm release is out.
+name: Release desktop apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag or branch to build (e.g. v4.0.0, or v4 for a dry run).'
+        required: true
+      publish:
+        description: 'Attach the result to the GitHub Release. Off = build and sign only.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      # Keep going: a Windows failure should not throw away a macOS build that
+      # took twenty minutes and a round trip through Apple.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            build: npm run build:mac
+          - os: windows-latest
+            build: npm run build:win
+
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write            # to attach assets to the release
+    timeout-minutes: 60          # notarization waits on Apple; 60 is generous
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install the engine's dependencies
+        run: npm ci
+
+      - name: Build the interface
+        run: npm ci --prefix ui && npm run build --prefix ui
+
+      - name: Install the desktop shell's dependencies
+        run: npm ci
+        working-directory: desktop/electron
+
+      # The signing identity has to be in a keychain before electron-builder
+      # looks for it. Without these secrets the build still runs and produces an
+      # unsigned application, which is useful for a dry run and useless to ship.
+      - name: Import the Developer ID certificate
+        if: matrix.os == 'macos-latest' && env.MAC_CERT != ''
+        env:
+          MAC_CERT: ${{ secrets.MAC_CERT_P12 }}
+        run: |
+          echo "$MAC_CERT" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "$RUNNER_TEMP" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$RUNNER_TEMP" build.keychain
+          security import /tmp/cert.p12 -k build.keychain \
+            -P "${{ secrets.MAC_CERT_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$RUNNER_TEMP" build.keychain
+          rm -f /tmp/cert.p12
+
+      - name: Write the notarization key
+        if: matrix.os == 'macos-latest' && env.KEY != ''
+        env:
+          KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$KEY" | base64 --decode > ~/private_keys/AuthKey.p8
+          chmod 600 ~/private_keys/AuthKey.p8
+
+      - name: Build
+        working-directory: desktop/electron
+        env:
+          APPLE_API_KEY: ${{ matrix.os == 'macos-latest' && format('{0}/private_keys/AuthKey.p8', env.HOME) || '' }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # electron-builder uploads to the release itself when this is set.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # `never` on a dry run: signing and notarization are the parts worth
+        # rehearsing, and a rehearsal that creates a draft release in the
+        # repository is not a rehearsal. The artifacts are uploaded below either
+        # way, so a dry run still hands back something to install and try.
+        run: ${{ matrix.build }} -- --publish ${{ inputs.publish && 'always' || 'never' }}
+
+      # electron-builder notarizes the .app *before* packaging it, so Apple has
+      # no ticket for the disk image and Gatekeeper has to phone home when
+      # somebody opens the download offline. Submitting the DMG on its own is
+      # the missing step. See docs/DISTRIBUTION.md.
+      - name: Notarize and staple the DMG itself
+        if: matrix.os == 'macos-latest' && env.KEY_ID != ''
+        working-directory: desktop/electron
+        env:
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          for dmg in dist/*.dmg; do
+            xcrun notarytool submit "$dmg" \
+              --key ~/private_keys/AuthKey.p8 \
+              --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
+              --issuer "${{ secrets.APPLE_API_ISSUER }}" --wait
+            xcrun stapler staple "$dmg"
+          done
+
+      - name: Check the artifact is actually shippable
+        if: matrix.os == 'macos-latest'
+        run: ./scripts/verify-mac-build.sh "desktop/electron/dist/mac-arm64/SSH Manager.app"
+
+      - name: Keep the build even when a later step fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/electron/dist/*.dmg
+            desktop/electron/dist/*.zip
+            desktop/electron/dist/*.exe
+            desktop/electron/dist/*.yml
+          if-no-files-found: warn
