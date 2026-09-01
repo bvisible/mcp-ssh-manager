@@ -32,7 +32,7 @@ optional and never required for the engine to run.
 | **Server health** | **done** — on-demand probes, never in the background |
 | **Options** (groups, host keys, tunnels) | **done** |
 | **Skills** (`skills/`) | **done** — three, shipped with the package |
-| **Interactive terminal** | **done** — a real shell in the browser, no native module |
+| **Interactive terminal** | **done** — a real shell in the browser, no native module in the engine; the desktop build adds one on *this* machine |
 
 ## Done: the vault
 
@@ -262,8 +262,15 @@ recording rather than quietly deleting.
 itself: `client.shell({ term: 'xterm-256color', cols, rows })` asks the far side
 for a terminal, which is what makes colours, `top`, `vim`, Ctrl-C and resizing
 work. Nothing is compiled, nothing is installed. The native module people
-associate with the word — `node-pty` — is for spawning a *local* shell, which
-this project never does.
+associate with the word — `node-pty` — is for spawning a *local* shell.
+
+**Which the desktop application now does**, and that is where node-pty lives:
+in `desktop/electron`, never in the engine. It ships N-API prebuilds, so even
+there nothing is compiled — Electron loads them as they are. The engine's
+dependency list is still what it was, and an npm install still needs no
+compiler; it simply has no local shell, and the interface asks before offering
+one. The boundary is a function, `setLocalShellProvider`, which is also how it
+is tested without the module.
 
 **xterm.js was a real cost**, and it is the one we paid: 477 KB, vendored under
 `vendor/xterm/` with its MIT licence, loaded only by the control plane. The

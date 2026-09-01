@@ -5,9 +5,14 @@
 // both ways, and a resize reaches the far side. A mock would prove only that the
 // code calls the functions it calls.
 //
-// The point worth stating: this needs **no native module**. ssh2 allocates the
-// remote pseudo-terminal itself (`client.shell()`), so there is no node-pty here
-// and nothing to compile at install time.
+// The point worth stating: the *remote* shell needs **no native module**. ssh2
+// allocates the far pseudo-terminal itself (`client.shell()`), so there is no
+// node-pty in the engine and nothing to compile at install time.
+//
+// A shell on *this* machine does need one, which is why the control plane does
+// not open it — a host process hands one down through `setLocalShellProvider`.
+// That contract is a function, so it is tested here with a stand-in and this
+// file still needs nothing compiled.
 import assert from 'assert';
 import fs from 'fs';
 import os from 'os';

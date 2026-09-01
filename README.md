@@ -209,6 +209,12 @@ Pick a machine, get a shell — the same one an agent gets, with your keyboard o
 it. Useful for the ordinary reasons, and for the one people ask about most:
 running an agent *on* the server rather than pointing one at it.
 
+**Including this machine.** The desktop application opens a shell on your own
+computer too, with your login shell and everything you have configured in it, so
+you are not switching to a different window to run the local half of the same
+job. Open as many as you like, on any mix of machines: each is a tab across the
+top and an entry in the rail, and switching away leaves it running.
+
 Beside it, the commands you would rather not retype, saved per server or for all
 of them, and picked from a list inside any shell.
 
