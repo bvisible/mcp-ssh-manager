@@ -38,6 +38,14 @@ interface WorkspaceState {
   pendingCount: number;
 
   setView: (view: ViewId) => void;
+
+  /**
+   * A host somebody asked to turn into a server, from somewhere that is not the
+   * Servers screen — Known hosts, today. Read and cleared by ServersPage, which
+   * opens its form with these fields already filled.
+   */
+  serverDraft: { host: string; port?: number } | null;
+  setServerDraft: (draft: { host: string; port?: number } | null) => void;
   addTab: (tab: Omit<WorkspaceTab, 'closable'> & { closable?: boolean }) => void;
   activateTab: (id: string) => void;
   removeTab: (id: string) => void;
@@ -51,7 +59,11 @@ const STORAGE_KEY = 'ssh-manager.sidebar-expanded';
 /** Reading storage can throw outright in a locked-down context. */
 function readExpanded(): boolean {
   try {
-    return localStorage.getItem(STORAGE_KEY) !== 'false';
+    // Collapsed until somebody opens it. The rail's icons carry labels on
+    // hover and the screens are what people came for; starting 192px narrower
+    // gives that space to the content instead. A choice, once made, is
+    // remembered.
+    return localStorage.getItem(STORAGE_KEY) === 'true';
   } catch {
     return true;
   }
@@ -65,6 +77,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   pendingCount: 0,
 
   setView: view => set({ view, activeTabId: null }),
+
+  serverDraft: null,
+  setServerDraft: serverDraft => set({ serverDraft }),
 
   addTab: tab => {
     const existing = get().tabs.find(t => t.id === tab.id);

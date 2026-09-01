@@ -16,6 +16,8 @@ import { ChevronDown, ChevronRight, Radio } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { state, type LiveStream } from '@/lib/api';
 import { TerminalOutput } from '@/components/terminal/TerminalOutput';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { EmptyState } from '@/components/layout/EmptyState';
 
 export function LivePage() {
   const [streams, setStreams] = useState<LiveStream[]>([]);
@@ -45,27 +47,15 @@ export function LivePage() {
       return next;
     });
 
-  if (streams.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
-          <Radio className="h-7 w-7 text-accent" />
-        </div>
-        <p className="text-sm font-medium">No command is running</p>
-        <p className="max-w-sm text-xs text-muted-foreground">
-          When an agent runs something on one of your servers, it appears here as it happens —
-          output included.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-2 border-b border-border px-6 py-3">
-        <h1 className="text-sm font-medium">Live</h1>
+      <PageHeader
+        title="Live"
+        count={streams.length}
+        hint="What your agents are running, as it happens."
+      >
         {running.length > 0 && (
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
@@ -73,8 +63,15 @@ export function LivePage() {
             {running.length} running
           </span>
         )}
-      </header>
+      </PageHeader>
 
+      {streams.length === 0 ? (
+        <EmptyState
+          icon={Radio}
+          title="No command is running"
+          hint="When an agent runs something on one of your servers it appears here as it happens, output included. Nothing is written to disk."
+        />
+      ) : (
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-6">
         {[...running, ...finished].map(stream => {
           const open = expanded.has(stream.id);
@@ -112,6 +109,7 @@ export function LivePage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

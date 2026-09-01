@@ -11,6 +11,8 @@ import { AlertTriangle, Check, Clock, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { state, QUEUE_EVENTS, type PendingRequest } from '@/lib/api';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { EmptyState } from '@/components/layout/EmptyState';
 
 /** Seconds up to a minute, then minutes — nobody needs "waiting 143 s". */
 function formatWait(ms: number): string {
@@ -44,29 +46,24 @@ export function WaitingPage() {
     }
   };
 
-  if (pending.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
-          <Clock className="h-7 w-7 text-accent" />
-        </div>
-        <p className="text-sm font-medium">Nothing is waiting</p>
-        <p className="max-w-sm text-xs text-muted-foreground">
-          Servers set to <code className="font-mono">APPROVAL=destructive</code> or{' '}
-          <code className="font-mono">=always</code> pause here before acting.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-border px-6 py-3">
-        <h1 className="text-sm font-medium">
-          Waiting <span className="ml-1 text-muted-foreground">({pending.length})</span>
-        </h1>
-      </header>
+      {/* The header stays even with nothing in the queue. Returning only the
+          empty state, as this used to, made the screen look like a different
+          application from the one next to it in the rail. */}
+      <PageHeader
+        title="Waiting"
+        count={pending.length}
+        hint="Commands an agent has paused on, until you decide."
+      />
 
+      {pending.length === 0 ? (
+        <EmptyState
+          icon={Clock}
+          title="Nothing is waiting"
+          hint="Servers you have set to pause — Approval set to destructive or always, on the server itself — stop here before acting."
+        />
+      ) : (
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
         {pending.map(request => (
           <article key={request.id} className="rounded-lg border border-border bg-card shadow-card">
@@ -118,6 +115,7 @@ export function WaitingPage() {
           </article>
         ))}
       </div>
+      )}
     </div>
   );
 }

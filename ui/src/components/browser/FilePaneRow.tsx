@@ -93,7 +93,7 @@ export const FilePaneRow = memo(function FilePaneRow({
       onDragLeave={onDragLeave}
       onDrop={(e) => (file.isDirectory ? onDrop(e, file.path) : undefined)}
     >
-      <div className="flex flex-1 items-center gap-1.5 px-2 py-1 min-w-0">
+      <div className="flex flex-1 items-center gap-1.5 px-3 py-1 min-w-0">
         {getFileIcon(file)}
         <span className="truncate">{file.name}</span>
         {file.isSymlink && (
@@ -102,10 +102,10 @@ export const FilePaneRow = memo(function FilePaneRow({
           </span>
         )}
       </div>
-      <div className="w-20 px-2 py-1 text-right text-muted-foreground tabular-nums">
+      <div className="w-20 px-3 py-1 text-right text-muted-foreground tabular-nums">
         {file.isDirectory ? '--' : formatFileSize(file.size)}
       </div>
-      <div className="w-36 px-2 py-1 text-muted-foreground">{formatDate(file.modifyTime)}</div>
+      <div className="w-36 px-3 py-1 text-muted-foreground">{formatDate(file.modifyTime)}</div>
     </div>
   )
 })

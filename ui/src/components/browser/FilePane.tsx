@@ -338,7 +338,7 @@ export const FilePane = memo(function FilePane({
       onDrop={(e) => handleDrop(e)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-2 py-1">
+      <div className="flex items-center justify-between border-b border-border px-3 py-1">
         <span className="text-xs font-medium text-muted-foreground">{title}</span>
         <div className="flex items-center gap-0.5">
           <Button
@@ -373,7 +373,7 @@ export const FilePane = memo(function FilePane({
       </div>
 
       {/* Navigation bar */}
-      <div className="flex items-center gap-0.5 border-b border-border px-2 py-1">
+      <div className="flex items-center gap-0.5 border-b border-border px-3 py-1">
         <Button variant="ghost" size="icon-sm" onClick={goUp} title={t('files.goUp')}>
           <ArrowUp className="h-3.5 w-3.5" />
         </Button>
@@ -469,7 +469,7 @@ export const FilePane = memo(function FilePane({
           {/* Column headers */}
           <div className="sticky top-0 z-10 flex items-center border-b border-border bg-muted text-[10px] text-muted-foreground font-medium">
             <button
-              className="flex-1 px-2 py-1 text-left hover:text-foreground transition-colors"
+              className="flex-1 px-3 py-1 text-left hover:text-foreground transition-colors"
               onClick={() => handleSort('name')}
             >
               {t('files.columnName')}{' '}
@@ -478,7 +478,7 @@ export const FilePane = memo(function FilePane({
               )}
             </button>
             <button
-              className="w-20 px-2 py-1 text-right hover:text-foreground transition-colors"
+              className="w-20 px-3 py-1 text-right hover:text-foreground transition-colors"
               onClick={() => handleSort('size')}
             >
               {t('files.columnSize')}{' '}
@@ -487,7 +487,7 @@ export const FilePane = memo(function FilePane({
               )}
             </button>
             <button
-              className="w-36 px-2 py-1 text-left hover:text-foreground transition-colors"
+              className="w-36 px-3 py-1 text-left hover:text-foreground transition-colors"
               onClick={() => handleSort('modified')}
             >
               {t('files.columnModified')}{' '}

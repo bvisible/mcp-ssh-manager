@@ -11,7 +11,7 @@
  * profile dot they carried.
  */
 import { useState, useRef, useEffect } from 'react'
-import { Server, Clock, HeartPulse, Radio, Activity, Settings, Menu, FolderOpen, X, TerminalSquare } from 'lucide-react'
+import { Server, Clock, HeartPulse, Radio, Activity, Settings, PanelLeftClose, PanelLeftOpen, FolderOpen, X, TerminalSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useWorkspace, type WorkspaceTab, type ViewId } from '@/stores/workspace'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -31,11 +31,6 @@ function getInitials(name: string): string {
   return name.slice(0, 2).charAt(0).toUpperCase() + name.slice(1, 2).toLowerCase()
 }
 
-/**
- * Which shell the page is in. The desktop app appends this; a browser tab does
- * not, and gets the plain layout.
- */
-const shell = new URLSearchParams(window.location.search).get('shell');
 
 export function Sidebar() {
   const {
@@ -58,32 +53,20 @@ export function Sidebar() {
         sidebarExpanded ? 'w-48' : 'w-12'
       )}
     >
-      {/* Toggle button */}
-      {/* The desktop app hides the title bar and draws the window buttons over
-          the content, so the rail has to start below them. A browser tab has
-          nothing to avoid, which is why this is conditional rather than a
-          constant top margin. */}
-      {shell === 'macos' && <div className="h-7 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />}
-
+      {/* A panel icon, which is what this button does. It used to be a cross,
+          and a cross means close — people read it as "close the application"
+          or "close the panel for good", not "make the rail narrower". The two
+          states are the same glyph mirrored, so the direction it will move in
+          is visible before you press it. */}
       <button
         onClick={toggleExpanded}
         aria-label={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
-        className="no-drag mt-2 mb-3 ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-accent transition-colors"
+        title={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
+        className="no-drag mt-2 mb-3 ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        <Menu
-          className={cn(
-            'h-4 w-4 text-muted-foreground transition-all duration-200',
-            sidebarExpanded && 'rotate-45 scale-0 opacity-0 absolute'
-          )}
-        />
-        <X
-          className={cn(
-            'h-4 w-4 text-muted-foreground transition-all duration-200',
-            sidebarExpanded
-              ? 'rotate-0 scale-100 opacity-100'
-              : '-rotate-45 scale-0 opacity-0 absolute'
-          )}
-        />
+        {sidebarExpanded
+          ? <PanelLeftClose className="h-4 w-4" />
+          : <PanelLeftOpen className="h-4 w-4" />}
       </button>
 
       {/* Fixed navigation */}
@@ -155,6 +138,11 @@ function SidebarItem({
 }) {
   const button = (
     <button
+      // Collapsed — which is now the default — these are icon-only buttons.
+      // Without a name they are invisible to a screen reader and unreachable
+      // by anything that looks elements up by their label.
+      aria-label={label}
+      title={label}
       onClick={onClick}
       className={cn(
         'no-drag relative flex h-9 items-center gap-2.5 rounded-lg transition-colors w-full pl-[11px]',
@@ -251,6 +239,10 @@ function SessionItem({
 
   const button = (
     <button
+      // Same reason as the fixed rail items: collapsed, this is an icon and a
+      // pair of initials, with no name unless one is given.
+      aria-label={session.title}
+      title={session.title}
       onClick={onActivate}
       className={cn(
         'no-drag group relative flex h-9 items-center gap-2 rounded-lg transition-colors w-full pl-[11px]',

@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { state, history as historyApi, type TimelineEntry, type CommandLogEntry } from '@/lib/api';
 import { TerminalOutput } from '@/components/terminal/TerminalOutput';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { EmptyState } from '@/components/layout/EmptyState';
 
 type Tab = 'commands' | 'decisions';
 
@@ -47,13 +49,13 @@ export function ActivityPage() {
   }, []);
 
   const header = (
-    <header className="flex items-center gap-1 border-b border-border px-6 py-3">
-      <h1 className="mr-3 text-sm font-medium">Activity</h1>
+    <PageHeader title="Activity" hint="What your agents ran, and what you decided.">
       {([['commands', 'Commands', commands.length], ['decisions', 'Decisions', timeline.length]] as const)
-        .map(([id, label, count]) => (
+        .map(([id, label, count], at) => (
           <button
             key={id}
             onClick={() => setTab(id)}
+            style={at > 0 ? { marginLeft: '0.25rem' } : undefined}
             className={cn(
               'rounded-md px-2 py-1 text-xs transition-colors',
               tab === id ? 'bg-accent text-primary' : 'text-muted-foreground hover:text-foreground'
@@ -75,7 +77,7 @@ export function ActivityPage() {
           clear
         </button>
       )}
-    </header>
+    </PageHeader>
   );
 
   if (tab === 'commands') {
@@ -83,17 +85,12 @@ export function ActivityPage() {
       <div className="flex h-full min-h-0 flex-col">
         {header}
         {commands.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
-              <Terminal className="h-7 w-7 text-accent" />
-            </div>
-            <p className="text-sm font-medium">No command recorded yet</p>
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Everything your agents run is written down here, on this machine — nothing to configure
-              on the servers.
-              {!recordsOutput && ' Output is not kept; set SSH_MANAGER_LOG_OUTPUT=1 if you want it.'}
-            </p>
-          </div>
+          <EmptyState
+            icon={Terminal}
+            title="No command recorded yet"
+            hint={'Everything your agents run is written down here, on this machine — nothing to configure on the servers.'
+              + (recordsOutput ? '' : ' Output is not kept; set SSH_MANAGER_LOG_OUTPUT=1 if you want it.')}
+          />
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ol>
@@ -149,15 +146,11 @@ export function ActivityPage() {
       <div className="flex h-full min-h-0 flex-col">
         {header}
         {(
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
-          <Activity className="h-7 w-7 text-accent" />
-        </div>
-        <p className="text-sm font-medium">Nothing recorded yet</p>
-        <p className="max-w-sm text-xs text-muted-foreground">
-          Every approval you granted or refused appears here. What agents ran is under Commands.
-        </p>
-      </div>
+      <EmptyState
+        icon={Activity}
+        title="Nothing recorded yet"
+        hint="Every approval you granted or refused appears here. What agents ran is under Commands."
+      />
     )}
       </div>
     );

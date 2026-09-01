@@ -12,20 +12,31 @@ import { ServerDialog } from '@/components/servers/ServerDialog';
 import { MigrationBanner } from '@/components/servers/MigrationBanner';
 import { useServersStore } from '@/stores/servers.store';
 import type { ServerConfig } from '@/lib/api';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { useWorkspace } from '@/stores/workspace';
 
 export function ServersPage() {
-  const { load, remove, error, searchQuery, setSearchQuery, viewMode, setViewMode, editMode, setEditMode } =
+  const { servers, load, remove, error, searchQuery, setSearchQuery, viewMode, setViewMode, editMode, setEditMode } =
     useServersStore();
   const [editing, setEditing] = useState<ServerConfig | null>(null);
   const [adding, setAdding] = useState(false);
+  const serverDraft = useWorkspace(state => state.serverDraft);
+  const setServerDraft = useWorkspace(state => state.setServerDraft);
 
   useEffect(() => { void load(); }, [load]);
 
+  // Somebody pressed "Add as a server" on a known host. Open the form with what
+  // that screen knew, and clear the draft so returning here later does not
+  // reopen it.
+  useEffect(() => {
+    if (!serverDraft) return;
+    setAdding(true);
+    return () => setServerDraft(null);
+  }, [serverDraft, setServerDraft]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-2 border-b border-border px-6 py-3">
-        <h1 className="mr-2 text-sm font-medium">Servers</h1>
-
+      <PageHeader title="Servers" count={servers.length}>
         <div className="relative max-w-xs flex-1">
           <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -58,7 +69,7 @@ export function ServersPage() {
             Add a server
           </Button>
         </div>
-      </header>
+      </PageHeader>
 
       {error && (
         <p className="border-b border-destructive/30 bg-destructive-light px-6 py-2 text-sm">{error}</p>
@@ -76,8 +87,9 @@ export function ServersPage() {
       {(adding || editing) && (
         <ServerDialog
           server={editing}
-          onClose={() => { setAdding(false); setEditing(null); }}
-          onSaved={() => { setAdding(false); setEditing(null); void load(); }}
+          prefill={editing ? undefined : serverDraft ?? undefined}
+          onClose={() => { setAdding(false); setEditing(null); setServerDraft(null); }}
+          onSaved={() => { setAdding(false); setEditing(null); setServerDraft(null); void load(); }}
         />
       )}
     </div>

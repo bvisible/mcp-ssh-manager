@@ -52,10 +52,12 @@ const HEIGHT = 880;
  */
 // The count badge is inside the button, so its textContent is 'Waiting1' the
 // moment anything is pending — an exact match silently re-shot the server list.
+// Matched on the accessible name, not the visible text: the rail is collapsed
+// by default now, so its items show an icon and nothing else. The old text
+// match found nothing and the capture died on the second view.
 const rail = label =>
-  '(() => { const b = [...document.querySelectorAll(\'button\')]' +
-  `.find(b => b.textContent.trim().replace(/\\d+$/, '') === ${JSON.stringify(label)});` +
-  `if (!b) throw new Error('no rail item ' + ${JSON.stringify(label)}); b.click(); })()`;
+  `(() => { const b = document.querySelector('button[aria-label=${JSON.stringify(label)}]');`
+  + ` if (!b) throw new Error('no rail item ' + ${JSON.stringify(label)}); b.click(); })()`;
 
 const VIEWS = [
   { name: 'v4-servers', reach: 'null', settle: 1200 },

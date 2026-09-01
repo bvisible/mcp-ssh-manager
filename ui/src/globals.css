@@ -59,8 +59,8 @@
   --color-popover-foreground: oklch(0.14 0 0);
 
   /* Primary = main action color (coral orange #ff7f50) */
-  --color-primary: oklch(0.55 0.19 55);
-  --color-primary-foreground: oklch(0.99 0 0);
+  --color-primary: oklch(0.767 0.16 70);
+  --color-primary-foreground: oklch(0.24 0.03 70);
 
   /* Secondary = subtle background */
   --color-secondary: oklch(0.97 0 0);
@@ -71,7 +71,7 @@
   --color-muted-foreground: oklch(0.45 0 0);
 
   /* Accent = subtle interactive hover (tinted) */
-  --color-accent: oklch(0.92 0.04 55);
+  --color-accent: oklch(0.92 0.04 70);
   --color-accent-foreground: oklch(0.14 0 0);
 
   /* Destructive = danger/error actions */
@@ -82,17 +82,17 @@
   --color-border: oklch(0.9 0 0);
   --color-border-subtle: oklch(0.93 0 0);
   --color-input: oklch(0.96 0 0);
-  --color-ring: oklch(0.55 0.19 55);
+  --color-ring: oklch(0.767 0.16 70);
 
   /* Sidebar */
-  --color-sidebar: oklch(0.975 0.004 55);
+  --color-sidebar: oklch(0.975 0.004 70);
   --color-sidebar-foreground: oklch(0.14 0 0);
   --color-sidebar-border: oklch(0.9 0 0);
-  --color-sidebar-ring: oklch(0.55 0.19 55);
-  --color-sidebar-accent: oklch(0.92 0.04 55);
+  --color-sidebar-ring: oklch(0.767 0.16 70);
+  --color-sidebar-accent: oklch(0.92 0.04 70);
   --color-sidebar-accent-foreground: oklch(0.14 0 0);
-  --color-sidebar-primary: oklch(0.55 0.19 55);
-  --color-sidebar-primary-foreground: oklch(0.99 0 0);
+  --color-sidebar-primary: oklch(0.767 0.16 70);
+  --color-sidebar-primary-foreground: oklch(0.24 0.03 70);
 
   /* Custom TransHub tokens */
   /* Terminal output follows the theme like everything else. A dark panel in a
@@ -104,8 +104,8 @@
   --color-success-light: oklch(0.92 0.05 145);
   --color-warning: oklch(0.65 0.17 70);
   --color-warning-light: oklch(0.92 0.05 70);
-  --color-pro: oklch(0.55 0.19 55);
-  --color-pro-light: oklch(0.92 0.04 55);
+  --color-pro: oklch(0.767 0.16 70);
+  --color-pro-light: oklch(0.92 0.04 70);
 
   /* Shadows */
   --shadow-card: 0 1px 3px oklch(0 0 0 / 0.04), 0 0 0 1px oklch(0 0 0 / 0.05);
@@ -123,14 +123,14 @@
   --color-background: oklch(0.13 0 0);
   --color-foreground: oklch(0.93 0 0);
 
-  --color-card: oklch(0.19 0.003 55);
+  --color-card: oklch(0.19 0.003 70);
   --color-card-foreground: oklch(0.93 0 0);
-  --color-card-hover: oklch(0.22 0.003 55);
+  --color-card-hover: oklch(0.22 0.003 70);
 
-  --color-popover: oklch(0.19 0.003 55);
+  --color-popover: oklch(0.19 0.003 70);
   --color-popover-foreground: oklch(0.93 0 0);
 
-  --color-primary: oklch(0.75 0.17 55);
+  --color-primary: oklch(0.767 0.16 70);
 
   --color-secondary: oklch(0.17 0 0);
   --color-secondary-foreground: oklch(0.93 0 0);
@@ -138,7 +138,7 @@
   --color-muted: oklch(0.17 0 0);
   --color-muted-foreground: oklch(0.65 0 0);
 
-  --color-accent: oklch(0.25 0.06 55);
+  --color-accent: oklch(0.25 0.06 70);
   --color-accent-foreground: oklch(0.93 0 0);
 
   --color-destructive-foreground: oklch(0.98 0 0);
@@ -147,16 +147,16 @@
   --color-border: oklch(0.26 0 0);
   --color-border-subtle: oklch(0.22 0 0);
   --color-input: oklch(0.2 0 0);
-  --color-ring: oklch(0.75 0.17 55);
+  --color-ring: oklch(0.767 0.16 70);
 
-  --color-sidebar: oklch(0.15 0.005 55);
+  --color-sidebar: oklch(0.15 0.005 70);
   --color-sidebar-foreground: oklch(0.93 0 0);
   --color-sidebar-border: oklch(0.26 0 0);
-  --color-sidebar-ring: oklch(0.75 0.17 55);
-  --color-sidebar-accent: oklch(0.25 0.06 55);
+  --color-sidebar-ring: oklch(0.767 0.16 70);
+  --color-sidebar-accent: oklch(0.25 0.06 70);
   --color-sidebar-accent-foreground: oklch(0.93 0 0);
-  --color-sidebar-primary: oklch(0.75 0.17 55);
-  --color-sidebar-primary-foreground: oklch(0.99 0 0);
+  --color-sidebar-primary: oklch(0.767 0.16 70);
+  --color-sidebar-primary-foreground: oklch(0.24 0.03 70);
 
   --color-success-light: oklch(0.25 0.06 145);
   --color-warning-light: oklch(0.25 0.06 70);
@@ -321,7 +321,7 @@ body {
     oklch(0.75 0.17 55 / 0.3) 78%,
     oklch(0.65 0.19 300) 85%,
     oklch(0.65 0.17 210) 90%,
-    oklch(0.75 0.17 55) 93%,
+    oklch(0.75 0.17 70) 93%,
     transparent 100%
   );
   -webkit-mask:
@@ -403,7 +403,7 @@ body {
 
   /* Accent — coral transhub */
   --coral: oklch(0.6 0.17 45);
-  --coral-soft: oklch(0.93 0.04 55);
+  --coral-soft: oklch(0.93 0.04 70);
 
   /* Titlebar — warm gray, markedly darker than --cream so the tab strip pops. */
   --titlebar: oklch(0.93 0.005 70);
@@ -568,7 +568,7 @@ body {
   --color-sidebar-accent: var(--coral-soft);
   --color-sidebar-accent-foreground: var(--coral);
   --color-sidebar-primary: var(--coral);
-  --color-sidebar-primary-foreground: oklch(0.99 0 0);
+  --color-sidebar-primary-foreground: oklch(0.24 0.03 70);
 
   background: var(--cream);
   color: var(--ink-1);

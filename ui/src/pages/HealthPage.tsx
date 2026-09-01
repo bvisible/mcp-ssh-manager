@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { health, thresholds as thresholdsApi, type HealthResult, type Thresholds } from '@/lib/api';
 import { ensurePermission } from '@/lib/notify';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { EmptyState } from '@/components/layout/EmptyState';
 
 /**
  * Amber at the threshold, red ten points past it. The threshold is the
@@ -82,26 +84,27 @@ export function HealthPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-3 border-b border-border px-6 py-3">
-        <h1 className="text-sm font-medium">Health</h1>
-        <p className="text-xs text-muted-foreground">Probed on demand — nothing runs in the background.</p>
-        <Button size="sm" className="ml-auto" disabled={probing} onClick={() => void probe()}>
-          {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Check every server
-        </Button>
-      </header>
+      <PageHeader
+        title="Health"
+        count={results?.length}
+        hint="Probed on demand — nothing runs in the background."
+        actions={
+          <Button size="sm" disabled={probing} onClick={() => void probe()}>
+            {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Check every server
+          </Button>
+        }
+      />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         {results === null ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
-              <HeartPulse className="h-7 w-7 text-accent" />
-            </div>
-            <p className="text-sm font-medium">Nothing probed yet</p>
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Each check opens one SSH connection and closes it. Press the button when you want to know.
-            </p>
-          </div>
+          // Centred like every other empty screen. This one used to sit at the
+          // top under a `py-20`, which read as a different page.
+          <EmptyState
+            icon={HeartPulse}
+            title="Nothing probed yet"
+            hint="Each check opens one SSH connection and closes it. Press the button when you want to know."
+          />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
             {results.map(result => (

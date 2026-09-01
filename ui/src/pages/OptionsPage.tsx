@@ -14,8 +14,10 @@ import { Input } from '@/components/ui/input';
 import { state, hostKeys, groups as groupsApi, thresholds as thresholdsApi, type Options, type Group, type GroupRunEvent, type Thresholds } from '@/lib/api';
 import { GroupDialog } from '@/components/servers/GroupDialog';
 import { useServersStore } from '@/stores/servers.store';
+import { useWorkspace } from '@/stores/workspace';
 import { useTheme, type ThemeMode } from '@/stores/theme';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/layout/PageHeader';
 
 
 const THEMES: { id: ThemeMode; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -138,6 +140,9 @@ export function OptionsPage() {
   const [run, setRun] = useState<GroupRunEvent | null>(null);
   const [output, setOutput] = useState<GroupRunEvent[]>([]);
   const loadServers = useServersStore(s => s.load);
+  const servers = useServersStore(s => s.servers);
+  const setView = useWorkspace(s => s.setView);
+  const setServerDraft = useWorkspace(s => s.setServerDraft);
 
   const reload = () => state.options().then(setOptions).catch(() => {});
   useEffect(() => {
@@ -166,11 +171,14 @@ export function OptionsPage() {
     entry.host.toLowerCase().includes(filter.trim().toLowerCase())
   );
 
+  // Hosts that are already servers get no "add" button — the row would be an
+  // invitation to create a duplicate.
+  const configured = new Set(
+    servers.map(server => server.host?.toLowerCase()).filter(Boolean));
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-border px-6 py-3">
-        <h1 className="text-sm font-medium">Options</h1>
-      </header>
+      <PageHeader title="Options" hint="Settings for this machine only." />
 
       <div className="min-h-0 flex-1 space-y-8 overflow-y-auto p-6">
         <section>
@@ -345,6 +353,25 @@ export function OptionsPage() {
                         is why this reads the array rather than a single field. */}
                     {entry.keys.map(k => k.type).join(', ')}
                   </span>
+                  {/* A known host is a machine you have already connected to.
+                      Offering to configure it here saves retyping an address
+                      the application is looking at — and answers the obvious
+                      question this list otherwise raises, which is why these
+                      are not in Servers. */}
+                  {!configured.has(entry.host.toLowerCase()) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-xs opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={() => {
+                        setServerDraft({ host: entry.host, port: entry.port });
+                        setView('servers');
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add as a server
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"

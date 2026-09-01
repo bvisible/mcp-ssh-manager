@@ -24,14 +24,21 @@ const BLANK: ServerConfig = {
 
 export function ServerDialog({
   server,
+  prefill,
   onClose,
   onSaved,
 }: {
   server: ServerConfig | null;
+  /**
+   * Fields to start a *new* server with, when it is being created from
+   * somewhere that already knows something about it — a known host, today.
+   * Distinct from `server`, which means an existing one is being edited.
+   */
+  prefill?: Partial<ServerConfig>;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [draft, setDraft] = useState<ServerConfig>(server ?? BLANK);
+  const [draft, setDraft] = useState<ServerConfig>(server ?? { ...BLANK, ...prefill });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
