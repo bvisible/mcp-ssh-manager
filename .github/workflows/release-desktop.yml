@@ -53,11 +53,6 @@ jobs:
       NOTARY_KEY: ${{ secrets.APPLE_API_KEY }}
       NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       NOTARY_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      # An absolute path from a context that actually resolves. `env.HOME` is
-      # empty inside ${{ }} — it reads the workflow's env, not the runner's —
-      # so the key was written to ~/private_keys and looked for at
-      # /private_keys.
-      NOTARY_KEY_FILE: ${{ runner.temp }}/AuthKey.p8
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,11 +90,16 @@ jobs:
             -s -k "$RUNNER_TEMP" build.keychain
           rm -f /tmp/cert.p12
 
+      # $RUNNER_TEMP, the plain environment variable. `env.HOME` inside ${{ }}
+      # is empty — that context reads the workflow's env, not the runner's — and
+      # it produced the absolute path /private_keys/AuthKey.p8 that notarytool
+      # could not open. `runner.temp` is the right value but does not exist yet
+      # in a job-level env block; GitHub refuses to parse the file.
       - name: Write the notarization key
         if: matrix.os == 'macos-latest' && env.NOTARY_KEY != ''
         run: |
-          echo "$NOTARY_KEY" | base64 --decode > "$NOTARY_KEY_FILE"
-          chmod 600 "$NOTARY_KEY_FILE"
+          echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          chmod 600 "$RUNNER_TEMP/AuthKey.p8"
 
       - name: Build
         working-directory: desktop/electron
@@ -125,7 +125,7 @@ jobs:
         run: |
           for dmg in dist/*.dmg; do
             xcrun notarytool submit "$dmg" \
-              --key "$NOTARY_KEY_FILE" \
+              --key "$RUNNER_TEMP/AuthKey.p8" \
               --key-id "$NOTARY_KEY_ID" \
               --issuer "$NOTARY_ISSUER" --wait
             xcrun stapler staple "$dmg"
