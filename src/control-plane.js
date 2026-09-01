@@ -447,6 +447,7 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/local/files') return this.#listLocal(url.searchParams, res);
     if (req.method === 'GET' && url.pathname === '/api/local/read') return this.#readLocal(url.searchParams, res);
     if (req.method === 'POST' && url.pathname === '/api/local/mkdir') return this.#localOp('mkdir', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/touch') return this.#localOp('touch', req, res);
     if (req.method === 'POST' && url.pathname === '/api/local/rename') return this.#localOp('rename', req, res);
     if (req.method === 'POST' && url.pathname === '/api/local/delete') return this.#localOp('delete', req, res);
     if (req.method === 'POST' && url.pathname === '/api/local/reveal') return this.#localOp('reveal', req, res);
@@ -1373,6 +1374,11 @@ export class ControlPlane {
     this.#readJsonBody(req, res, payload => {
       try {
         if (kind === 'mkdir') fs.mkdirSync(path.resolve(String(payload.path)), { recursive: true });
+        else if (kind === 'touch') {
+          // 'wx' fails when the file exists rather than truncating it: "New
+          // file" must never be a way to silently empty one.
+          fs.closeSync(fs.openSync(path.resolve(String(payload.path)), 'wx'));
+        }
         else if (kind === 'rename') fs.renameSync(path.resolve(String(payload.from)), path.resolve(String(payload.to)));
         else if (kind === 'delete') fs.rmSync(path.resolve(String(payload.path)), { recursive: Boolean(payload.isDirectory), force: false });
         else if (kind === 'reveal') {

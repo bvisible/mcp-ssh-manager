@@ -107,9 +107,17 @@ export function Sidebar() {
 
       {tabs.length === 0 && <div className="flex-1" />}
 
-      {/* Pinned to the bottom, where TransHub keeps its settings — the places
-          you configure once belong away from the places you work. */}
+      {/* Pinned to the bottom, where settings belong — the places you configure
+          once are not the places you work.
+          
+          With a rule above it. Measured at six window heights, with and without
+          open shells, this button is always rendered and always on screen — and
+          it was still being missed, because a lone unlabelled grey gear at the
+          far end of a 48px rail reads as decoration rather than a destination.
+          The rule says "this is a different kind of thing", which is the part
+          the eye was missing. */}
       <div className="mt-auto px-1 pb-2 pt-2">
+        <div className="mx-2 mb-2 border-t border-border" />
         <SidebarItem
           icon={Settings}
           label="Options"

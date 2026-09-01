@@ -228,6 +228,10 @@ export const files = {
   list: (server: string, path: string) =>
     get<{ path: string; entries: RemoteFileInfo[] }>('/api/files', { server, path }),
 
+  /** Create or overwrite a file. Used by "New file" in the context menu. */
+  write: (server: string, path: string, content: string) =>
+    post('/api/files/write', { content }, { server, path }),
+
   mkdir: (server: string, path: string) => post('/api/files/mkdir', { server, path }),
 
   rename: (server: string, from: string, to: string) => post('/api/files/rename', { server, from, to }),
@@ -266,6 +270,9 @@ export const local = {
   remove: (path: string, isDirectory: boolean) => post('/api/local/delete', { path, isDirectory }),
 
   /** Open the enclosing folder in Finder / Explorer / the desktop's file manager. */
+  /** Create an empty file. Fails rather than truncating an existing one. */
+  touch: (path: string) => post('/api/local/touch', { path }),
+
   reveal: (path: string) => post('/api/local/reveal', { path }),
 };
 

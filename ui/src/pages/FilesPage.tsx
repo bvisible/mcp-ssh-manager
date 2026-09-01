@@ -14,6 +14,7 @@ import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
 import { FilePane, type FileItem } from '@/components/browser/FilePane';
 import { files as remote, local, transfers, state, type TransferEvent } from '@/lib/api';
+import { useWorkspace } from '@/stores/workspace';
 
 type Side = 'local' | 'remote';
 
@@ -164,6 +165,14 @@ export function FilesPage({ server }: { server: string }) {
     }
   };
 
+  /** Join a directory and a name with the separator that side of the pair uses. */
+  const { tabs, addTab, activateTab } = useWorkspace();
+
+  const joinPath = (dir: string, name: string) =>
+    dir.includes('\\') && !dir.startsWith('/')
+      ? `${dir.replace(/\\$/, '')}\\${name}`
+      : `${dir.replace(/\/$/, '')}/${name}`;
+
   const paneProps = (side: Side) => ({
     isLocal: side === 'local',
     files: panes[side].files,
@@ -183,6 +192,44 @@ export function FilesPage({ server }: { server: string }) {
     // the direction is the opposite of the pane receiving the drop.
     onDropFiles: (items: FileItem[]) => send(side === 'local' ? 'remote' : 'local')(items),
     onCopyPath: () => void navigator.clipboard?.writeText(pathsRef.current[side]),
+
+    // Nine of the context menu's fifteen actions had no handler. Six of those
+    // still rendered — a menu item that silently does nothing is worse than one
+    // that is not there — so the ones that can be backed are wired here, and
+    // FilePane hides the rest.
+    onCreateFile: () => {
+      const name = window.prompt('Name for the new file');
+      if (!name?.trim()) return;
+      const target = joinPath(pathsRef.current[side], name.trim());
+      void (async () => {
+        try {
+          if (side === 'local') await local.touch(target);
+          else await remote.write(server, target, '');
+          await load(side, pathsRef.current[side]);
+        } catch (e) { setError((e as Error).message); }
+      })();
+    },
+
+    // Only the local pane: there is no Finder on the other end of an SSH
+    // connection, and FilePane already hides it when the handler is absent.
+    onShowInFinder: side === 'local'
+      ? (target: string) => void local.reveal(target).catch(
+          (e: Error) => setError(e.message))
+      : undefined,
+
+    // Only the remote pane, and it opens the shell this application already
+    // has rather than handing off to Terminal.app.
+    onOpenTerminal: side === 'remote'
+      ? () => {
+          const existing = tabs.find(
+            tab => tab.type === 'ssh-terminal' && tab.title === server);
+          if (existing) return activateTab(existing.id);
+          addTab({
+            id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            type: 'ssh-terminal', title: server, serverId: server,
+          });
+        }
+      : undefined,
   });
 
   return (
