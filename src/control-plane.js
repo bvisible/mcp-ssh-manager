@@ -1366,7 +1366,7 @@ export class ControlPlane {
   /**
    * mkdir / rename / delete / reveal on this machine.
    *
-   * @param {'mkdir'|'rename'|'delete'|'reveal'} kind - Which operation
+   * @param {'mkdir'|'touch'|'rename'|'delete'|'reveal'} kind - Which operation
    * @param {import('http').IncomingMessage} req - Request
    * @param {import('http').ServerResponse} res - Response
    */
