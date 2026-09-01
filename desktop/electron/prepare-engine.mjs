@@ -45,7 +45,9 @@ fs.writeFileSync(path.join(out, 'package.json'), `${JSON.stringify(manifest, nul
 fs.copyFileSync(path.join(repo, 'package-lock.json'), path.join(out, 'package-lock.json'));
 
 console.log('Installing the engine’s production dependencies…');
-execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'], {
+// `npm` on Windows is `npm.cmd`, and execFileSync does not consult PATHEXT —
+// so this threw `spawnSync npm ENOENT` for anybody building there, CI included.
+execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'], {
   cwd: out,
   stdio: 'inherit',
 });
@@ -54,5 +56,12 @@ execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--igno
 // those bindings are accelerators, ssh2 falls back to pure JavaScript without
 // them, and building them here would produce a binary for this machine's
 // architecture inside an app that may be cross-built for another.
-const size = execFileSync('du', ['-sh', out]).toString().split('\t')[0];
-console.log(`Engine ready: ${size} in ${path.relative(repo, out)}`);
+// Counted here rather than shelled out to `du`, which does not exist on Windows
+// — the same class of bug as the `npm.cmd` line above, one line further down.
+const bytes = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce(
+  (total, e) => total + (e.isDirectory()
+    ? bytes(path.join(dir, e.name))
+    : fs.statSync(path.join(dir, e.name)).size),
+  0,
+);
+console.log(`Engine ready: ${Math.round(bytes(out) / 1e6)} MB in ${path.relative(repo, out)}`);
