@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 /** The screens that always exist, in the order they earn attention. */
 const FIXED_VIEWS: { id: ViewId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'servers', label: 'Servers', icon: Server },
+  { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
   { id: 'waiting', label: 'Waiting', icon: Clock },
   { id: 'health', label: 'Health', icon: HeartPulse },
   { id: 'live', label: 'Live', icon: Radio },

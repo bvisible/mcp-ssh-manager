@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { state, hostKeys, groups as groupsApi, thresholds as thresholdsApi, type Options, type Group, type GroupRunEvent, type Thresholds } from '@/lib/api';
 import { GroupDialog } from '@/components/servers/GroupDialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useServersStore } from '@/stores/servers.store';
 import { useWorkspace } from '@/stores/workspace';
 import { useTheme, type ThemeMode } from '@/stores/theme';
@@ -180,24 +181,36 @@ export function OptionsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Options" hint="Settings for this machine only." />
 
-      <div className="min-h-0 flex-1 space-y-8 overflow-y-auto p-6">
-        <section>
+      {/* Five settings screens' worth of controls used to be one column you
+          scrolled through, which made "where is the thing I came for" a reading
+          exercise. Tabs answer it before you scroll. */}
+      <Tabs defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
+        <TabsList className="mx-6 mt-4 w-fit shrink-0">
+          <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          <TabsTrigger value="alerts">Alerts</TabsTrigger>
+          <TabsTrigger value="groups">Groups</TabsTrigger>
+          <TabsTrigger value="tunnels">Tunnels</TabsTrigger>
+          <TabsTrigger value="hosts">Known hosts</TabsTrigger>
+        </TabsList>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <TabsContent value="appearance" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
             <Palette className="h-3.5 w-3.5" />
             Appearance
           </h2>
           <ThemePicker />
-        </section>
+        </TabsContent>
 
-        <section>
+        <TabsContent value="alerts" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
             <AlertTriangle className="h-3.5 w-3.5" />
             Alert thresholds
           </h2>
           <Thresholds />
-        </section>
+        </TabsContent>
 
-        <section>
+        <TabsContent value="groups" className="mt-0 space-y-4">
           <div className="mb-2 flex items-center gap-2">
             <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
               <Layers className="h-3.5 w-3.5" />
@@ -302,9 +315,9 @@ export function OptionsPage() {
               </div>
             ))}
           </div>
-        </section>
+        </TabsContent>
 
-        <section>
+        <TabsContent value="tunnels" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
             <Network className="h-3.5 w-3.5" />
             Tunnels
@@ -324,9 +337,9 @@ export function OptionsPage() {
               ))}
             </ul>
           )}
-        </section>
+        </TabsContent>
 
-        <section>
+        <TabsContent value="hosts" className="mt-0 space-y-4">
           <div className="mb-2 flex items-center gap-2">
             <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
               <KeyRound className="h-3.5 w-3.5" />
@@ -403,8 +416,9 @@ export function OptionsPage() {
               <p className="px-3 py-2 text-xs text-muted-foreground">No host matches.</p>
             )}
           </div>
-        </section>
-      </div>
+        </TabsContent>
+        </div>
+      </Tabs>
 
       {(creating || editing) && (
         <GroupDialog

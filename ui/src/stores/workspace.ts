@@ -14,7 +14,7 @@
  */
 import { create } from 'zustand';
 
-export type ViewId = 'servers' | 'waiting' | 'health' | 'live' | 'activity' | 'options';
+export type ViewId = 'servers' | 'terminal' | 'waiting' | 'health' | 'live' | 'activity' | 'options';
 
 /** The two kinds of session a server can have open. Named as TransHub names
  *  them, so its components keep working. */

@@ -9,6 +9,7 @@ import { HealthPage } from '@/pages/HealthPage';
 import { LivePage } from '@/pages/LivePage';
 import { ActivityPage } from '@/pages/ActivityPage';
 import { OptionsPage } from '@/pages/OptionsPage';
+import { TerminalPage } from '@/pages/TerminalPage';
 import { useWorkspace } from '@/stores/workspace';
 import { useServersStore } from '@/stores/servers.store';
 import { state, QUEUE_EVENTS } from '@/lib/api';
@@ -119,6 +120,7 @@ export function App() {
             {view === 'health' && <HealthPage />}
             {view === 'live' && <LivePage />}
             {view === 'activity' && <ActivityPage />}
+            {view === 'terminal' && <TerminalPage />}
             {view === 'options' && <OptionsPage />}
           </div>
         )}
