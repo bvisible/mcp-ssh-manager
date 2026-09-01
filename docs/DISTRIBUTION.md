@@ -70,13 +70,35 @@ export APPLE_TEAM_ID=BT249938WK
 npm run build:mac
 ```
 
-Either way the build stops skipping, uploads, waits for Apple, and staples the
-ticket. Expect a few minutes. Then confirm what a downloader will see:
+The build stops skipping, uploads, waits for Apple — a few minutes — and staples
+the ticket to the **app**.
+
+### The DMG needs submitting separately
+
+electron-builder notarizes the `.app` *before* packaging it into the disk image,
+so Apple has no ticket for the DMG and `stapler staple` on it fails with
+`Could not find base64 encoded ticket in response`. The app inside is notarized
+either way and Gatekeeper accepts it, but without a ticket on the DMG itself,
+opening the download offline makes Gatekeeper phone home.
 
 ```bash
-spctl -a -vvv -t exec "dist/mac-arm64/SSH Manager.app"   # want: accepted
-xcrun stapler validate "dist/SSH Manager-4.0.0-arm64.dmg"
+xcrun notarytool submit "dist/SSH Manager-4.0.0-arm64.dmg" \
+  --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
+xcrun stapler staple "dist/SSH Manager-4.0.0-arm64.dmg"
 ```
+
+Then confirm what a downloader will see — including the quarantine attribute a
+real download carries, which is the whole point and is absent on a local build:
+
+```bash
+cp "dist/SSH Manager-4.0.0-arm64.dmg" /tmp/dl.dmg
+xattr -w com.apple.quarantine "0083;00000000;Safari;" /tmp/dl.dmg
+hdiutil attach /tmp/dl.dmg -nobrowse -readonly
+spctl -a -vvv -t exec "/Volumes/SSH Manager 4.0.0-arm64/SSH Manager.app"
+# want: accepted / source=Notarized Developer ID
+```
+
+Or just run `./scripts/verify-mac-build.sh`, which checks both.
 
 Never commit the key or the password. They belong in the shell, or in GitHub
 Actions secrets.

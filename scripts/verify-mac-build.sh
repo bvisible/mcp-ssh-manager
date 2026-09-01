@@ -65,9 +65,22 @@ else
 fi
 
 if xcrun stapler validate "$APP" >/dev/null 2>&1; then
-  pass "the notarization ticket is stapled, so it opens offline too"
+  pass "the notarization ticket is stapled to the app"
 else
-  warn "no stapled ticket (expected while unnotarized)"
+  warn "no stapled ticket on the app (expected while unnotarized)"
+fi
+
+# And on the DMG, which is the file people actually download. electron-builder
+# notarizes the .app *before* packaging it, so Apple has no ticket for the disk
+# image and `stapler staple` on it fails with "could not find base64 encoded
+# ticket". The DMG has to be submitted on its own — see docs/DISTRIBUTION.md.
+DMG=$(ls -t "$(dirname "$APP")/../"*.dmg 2>/dev/null | head -1)
+if [ -n "$DMG" ]; then
+  if xcrun stapler validate "$DMG" >/dev/null 2>&1; then
+    pass "and to the DMG, so it opens offline too"
+  else
+    warn "the DMG has no stapled ticket — it works, but Gatekeeper phones home"
+  fi
 fi
 
 # --- it carries all of itself ------------------------------------------------
