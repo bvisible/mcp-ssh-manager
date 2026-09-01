@@ -199,6 +199,19 @@ Drag a file across and it moves directly between your machine and the server thr
 
 **Nothing is probed in the background.** Each check is an SSH handshake, and a dashboard that connects to every production box on a timer is worse than no dashboard. The button is the whole scheduling policy. Thresholds are yours to set, and crossing one is said in words rather than encoded in a colour.
 
+### A shell on any machine
+
+<p align="center">
+  <img src="docs/images/v4-terminal-app.png" alt="The Terminal screen: pick a machine to open a shell on, or manage the commands you keep retyping" width="900">
+</p>
+
+Pick a machine, get a shell — the same one an agent gets, with your keyboard on
+it. Useful for the ordinary reasons, and for the one people ask about most:
+running an agent *on* the server rather than pointing one at it.
+
+Beside it, the commands you would rather not retype, saved per server or for all
+of them, and picked from a list inside any shell.
+
 ### And the rest of it
 
 <p align="center">

@@ -53,11 +53,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  * holds are long by software-demo standards on purpose — a reader needs time to
  * read a command before watching somebody refuse it.
  */
+/**
+ * Click something by its accessible name first, then by its visible text.
+ *
+ * The rail is collapsed by default, so its items carry an aria-label and no
+ * text at all — matching on textContent found nothing and the recording died on
+ * the second scene.
+ */
 const click = text =>
-  '(() => { const b = [...document.querySelectorAll(\'button\')]' +
-  `.find(b => b.textContent.trim().replace(/\\d+$/, '') === ${JSON.stringify(text)}` +
-  ` || b.textContent.includes(${JSON.stringify(text)}));` +
-  ` if (!b) throw new Error('nothing to click: ' + ${JSON.stringify(text)}); b.click(); })()`;
+  `(() => { const b = document.querySelector('button[aria-label=${JSON.stringify(text)}]')`
+  + ` || [...document.querySelectorAll('button')].find(b => b.textContent.includes(${JSON.stringify(text)}));`
+  + ` if (!b) throw new Error('nothing to click: ' + ${JSON.stringify(text)}); b.click(); })()`;
 
 const SCENES = [
   { name: 'the servers you gave it', act: null, hold: 2600 },
@@ -67,6 +73,7 @@ const SCENES = [
   { name: 'open the output', act: click('tail -f'), hold: 3600 },
   { name: 'both filesystems', act: click('Health'), hold: 200 },
   { name: 'probe on demand', act: click('Check every server'), hold: 7000 },
+  { name: 'a shell on any machine', act: click('Terminal'), hold: 2400 },
   { name: 'back to the servers', act: click('Servers'), hold: 1800 },
 ];
 

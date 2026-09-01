@@ -61,6 +61,7 @@ const rail = label =>
 
 const VIEWS = [
   { name: 'v4-servers', reach: 'null', settle: 1200 },
+  { name: 'v4-terminal', reach: rail('Terminal'), settle: 1400 },
   { name: 'v4-waiting', reach: rail('Waiting'), settle: 1200 },
   // Health probes when asked, so the screenshot needs the button pressed as well
   // as the view opened — otherwise it is a picture of 'Nothing probed yet'.
