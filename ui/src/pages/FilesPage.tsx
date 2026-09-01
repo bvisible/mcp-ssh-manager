@@ -104,8 +104,18 @@ export function FilesPage({ server }: { server: string }) {
   const join = (dir: string, name: string) => (dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`);
 
   /** Send a selection to the other side, into whatever directory it is showing. */
-  const send = (from: Side) => (items: FileItem[]) => {
-    const targetDir = pathsRef.current[from === 'local' ? 'remote' : 'local'];
+  /**
+   * Move files from one pane to the other.
+   *
+   * `destination` is where the drop actually landed: dropping on a folder row
+   * targets that folder, and the row already passes its path all the way down
+   * to FilePane's handleDrop. This function used to ignore it and recompute the
+   * other pane's current directory, so a file dropped onto `backups/` landed
+   * beside it instead of inside — every folder on screen was a drop target that
+   * quietly did the wrong thing.
+   */
+  const send = (from: Side) => (items: FileItem[], destination?: string) => {
+    const targetDir = destination || pathsRef.current[from === 'local' ? 'remote' : 'local'];
     const files = items.filter(item => !item.isDirectory);
     if (files.length === 0) {
       // Directories would need a recursive walk on both sides; saying so beats
@@ -190,7 +200,8 @@ export function FilesPage({ server }: { server: string }) {
     transferLabel: side === 'local' ? 'Upload' : 'Download',
     // Dropping a selection carries it from the pane it was dragged out of, so
     // the direction is the opposite of the pane receiving the drop.
-    onDropFiles: (items: FileItem[]) => send(side === 'local' ? 'remote' : 'local')(items),
+    onDropFiles: (items: FileItem[], destination?: string) =>
+      send(side === 'local' ? 'remote' : 'local')(items, destination),
     onCopyPath: () => void navigator.clipboard?.writeText(pathsRef.current[side]),
 
     // Nine of the context menu's fifteen actions had no handler. Six of those
