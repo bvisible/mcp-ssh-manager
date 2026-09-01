@@ -4,7 +4,7 @@
  * wiring to the vault.
  */
 import { useEffect, useState } from 'react';
-import { LayoutGrid, List, Pencil, Plus, Search } from 'lucide-react';
+import { LayoutGrid, List, Pencil, Plus, Search, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ServerGrid } from '@/components/servers/ServerGrid';
@@ -14,12 +14,16 @@ import { useServersStore } from '@/stores/servers.store';
 import type { ServerConfig } from '@/lib/api';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useWorkspace } from '@/stores/workspace';
+import { ImportDialog } from '@/components/servers/ImportDialog';
 
 export function ServersPage() {
   const { servers, load, remove, error, searchQuery, setSearchQuery, viewMode, setViewMode, editMode, setEditMode } =
     useServersStore();
   const [editing, setEditing] = useState<ServerConfig | null>(null);
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const wantsImport = useWorkspace(state => state.wantsImport);
+  const setWantsImport = useWorkspace(state => state.setWantsImport);
   const serverDraft = useWorkspace(state => state.serverDraft);
   const setServerDraft = useWorkspace(state => state.setServerDraft);
 
@@ -28,6 +32,13 @@ export function ServersPage() {
   // Somebody pressed "Add as a server" on a known host. Open the form with what
   // that screen knew, and clear the draft so returning here later does not
   // reopen it.
+  // Somebody pressed Import somewhere else — the introduction, most likely.
+  useEffect(() => {
+    if (!wantsImport) return;
+    setImporting(true);
+    setWantsImport(false);
+  }, [wantsImport, setWantsImport]);
+
   useEffect(() => {
     if (!serverDraft) return;
     setAdding(true);
@@ -64,6 +75,13 @@ export function ServersPage() {
           >
             <Pencil className="h-4 w-4" />
           </Button>
+          {/* Import sits beside Add, not behind it. It was reachable only from
+              the CLI, which made seven working format readers invisible to
+              anybody who had not read the source. */}
+          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+            <Download className="h-4 w-4" />
+            Import
+          </Button>
           <Button size="sm" onClick={() => setAdding(true)}>
             <Plus className="h-4 w-4" />
             Add a server
@@ -78,11 +96,19 @@ export function ServersPage() {
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <MigrationBanner onImported={() => void load()} />
         <ServerGrid
+          onImportServers={() => setImporting(true)}
           onEditServer={setEditing}
           onDeleteServer={server => void remove(server.name)}
           onAddServer={() => setAdding(true)}
         />
       </div>
+
+      {importing && (
+        <ImportDialog
+          onClose={() => setImporting(false)}
+          onImported={() => { setImporting(false); void load(); }}
+        />
+      )}
 
       {(adding || editing) && (
         <ServerDialog

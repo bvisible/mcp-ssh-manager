@@ -13,7 +13,7 @@
  * introducing itself is a nag.
  */
 import { useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Eye, Plus, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Download, Eye, Plus, ShieldCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWorkspace } from '@/stores/workspace';
 
@@ -45,7 +45,8 @@ const STEPS = [
     body: 'Add a server, or bring in the ones you already have. A `~/.ssh/config`, '
       + 'a FileZilla site manager, a Termius or PuTTY export, a spreadsheet — the '
       + 'format is worked out for you, and no password is ever read.',
-    aside: 'ssh-manager import ~/.ssh/config',
+    aside: 'Servers → Import.',
+    action: 'import',
   },
   {
     icon: ShieldCheck,
@@ -60,6 +61,7 @@ const STEPS = [
 export function Wizard({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
   const setView = useWorkspace(s => s.setView);
+  const setWantsImport = useWorkspace(s => s.setWantsImport);
   const current = STEPS[step];
   const Icon = current.icon;
   const last = step === STEPS.length - 1;
@@ -107,6 +109,15 @@ export function Wizard({ onClose }: { onClose: () => void }) {
               <Button variant="ghost" size="sm" onClick={() => setStep(step - 1)}>
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Back
+              </Button>
+            )}
+            {/* A step that names a thing to do gets the button for it, rather
+                than a command to retype. */}
+            {current.action === 'import' && (
+              <Button variant="outline" size="sm"
+                onClick={() => { setWantsImport(true); setView('servers'); finish(); }}>
+                <Download className="h-3.5 w-3.5" />
+                Import mine
               </Button>
             )}
             {last ? (

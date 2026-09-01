@@ -44,6 +44,10 @@ interface WorkspaceState {
    * Servers screen — Known hosts, today. Read and cleared by ServersPage, which
    * opens its form with these fields already filled.
    */
+  /** Set by anything that wants the import dialog opened on the Servers screen. */
+  wantsImport: boolean;
+  setWantsImport: (wants: boolean) => void;
+
   serverDraft: { host: string; port?: number } | null;
   setServerDraft: (draft: { host: string; port?: number } | null) => void;
   addTab: (tab: Omit<WorkspaceTab, 'closable'> & { closable?: boolean }) => void;
@@ -77,6 +81,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   pendingCount: 0,
 
   setView: view => set({ view, activeTabId: null }),
+
+  wantsImport: false,
+  setWantsImport: wantsImport => set({ wantsImport }),
 
   serverDraft: null,
   setServerDraft: serverDraft => set({ serverDraft }),

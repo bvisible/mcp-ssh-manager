@@ -132,6 +132,33 @@ function toServerConfig(server: VaultServer): ServerConfig {
   };
 }
 
+/** Bringing servers in from another tool, or from a file somebody sent you. */
+export interface ImportSource { id: string; label: string; count: number }
+export interface ImportedServer {
+  name: string; host: string; user?: string; port?: number;
+  keyPath?: string; defaultDir?: string; group?: string;
+  platform?: string; proxyJump?: string; description?: string;
+}
+export interface ImportPreview {
+  source: string;
+  fresh: ImportedServer[];
+  conflicts: ImportedServer[];
+  warnings: string[];
+}
+
+export const imports = {
+  /** Only the places on this machine that actually hold something. */
+  sources: () => get<{ sources: ImportSource[]; formats: string[] }>('/api/import/sources'),
+
+  /** Read without writing, so the operator sees what is about to happen. */
+  preview: (body: { source?: string; filename?: string; content?: string; format?: string }) =>
+    post<ImportPreview>('/api/import/preview', body),
+
+  /** Write back exactly the list that was confirmed, not the file again. */
+  apply: (servers: ImportedServer[]) =>
+    post<{ ok: boolean; written: number }>('/api/import/apply', { servers }),
+};
+
 export const servers = {
   async list(): Promise<ServerConfig[]> {
     const data = await get<{ servers: VaultServer[] }>('/api/servers');

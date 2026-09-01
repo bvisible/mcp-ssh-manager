@@ -43,6 +43,7 @@ import SSHManager from './ssh-manager.js';
 import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck, createAlertConfig, checkAlertThresholds } from './health-monitor.js';
 import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
 import { listSavedCommands, commandsForServer, saveCommand, deleteCommand as deleteSavedCommand, suggestedCommands } from './saved-commands.js';
+import { READERS, WELL_KNOWN, importFile, readTransmit, plan } from './server-import.js';
 import { listGroups, getGroup, createGroup, updateGroup, deleteGroup, executeOnGroup, setServerConfigProvider } from './server-groups.js';
 import { readPublishedTunnels } from './tunnel-manager.js';
 
@@ -158,6 +159,17 @@ function describe(dir, item) {
     group: attrs.gid ?? 0,
   };
 }
+
+/**
+ * How much JSON a request may carry.
+ *
+ * Every route but one takes a handful of fields, and 8 KB was plenty for those
+ * — until import, where confirming a hundred servers read out of another
+ * application is a perfectly ordinary thing to do and lands around 20 KB. One
+ * megabyte is far more than any of them needs and still refuses anything that
+ * looks like an attempt to fill memory.
+ */
+const MAX_BODY_BYTES = 1024 * 1024;
 
 export class ControlPlane {
   /**
@@ -465,6 +477,9 @@ export class ControlPlane {
       return this.#json(res, 200, id ? { stream: this.streams.get(id) } : { streams: this.streams.list() });
     }
     if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
+    if (req.method === 'GET' && url.pathname === '/api/import/sources') return this.#importSources(res);
+    if (req.method === 'POST' && url.pathname === '/api/import/preview') return this.#importPreview(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/import/apply') return this.#importApply(req, res);
     if (req.method === 'GET' && url.pathname === '/api/history') {
       return this.#json(res, 200, {
         entries: readCommandLog(safeInteger(url.searchParams.get('limit'), 500)),
@@ -664,6 +679,123 @@ export class ControlPlane {
    */
   announce(event) {
     this.#broadcast(event);
+  }
+
+  /**
+   * Which places on *this* machine actually hold servers to import.
+   *
+   * Offering "FileZilla" to somebody who has never installed it is a dead end
+   * dressed as a feature, so each source is probed and only the ones with
+   * something in them come back. The count is part of the answer: "23 servers"
+   * is a reason to click, "FileZilla" on its own is a question.
+   */
+  #importSources(res) {
+    /** @type {{id: string, label: string, count: number}[]} */
+    const found = [];
+
+    for (const [id, candidates] of Object.entries(WELL_KNOWN)) {
+      const file = candidates().find(path => fs.existsSync(path));
+      if (!file) continue;
+      try {
+        const { servers, source } = importFile(file);
+        if (servers.length) found.push({ id, label: source, count: servers.length });
+      } catch {
+        // A file that exists but cannot be parsed is not worth offering.
+      }
+    }
+
+    if (process.platform === 'darwin') {
+      try {
+        const transmit = readTransmit([]);
+        if (transmit.length) {
+          found.push({ id: 'transmit', label: 'Transmit favourites', count: transmit.length });
+        }
+      } catch { /* Transmit is not installed, or plutil said no */ }
+    }
+
+    return this.#json(res, 200, { sources: found, formats: READERS.map(r => r.id) });
+  }
+
+  /**
+   * Read something without writing anything.
+   *
+   * Import is the one operation where "show me what you are about to do" is not
+   * a nicety: the alternative is finding out afterwards that forty rows landed
+   * with the wrong names.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #importPreview(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      /** @type {string|null} */
+      let temporary = null;
+      try {
+        let servers = [];
+        let source = '';
+        /** @type {string[]} */
+        const warnings = [];
+
+        if (payload.source === 'transmit') {
+          servers = readTransmit(warnings);
+          source = 'Transmit favourites';
+        } else if (payload.source) {
+          const candidates = WELL_KNOWN[String(payload.source)];
+          if (!candidates) return this.#json(res, 400, { error: `Unknown source: ${payload.source}` });
+          const file = candidates().find(path => fs.existsSync(path));
+          if (!file) return this.#json(res, 404, { error: 'Nothing found for that source on this machine' });
+          ({ servers, source } = importFile(file));
+        } else if (payload.filename && typeof payload.content === 'string') {
+          // The browser can hand over a file's bytes but not its path, and the
+          // readers open files themselves (a spreadsheet is a zip). So it lands
+          // in a temp file, keeping its extension, which is what detection uses.
+          const safe = path.basename(String(payload.filename)).replace(/[^\w.-]/g, '_');
+          temporary = path.join(os.tmpdir(), `ssh-manager-import-${Date.now()}-${safe}`);
+          fs.writeFileSync(temporary, Buffer.from(payload.content, 'base64'), { mode: 0o600 });
+          ({ servers, source } = importFile(temporary, payload.format || undefined));
+        } else {
+          return this.#json(res, 400, { error: 'Give either a source or a file' });
+        }
+
+        const existing = [...Object.keys(this.store.exists() ? this.store.read().servers : {})];
+        const { fresh, conflicts } = plan(servers, existing);
+        return this.#json(res, 200, { source, fresh, conflicts, warnings });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      } finally {
+        if (temporary) { try { fs.rmSync(temporary, { force: true }); } catch { /* temp */ } }
+      }
+    });
+  }
+
+  /**
+   * Write the servers the operator just looked at.
+   *
+   * Takes the list back rather than re-reading the file: what they confirmed is
+   * what gets written, even if the file changed underneath in the meantime.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #importApply(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      const servers = Array.isArray(payload.servers) ? payload.servers : [];
+      if (!servers.length) return this.#json(res, 400, { error: 'Nothing to import' });
+      let written = 0;
+      try {
+        for (const server of servers) {
+          const { name, ...config } = server;
+          if (!name || !config.host) continue;
+          this.store.setServer(String(name), config);
+          written++;
+        }
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+      logger.info('Servers imported from the control plane', { count: written });
+      this.#broadcast({ type: 'servers' });
+      return this.#json(res, 200, { ok: true, written });
+    });
   }
 
   #serveServers(res) {
@@ -1000,11 +1132,25 @@ export class ControlPlane {
    */
   #readJsonBody(req, res, handler) {
     let body = '';
+    let refused = false;
     req.on('data', chunk => {
+      if (refused) return;
       body += chunk;
-      if (body.length > 8192) req.destroy();
+      if (body.length > MAX_BODY_BYTES) {
+        // Answer, then stop reading. Destroying the socket silently — which is
+        // what this did — reaches the browser as "Failed to fetch" with no
+        // status and no message, and the operator has no way to know that a
+        // limit was the reason. Importing a hundred servers hit it and looked
+        // like a network fault.
+        refused = true;
+        this.#json(res, 413, {
+          error: `Body too large: over ${Math.round(MAX_BODY_BYTES / 1024)} KB`,
+        });
+        req.destroy();
+      }
     });
     req.on('end', () => {
+      if (refused) return;
       try {
         handler(JSON.parse(body));
       } catch {
