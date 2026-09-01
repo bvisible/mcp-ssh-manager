@@ -16,6 +16,7 @@ import { state, QUEUE_EVENTS } from '@/lib/api';
 import { ensurePermission, notifyApproval, clearApproval, clearAll } from '@/lib/notify';
 import { needsTitleBarRoom } from '@/lib/desktop';
 import { DroppedFilesDialog } from '@/components/DroppedFilesDialog';
+import { Wizard, wizardSeen } from '@/components/Wizard';
 
 export function App() {
   const { view, tabs, activeTabId, setPendingCount } = useWorkspace();
@@ -71,6 +72,20 @@ export function App() {
   // Files dropped on the Dock icon. The desktop shell announces them over the
   // same stream everything else arrives on; a browser tab simply never sees
   // this event.
+  // The introduction, on a first run with nothing configured. Deliberately not
+  // shown to somebody who already has servers: they have evidently found their
+  // way around.
+  const [showWizard, setShowWizard] = useState(false);
+  useEffect(() => {
+    if (wizardSeen()) return;
+    let cancelled = false;
+    void servers.length; // read below once the list has loaded
+    const check = setTimeout(() => {
+      if (!cancelled && useServersStore.getState().servers.length === 0) setShowWizard(true);
+    }, 900);
+    return () => { cancelled = true; clearTimeout(check); };
+  }, []);
+
   const [droppedFiles, setDroppedFiles] = useState<string[] | null>(null);
   useEffect(() => state.subscribe(event => {
     if (event.type === 'dropped-files' && Array.isArray(event.paths) && event.paths.length) {
@@ -138,6 +153,8 @@ export function App() {
         )}
       </main>
       </div>
+    {showWizard && <Wizard onClose={() => setShowWizard(false)} />}
+
     {droppedFiles && (
         <DroppedFilesDialog paths={droppedFiles} onClose={() => setDroppedFiles(null)} />
       )}

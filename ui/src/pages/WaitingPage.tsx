@@ -7,12 +7,13 @@
  * what they do rather than "OK" and "Cancel".
  */
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, Clock, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock, ShieldCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { state, QUEUE_EVENTS, type PendingRequest } from '@/lib/api';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
+import { useWorkspace } from '@/stores/workspace';
 
 /** Seconds up to a minute, then minutes — nobody needs "waiting 143 s". */
 function formatWait(ms: number): string {
@@ -23,6 +24,7 @@ function formatWait(ms: number): string {
 }
 
 export function WaitingPage() {
+  const setView = useWorkspace(state => state.setView);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [deciding, setDeciding] = useState<string | null>(null);
 
@@ -61,7 +63,16 @@ export function WaitingPage() {
         <EmptyState
           icon={Clock}
           title="Nothing is waiting"
-          hint="Servers you have set to pause — Approval set to destructive or always, on the server itself — stop here before acting."
+          // This screen used to explain where approval is configured and then
+          // leave you to find it. Saying "it is set on the server" to somebody
+          // looking at an empty queue is an instruction with no door attached.
+          hint="Nothing pauses here until you ask it to. Open a server, set Approval to destructive or always, and its agent will stop and wait for you before acting."
+          action={
+            <Button size="sm" onClick={() => setView('servers')}>
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Set it up on a server
+            </Button>
+          }
         />
       ) : (
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
