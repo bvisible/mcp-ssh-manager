@@ -431,6 +431,18 @@ async function main() {
   // agent would; neither is drawn.
   await seedActivity(url);
 
+  // Dropping a file on the Dock icon only happens in the packaged application,
+  // so the browser has no way to reach that code path. With this set, the demo
+  // announces the same event the desktop shell would, which is how the dialog
+  // that asks "send it where?" can be seen and tested without a build.
+  if (process.env.SSH_MANAGER_DEMO_DROP) {
+    // Repeated, because a page that opens later would otherwise miss the one
+    // announcement and the dialog would look broken rather than un-triggered.
+    const paths = process.env.SSH_MANAGER_DEMO_DROP.split(',').map(p => p.trim());
+    const timer = setInterval(() => plane.announce({ type: 'dropped-files', paths }), 12000);
+    timer.unref();
+  }
+
   const stop = async () => {
     for (const fn of teardown) { try { fn(); } catch { /* going away anyway */ } }
     await plane.stop();

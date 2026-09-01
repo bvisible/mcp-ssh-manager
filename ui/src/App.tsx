@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ServersPage } from '@/pages/ServersPage';
 import { ShellPage } from '@/pages/ShellPage';
@@ -15,6 +15,7 @@ import { useServersStore } from '@/stores/servers.store';
 import { state, QUEUE_EVENTS } from '@/lib/api';
 import { ensurePermission, notifyApproval, clearApproval, clearAll } from '@/lib/notify';
 import { needsTitleBarRoom } from '@/lib/desktop';
+import { DroppedFilesDialog } from '@/components/DroppedFilesDialog';
 
 export function App() {
   const { view, tabs, activeTabId, setPendingCount } = useWorkspace();
@@ -66,6 +67,17 @@ export function App() {
     });
     return () => { cancelled = true; stop(); clearAll(); };
   }, [setPendingCount, setView]);
+
+  // Files dropped on the Dock icon. The desktop shell announces them over the
+  // same stream everything else arrives on; a browser tab simply never sees
+  // this event.
+  const [droppedFiles, setDroppedFiles] = useState<string[] | null>(null);
+  useEffect(() => state.subscribe(event => {
+    if (event.type === 'dropped-files' && Array.isArray(event.paths) && event.paths.length) {
+      setDroppedFiles(event.paths as string[]);
+    }
+  }), []);
+
 
   const nameFor = (serverId: string) => servers.find(s => s.id === serverId)?.name ?? serverId;
 
@@ -126,6 +138,9 @@ export function App() {
         )}
       </main>
       </div>
+    {droppedFiles && (
+        <DroppedFilesDialog paths={droppedFiles} onClose={() => setDroppedFiles(null)} />
+      )}
     </div>
   );
 }

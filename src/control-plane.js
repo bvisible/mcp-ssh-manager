@@ -651,6 +651,21 @@ export class ControlPlane {
    *
    * @param {import('http').ServerResponse} res - Response
    */
+  /**
+   * Push an event to every open page.
+   *
+   * The desktop shell is in this same process and occasionally knows something
+   * the interface cannot ask for — a file dropped on the Dock icon, which
+   * arrives as an AppKit event with no HTTP request behind it. This is the door
+   * for that, and deliberately the only one: everything else the page needs, it
+   * fetches.
+   *
+   * @param {Record<string, any>} event - Must carry a `type` the page knows
+   */
+  announce(event) {
+    this.#broadcast(event);
+  }
+
   #serveServers(res) {
     /** @type {any[]} */
     let servers = [];

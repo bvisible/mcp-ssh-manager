@@ -62,6 +62,15 @@ mac:
   # `security` call fails and the vault silently falls back to a key file.
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+  # Without a document type, the Dock icon refuses every drop and `open-file`
+  # never fires. `public.item` is "any file or folder": this application does
+  # not open documents, it sends them somewhere, so narrowing by extension
+  # would only make it refuse the files people actually have.
+  fileAssociations:
+    - ext: '*'
+      name: File
+      role: Viewer
+      rank: Alternate
   extendInfo:
     NSDownloadsFolderUsageDescription: SSH Manager reads and writes files here when you transfer them to or from a server.
     NSDocumentsFolderUsageDescription: SSH Manager reads and writes files here when you transfer them to or from a server.

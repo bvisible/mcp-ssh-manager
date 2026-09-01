@@ -370,12 +370,48 @@ function createTray() {
 // This must match `appId` in electron-builder.yml or the toast is orphaned.
 if (process.platform === 'win32') app.setAppUserModelId('com.bvisible.ssh-manager');
 
+/**
+ * Files dropped on the Dock icon.
+ *
+ * macOS delivers these as `open-file`, and it delivers them *early* — before
+ * `whenReady`, if somebody dropped a file on a cold icon and that is what
+ * launched the app. So they are collected here and flushed once there is
+ * something to flush them into; dropping the event on the floor because the
+ * window was not up yet is the classic way this feature half-works.
+ *
+ * What happens to them is the page's decision, not this process's: it knows
+ * which servers are open, which shells are running, and which remote directory
+ * is on screen. All that happens here is that it gets told.
+ */
+const droppedFiles = [];
+
+function flushDroppedFiles() {
+  if (!plane || droppedFiles.length === 0) return;
+  const paths = droppedFiles.splice(0, droppedFiles.length);
+  plane.announce({ type: 'dropped-files', paths });
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  droppedFiles.push(filePath);
+  // Several files arrive as several events in quick succession; coalesce them
+  // so the page asks one question about five files rather than five questions.
+  setTimeout(flushDroppedFiles, 120);
+});
+
 app.whenReady().then(async () => {
   try {
     const { url } = await startControlPlane();
     buildMenu(url);
     createWindow(url);
     createTray();
+    // Anything dropped before the window existed.
+    setTimeout(flushDroppedFiles, 500);
   } catch (error) {
     // A failure here means no interface at all, so it is a dialog rather than a
     // line in a log nobody is reading — most often an over-long socket path or
