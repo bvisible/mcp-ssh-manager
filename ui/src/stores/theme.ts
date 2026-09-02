@@ -10,6 +10,7 @@
  * instead of two.
  */
 import { create } from 'zustand';
+import { readPreference, writePreference } from '@/lib/preferences';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -26,12 +27,8 @@ function systemPrefers(): 'light' | 'dark' {
 }
 
 function readStored(): ThemeMode {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === 'light' || stored === 'dark' ? stored : 'system';
-  } catch {
-    return 'system';
-  }
+  const stored = readPreference(STORAGE_KEY);
+  return stored === 'light' || stored === 'dark' ? stored : 'system';
 }
 
 /**
@@ -77,11 +74,7 @@ export const useTheme = create<ThemeState>(set => {
     setMode: next => {
       const resolvedNext = next === 'system' ? systemPrefers() : next;
       apply(resolvedNext);
-      try {
-        localStorage.setItem(STORAGE_KEY, next);
-      } catch {
-        /* a preference that cannot be saved still holds for this session */
-      }
+      writePreference(STORAGE_KEY, next);
       set({ mode: next, resolved: resolvedNext });
     },
   };

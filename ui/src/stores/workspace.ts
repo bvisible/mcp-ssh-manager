@@ -13,6 +13,7 @@
  * them.
  */
 import { create } from 'zustand';
+import { readPreference, writePreference } from '@/lib/preferences';
 
 export type ViewId = 'servers' | 'terminal' | 'waiting' | 'health' | 'live' | 'activity' | 'options';
 
@@ -62,17 +63,11 @@ interface WorkspaceState {
 
 const STORAGE_KEY = 'ssh-manager.sidebar-expanded';
 
-/** Reading storage can throw outright in a locked-down context. */
+// Collapsed until somebody opens it. The rail's icons carry labels on hover and
+// the screens are what people came for; starting 192px narrower gives that space
+// to the content instead. A choice, once made, is remembered.
 function readExpanded(): boolean {
-  try {
-    // Collapsed until somebody opens it. The rail's icons carry labels on
-    // hover and the screens are what people came for; starting 192px narrower
-    // gives that space to the content instead. A choice, once made, is
-    // remembered.
-    return localStorage.getItem(STORAGE_KEY) === 'true';
-  } catch {
-    return true;
-  }
+  return readPreference(STORAGE_KEY) === 'true';
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
@@ -114,11 +109,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   toggleExpanded: () =>
     set(state => {
       const expanded = !state.expanded;
-      try {
-        localStorage.setItem(STORAGE_KEY, String(expanded));
-      } catch {
-        /* a preference that cannot be saved is still a preference for this session */
-      }
+      writePreference(STORAGE_KEY, String(expanded));
       return { expanded };
     }),
 

@@ -197,6 +197,9 @@ function describe(dir, item) {
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
+// Preferences are a handful of booleans and a list of folded category names.
+const PREFERENCES_LIMIT_BYTES = 64 * 1024;
+
 // How long an announcement nobody heard is kept for the first page that opens.
 // Sized for the worst real case: a file dropped on a *cold* Dock icon launches
 // the application, so the event exists long before there is an interface to
@@ -509,6 +512,8 @@ export class ControlPlane {
     if (req.method === 'POST' && url.pathname === '/api/local/reveal') return this.#localOp('reveal', req, res);
     if (req.method === 'POST' && url.pathname === '/api/transfer') return this.#transfer(req, res);
     if (req.method === 'POST' && url.pathname === '/api/execute') return this.#execute(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/preferences') return this.#servePreferences(res);
+    if (req.method === 'PUT' && url.pathname === '/api/preferences') return this.#savePreferences(req, res);
     if (req.method === 'GET' && url.pathname === '/api/options') return this.#serveOptions(res);
     if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
       return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
@@ -1027,6 +1032,73 @@ export class ControlPlane {
     });
   }
 
+
+  /** @returns {string} Beside the vault, like the thresholds. */
+  #preferencesPath() {
+    return path.join(path.dirname(this.store.vaultPath), 'preferences.json');
+  }
+
+  /**
+   * What the interface remembers about itself: the introduction has been seen,
+   * the rail is collapsed, the theme is dark, this category is folded.
+   *
+   * Held here rather than in the browser's `localStorage`, which cannot work.
+   * The control plane binds port 0 — the operating system picks a free one —
+   * so the page's origin is `http://127.0.0.1:<a different port>` on every
+   * launch, and `localStorage` is scoped to an origin. Every preference was
+   * therefore forgotten between launches, which is why the introduction came
+   * back each time however carefully it had been finished.
+   *
+   * Opaque on purpose: the interface owns the shape, this owns the file. The
+   * only rules are that it is a flat object and that it stays small.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #servePreferences(res) {
+    this.#json(res, 200, { preferences: this.#readPreferences() });
+  }
+
+  /** @returns {Record<string, any>} */
+  #readPreferences() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.#preferencesPath(), 'utf8'));
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      // Absent on a first run, and unreadable is the same answer: no
+      // preferences yet. Never a reason to fail the screen.
+      return {};
+    }
+  }
+
+  /**
+   * Merge, never replace. Two screens can each remember one thing without
+   * the second erasing the first, and an interface that only knows about the
+   * key it just changed does not have to send the rest back.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #savePreferences(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return this.#json(res, 400, { error: 'Preferences must be an object' });
+      }
+      const merged = { ...this.#readPreferences(), ...payload };
+      // A cap, because this is a preferences file and not a database, and
+      // nothing should be able to grow it without limit.
+      const encoded = JSON.stringify(merged, null, 2);
+      if (encoded.length > PREFERENCES_LIMIT_BYTES) {
+        return this.#json(res, 413, { error: 'Too many preferences' });
+      }
+      try {
+        fs.mkdirSync(path.dirname(this.#preferencesPath()), { recursive: true });
+        fs.writeFileSync(this.#preferencesPath(), `${encoded}\n`, { mode: 0o600 });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+      return this.#json(res, 200, { preferences: merged });
+    });
+  }
 
   /** @returns {string} Where the thresholds live — beside the vault, not on the servers. */
   #thresholdsPath() {

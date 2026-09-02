@@ -16,18 +16,13 @@ import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Download, Eye, Plus, ShieldCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWorkspace } from '@/stores/workspace';
+import { readPreference, writePreference } from '@/lib/preferences';
 
 const SEEN_KEY = 'ssh-manager.wizard-seen';
 
 /** @returns Whether the introduction has already been closed on this machine. */
 export function wizardSeen(): boolean {
-  try {
-    return localStorage.getItem(SEEN_KEY) === 'true';
-  } catch {
-    // Private windows and locked-down browsers throw on access. Showing it once
-    // more is a smaller cost than crashing the application over a preference.
-    return false;
-  }
+  return readPreference(SEEN_KEY) === 'true';
 }
 
 const STEPS = [
@@ -67,7 +62,7 @@ export function Wizard({ onClose }: { onClose: () => void }) {
   const last = step === STEPS.length - 1;
 
   const finish = () => {
-    try { localStorage.setItem(SEEN_KEY, 'true'); } catch { /* see wizardSeen */ }
+    writePreference(SEEN_KEY, 'true');
     onClose();
   };
 

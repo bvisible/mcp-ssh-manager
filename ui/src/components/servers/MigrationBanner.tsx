@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, FileKey, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { migration, type PendingServer } from '@/lib/api';
+import { readPreference, writePreference } from '@/lib/preferences';
 
 const DISMISSED_KEY = 'ssh-manager.migration-dismissed';
 
@@ -21,13 +22,7 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
   const [pending, setPending] = useState<PendingServer[] | null>(null);
   const [envPath, setEnvPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [dismissed, setDismissed] = useState(() => {
-    try {
-      return localStorage.getItem(DISMISSED_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [dismissed, setDismissed] = useState(() => readPreference(DISMISSED_KEY) === 'true');
 
   useEffect(() => {
     migration
@@ -45,11 +40,7 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
 
   const dismiss = () => {
     setDismissed(true);
-    try {
-      localStorage.setItem(DISMISSED_KEY, 'true');
-    } catch {
-      /* dismissing for this session is better than not being able to dismiss */
-    }
+    writePreference(DISMISSED_KEY, 'true');
   };
 
   return (

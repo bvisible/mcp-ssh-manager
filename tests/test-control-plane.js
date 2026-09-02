@@ -526,6 +526,59 @@ async function testAnnouncementSurvivesAColdStart() {
   first.close();
 }
 
+/**
+ * What the interface remembers about itself.
+ *
+ * It cannot use `localStorage`: the plane binds port 0, so the page's origin is
+ * a different `http://127.0.0.1:<port>` on every launch and browser storage is
+ * scoped to an origin. Everything was silently forgotten each time — the
+ * introduction came back however carefully it had been finished.
+ */
+async function testPreferencesSurviveARestart() {
+  const vaultPath = path.join(scratch, 'prefs-vault.json');
+  const first = await startPlane({ vaultPath });
+  const q = `token=${first.plane.token}`;
+
+  const empty = await (await call(first.base, `/api/preferences?${q}`)).json();
+  assert.deepStrictEqual(empty.preferences, {}, 'a first run has no preferences, not an error');
+
+  const saved = await call(first.base, `/api/preferences?${q}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ 'ssh-manager.wizard-seen': 'true' }),
+  });
+  assert.strictEqual(saved.status, 200, 'saving a preference must succeed');
+
+  // A second screen remembering something else must not erase the first.
+  await call(first.base, `/api/preferences?${q}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ 'ssh-manager.theme': 'dark' }),
+  });
+
+  // A different plane, on a different port — which is exactly what the next
+  // launch of the application is.
+  const second = await startPlane({ vaultPath });
+  assert.notStrictEqual(second.base, first.base, 'the second plane must be on another port, or this proves nothing');
+  const carried = await (await call(second.base, `/api/preferences?token=${second.plane.token}`)).json();
+  assert.deepStrictEqual(
+    carried.preferences,
+    { 'ssh-manager.wizard-seen': 'true', 'ssh-manager.theme': 'dark' },
+    'preferences must survive a restart on a different port, and merge rather than replace'
+  );
+  ok('preferences survive a restart on a different port, and one screen does not erase another');
+
+  const noToken = await call(second.base, '/api/preferences');
+  assert.strictEqual(noToken.status, 401, 'reading preferences must require the token');
+  const badBody = await call(second.base, `/api/preferences?token=${second.plane.token}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(['not', 'an', 'object']),
+  });
+  assert.strictEqual(badBody.status, 400, 'an array is not a set of preferences');
+  ok('preferences require the token and refuse anything that is not an object');
+}
+
 async function main() {
   try {
     await testTokenIsRequired();
@@ -542,6 +595,7 @@ async function main() {
     await testOptionsAndHostKeys();
     await testPublishedTunnels();
     await testAnnouncementSurvivesAColdStart();
+    await testPreferencesSurviveARestart();
     console.log(`\n✅ control plane tests passed (${passed} checks)`);
   } finally {
     for (const plane of planes) {

@@ -17,6 +17,11 @@ export default defineConfig({
     // allowlist of two beats a directory walk it has to sanitise.
     rollupOptions: {
       output: {
+        // `main.tsx` imports `App` dynamically, so that preferences are
+        // hydrated before any store snapshots them at module-evaluation time.
+        // Without this, that one import would split the bundle in two and the
+        // control plane serves exactly two files from an allowlist.
+        inlineDynamicImports: true,
         entryFileNames: 'app.js',
         assetFileNames: asset => (asset.names?.[0]?.endsWith('.css') ? 'app.css' : 'assets/[name][extname]'),
         manualChunks: undefined,

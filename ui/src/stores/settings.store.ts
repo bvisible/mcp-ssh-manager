@@ -7,6 +7,7 @@
  * reached through the API, not through a browser-local store.
  */
 import { create } from 'zustand';
+import { readPreference, writePreference } from '@/lib/preferences';
 
 interface SettingsState {
   serverViewMode: 'grid' | 'list';
@@ -20,9 +21,9 @@ const STORAGE_KEY = 'ssh-manager.view-settings';
 
 function read(): Partial<SettingsState> {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+    return JSON.parse(readPreference(STORAGE_KEY) ?? '{}');
   } catch {
-    // A locked-down context can throw on access, not merely return null.
+    // Stored by an older version, or truncated. Defaults are a fine answer.
     return {};
   }
 }
@@ -42,11 +43,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   updateSetting: (key, value) => {
     set({ [key]: value } as Pick<SettingsState, typeof key>);
-    try {
-      const { serverViewMode, collapsedCategories } = get();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ serverViewMode, collapsedCategories }));
-    } catch {
-      /* a preference that cannot be saved is still a preference for this session */
-    }
+    const { serverViewMode, collapsedCategories } = get();
+    writePreference(STORAGE_KEY, JSON.stringify({ serverViewMode, collapsedCategories }));
   },
 }));

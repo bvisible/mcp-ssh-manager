@@ -22,7 +22,7 @@
 const token = new URLSearchParams(window.location.search).get('token') ?? '';
 
 /** Callers pass paths and names that may contain anything a filesystem allows. */
-function url(path: string, params: Record<string, string | number | undefined> = {}): string {
+export function url(path: string, params: Record<string, string | number | undefined> = {}): string {
   const query = new URLSearchParams({ token });
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) query.set(key, String(value));
