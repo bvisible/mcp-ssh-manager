@@ -365,9 +365,20 @@ async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30
   const useSystemTimeout = timeoutMs > 0 && timeoutMs < 300000 && !rawCommand; // Max 5 minutes, not for raw commands
 
   if (useSystemTimeout) {
-    // Wrap command with timeout command (works on Linux/Mac)
+    // Wrap command with the system's timeout command, resolved on the
+    // remote host at execution time rather than assumed. Stock Linux ships
+    // GNU coreutils' `timeout`, but stock macOS ships neither `timeout` nor
+    // `gtimeout` — the latter only appears once a user installs Homebrew
+    // coreutils, and even then nothing named plain `timeout` exists unless
+    // they've separately aliased or symlinked it. Probing for both on the
+    // target (instead of hardcoding a path or a single binary name) means
+    // this works unmodified on Linux, on a Mac with Homebrew coreutils
+    // installed, and — by falling through to running the command with no
+    // timeout wrapper at all rather than failing with "command not found"
+    // (exit 127) — even on a bare macOS host with neither installed.
     const timeoutSeconds = Math.ceil(timeoutMs / 1000);
-    const wrappedCommand = `timeout ${timeoutSeconds} sh -c '${command.replace(/'/g, '\'\\\'\'')}'`;
+    const escapedCommand = command.replace(/'/g, '\'\\\'\'');
+    const wrappedCommand = `_t=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null); if [ -n "$_t" ]; then exec "$_t" ${timeoutSeconds} sh -c '${escapedCommand}'; else exec sh -c '${escapedCommand}'; fi`;
 
     try {
       const result = await ssh.execCommand(wrappedCommand, {
