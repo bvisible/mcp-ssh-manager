@@ -50,10 +50,11 @@ function npm(args, cwd) {
 
 function interrogate(scenario, entry) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', scenario.preload, entry], {
+    const child = spawn(process.execPath, ['--import', pathToFileURL(scenario.preload).href, entry], {
       cwd: scenario.dir, env: scenario.env, stdio: ['pipe', 'pipe', 'pipe'],
     });
     let buffer = '';
+    let stderr = '';
     let nextId = 1;
     let finished = false;
     const pending = new Map();
@@ -63,9 +64,13 @@ function interrogate(scenario, entry) {
       if (finished) return;
       finished = true; clearTimeout(timer); child.kill(); reject(error);
     }
-    child.stderr.on('data', () => {});
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4096); });
     child.on('error', fail);
-    child.on('exit', () => { if (!finished) fail(new Error(`${scenario.name}: MCP exited before answering`)); });
+    child.on('exit', (code, signal) => {
+      const diagnostic = stderr.match(/\bERR_[A-Z0-9_]+\b/)?.[0];
+      // Expose the runtime error code, never raw logs or fixture credentials.
+      if (!finished) fail(new Error(`${scenario.name}: MCP exited before answering (exit ${code ?? signal}${diagnostic ? `, ${diagnostic}` : ''})`));
+    });
     child.stdout.on('data', chunk => {
       buffer += chunk;
       while (buffer.includes('\n')) {
@@ -114,7 +119,9 @@ function scenario(name) {
   const dir = path.join(work, name); fs.mkdirSync(dir);
   const envFile = path.join(dir, '.env');
   const tomlFile = path.join(dir, '.codex', 'ssh-config.toml');
-  const preload = path.join(dir, 'isolation.mjs');
+  // Exercise URL escaping even on POSIX: bare --import paths break on both
+  // Windows drive letters and filename characters interpreted as URL fragments.
+  const preload = path.join(dir, 'isolation # fixture.mjs');
   const fields = { name: 'prod', host: `${name}.fixture.invalid`, user: 'fixture-user', password: 'fixture-password',
     keyPath: '~/.ssh/fixture-key', passphrase: 'fixture-passphrase', port: 2222, defaultDir: '~/fixture folder',
     sudoPassword: 'fixture-sudo', description: `${name} fixture`, group: 'fixture-group', platform: 'windows',
@@ -156,8 +163,11 @@ const fields=${JSON.stringify(FIELDS)};
 const result=Object.fromEntries([...loaded].sort(([a],[b])=>a.localeCompare(b)).map(([name,config])=>[name,Object.fromEntries(fields.map(field=>[field,{present:Object.hasOwn(config,field),kind:typeof config[field],hash:crypto.createHmac('sha256',${JSON.stringify(salt)}).update(JSON.stringify(config[field]===undefined?{undefined:true}:config[field])).digest('hex')}]))]));
 process.stdout.write(JSON.stringify(result));`);
   let output;
-  try { output = execFileSync(process.execPath, ['--import', item.preload, helper], { cwd: item.dir, env: item.env, encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch { throw new Error(`${item.name}: isolated ConfigLoader probe failed`); }
+  try { output = execFileSync(process.execPath, ['--import', pathToFileURL(item.preload).href, helper], { cwd: item.dir, env: item.env, encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] }); }
+  catch (error) {
+    const diagnostic = String(error.stderr || '').match(/\bERR_[A-Z0-9_]+\b/)?.[0];
+    throw new Error(`${item.name}: isolated ConfigLoader probe failed (exit ${error.status ?? error.code}${diagnostic ? `, ${diagnostic}` : ''})`);
+  }
   const snapshot = JSON.parse(output);
   assert.deepEqual(Object.keys(snapshot).sort(), ['bastion', 'prod'], `${item.name}: missing loader fixture servers`);
   for (const field of FIELDS) {
