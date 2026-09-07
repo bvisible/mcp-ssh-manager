@@ -94,7 +94,7 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "ssh2": "^1.17.0",
     "zod": "^4.4.3"
   },
