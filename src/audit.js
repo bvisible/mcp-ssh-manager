@@ -29,7 +29,17 @@ const REDACT_FIELDS = new Set([
 
 const REDACTED = '***';
 
-function sanitize(value) {
+/**
+ * Deep-copy a value with secret-looking fields replaced.
+ *
+ * Exported because the approval request must carry the same redacted view the
+ * audit log records: a second implementation would eventually drift, and the
+ * drift would be a password reaching a UI.
+ *
+ * @param {any} value - Value to sanitize
+ * @returns {any} A redacted copy
+ */
+export function sanitize(value) {
   if (value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map(sanitize);
   const out = {};

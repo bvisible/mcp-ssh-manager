@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, v4 ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, v4 ]
 
 # Least privilege: without this block the workflow gets the repository's default
 # token scopes, which are far wider than needed. The test job only needs to read the repository.
@@ -14,12 +14,16 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Without this, GitHub's own six-hour ceiling is the only limit — which is
+    # what a hung keychain call cost this project before anyone noticed the job
+    # had been running all afternoon. The suite takes about 90 seconds.
+    timeout-minutes: 15
 
     strategy:
-      # 18.x and 20.x are the required status checks on main; 22.x is the
-      # current active LTS and package.json claims engines >=18.
+      # Preserve the required test (18.x) and test (20.x) check names.
+      # Newer runtimes are additional compatibility coverage.
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [18.x, 20.x, 22.x, 24.x]
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,10 +48,12 @@ jobs:
 
     - name: Create test .env file
       run: |
-        echo "SSH_SERVER_TEST_HOST=localhost" > .env
-        echo "SSH_SERVER_TEST_USER=test" >> .env
-        echo "SSH_SERVER_TEST_PASSWORD=test" >> .env
-        echo "SSH_SERVER_TEST_PORT=22" >> .env
+        cat > .env <<'EOF'
+        SSH_SERVER_TEST_HOST=localhost
+        SSH_SERVER_TEST_USER=test
+        SSH_SERVER_TEST_PASSWORD=test
+        SSH_SERVER_TEST_PORT=22
+        EOF
 
     # Runs every tests/ suite, including test:lockfile.
     - name: Run JavaScript tests
@@ -64,6 +70,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,7 +78,7 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: '20.x'
+        node-version: '24.x'
         cache: 'npm'
 
     - name: Install dependencies
@@ -85,8 +92,64 @@ jobs:
     - name: Typecheck (JSDoc via tsc)
       run: npm run typecheck
 
+    # A YAML parser accepts a workflow that GitHub then refuses: expression
+    # contexts are only valid in some places, and using one where it does not
+    # exist is rejected at dispatch, not at parse. Three release runs went to
+    # exactly that — a step `if:` cannot read its own `env:`, `env.HOME` is
+    # empty inside ${{ }}, and `runner` does not exist in a job-level `env:`.
+    # actionlint finds all three offline, in a second.
+    - name: Lint the workflows
+      env:
+        ACTIONLINT_VERSION: 1.7.12
+        ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      run: |
+        curl -fsSL -o actionlint.tar.gz \
+          "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+        echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+        tar -xzf actionlint.tar.gz actionlint
+        ./actionlint
+        rm -f actionlint actionlint.tar.gz
+
     - name: Check for secrets
       run: |
         # Basic check for common secret patterns
         ! grep -r "password\|secret\|token\|api_key" .env 2>/dev/null || true
         ! git ls-files | xargs grep -E "(password|secret|token|api_key)\s*=\s*['\"]" 2>/dev/null || true
+
+  interface:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/package-lock.json
+      - name: Install engine and interface
+        run: npm ci && npm ci --prefix ui
+      - name: Typecheck, build and verify the committed interface
+        run: npm run build --prefix ui && git diff --exit-code -- dist/ui
+      - name: Install browser
+        working-directory: ui
+        run: npx playwright install --with-deps chromium
+      - name: Browser flows
+        run: npm --prefix ui run test:e2e
+      - name: Upgrade from the actual published 3.8.5 package
+        run: node scripts/test-upgrade-from-published.mjs 3.8.5
+      - name: Keep browser failure reports and traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-failure-${{ matrix.os }}
+          path: |
+            ui/playwright-report/
+            ui/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

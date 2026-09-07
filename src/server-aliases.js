@@ -46,15 +46,16 @@ function saveAliases(aliases) {
 export function resolveServerName(nameOrAlias, servers) {
   const aliases = loadAliases();
 
-  // Check if it's an alias
-  if (aliases[nameOrAlias]) {
-    return aliases[nameOrAlias];
+  // A canonical name always identifies itself, even if an old alias has the
+  // same spelling. Policy checks and connection lookup must agree on identity.
+  const normalizedName = nameOrAlias.toLowerCase();
+  if (Object.hasOwn(servers, normalizedName)) {
+    return normalizedName;
   }
 
-  // Check if it's a direct server name
-  const normalizedName = nameOrAlias.toLowerCase();
-  if (servers[normalizedName]) {
-    return normalizedName;
+  if (Object.hasOwn(aliases, nameOrAlias)) {
+    const target = String(aliases[nameOrAlias]).toLowerCase();
+    return Object.hasOwn(servers, target) ? target : null;
   }
 
   // Try to find partial match

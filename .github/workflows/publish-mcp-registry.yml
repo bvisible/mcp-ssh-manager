@@ -12,6 +12,10 @@ name: Publish to MCP Registry
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Exact version tag already published to npm.'
+        required: true
 
 permissions:
   contents: read
@@ -22,8 +26,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+
+      - name: Verify the exact release and npm availability
+        id: version
+        env:
+          RELEASE_REQUIRE_TAG: 'true'
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          node scripts/release-version.mjs
+          VERSION=$(node -p "require('./package.json').version")
+          PUBLISHED=$(npm view "mcp-ssh-manager@$VERSION" version)
+          test "$PUBLISHED" = "$VERSION"
 
       - name: Install mcp-publisher
+        if: steps.version.outputs.prerelease == 'false'
         run: |
           curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
             | tar xz mcp-publisher
@@ -31,10 +53,13 @@ jobs:
           mcp-publisher --help | head -3
 
       - name: Validate server.json
+        if: steps.version.outputs.prerelease == 'false'
         run: mcp-publisher validate
 
       - name: Authenticate via GitHub OIDC
+        if: steps.version.outputs.prerelease == 'false'
         run: mcp-publisher login github-oidc
 
       - name: Publish
+        if: steps.version.outputs.prerelease == 'false'
         run: mcp-publisher publish

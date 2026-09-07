@@ -188,6 +188,19 @@ function testProcessInfoRejectsNonNumericPid() {
   ok('buildProcessInfoCommand rejects every non-PID input');
 }
 
+function testHostKeyRemovalIsNotAShellCommand() {
+  // removeHostKey ran `ssh-keygen -R "<host>"` through a shell, and `host`
+  // comes from a server config — which an operator, or the control plane's own
+  // form, can set to anything. Same class as the builders above, found while
+  // wiring the options screen.
+  const source = fs.readFileSync(new URL('../src/ssh-key-manager.js', import.meta.url), 'utf8');
+  assert.ok(!/execSync\(`[^`]*\$\{/.test(source),
+    'ssh-key-manager must not interpolate values into a shell command string');
+  assert.ok(source.includes('execFileSync(\'ssh-keygen\''),
+    'host key removal must pass arguments to the process, not through a shell');
+  ok('host key removal passes arguments directly, never through a shell');
+}
+
 function testBenignValuesStillWork() {
   // Quoting must not break ordinary use — a fix nobody can use is not a fix.
   const cmd = buildMySQLDumpCommand({
@@ -209,6 +222,7 @@ function main() {
     testNoPayloadEverExecutes();
     testNumericArgumentsCannotCarryCommands();
     testProcessInfoRejectsNonNumericPid();
+    testHostKeyRemovalIsNotAShellCommand();
     testBenignValuesStillWork();
     console.log(`\n✅ backup/monitor injection tests passed (${passed} checks)`);
   } finally {

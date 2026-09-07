@@ -5,6 +5,73 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - Unreleased
+
+The control plane: a local application that shows what your agents are doing on
+your servers, and lets you stop them before they do it.
+
+**Upgrading changes nothing on its own.** With no vault, no approval set and
+nothing running, the engine behaves exactly as 3.8.5 did — verified end to end
+by `scripts/test-upgrade-from-published.mjs`, which installs 3.8.5 from the
+registry, asks it what it sees over MCP, installs this version over the top and
+asks again, then rolls back. Same 37 tool schemas, server fields and unchanged
+`.env` / TOML fixtures; no automatic vault or control plane.
+
+### Added
+
+- **The control plane** (`ssh-manager control`, or the desktop app): what an
+  agent is running right now with its output through a terminal emulator, a
+  queue of commands waiting on your decision, a dual-pane file browser, health
+  on demand with thresholds, an interactive shell on any server, saved commands,
+  groups, and the audit trail.
+- **Desktop builds** for macOS, Windows and Linux. The app *is* the control
+  plane rather than a window pointed at one, so it needs neither Node nor the
+  npm package.
+  - A **menu-bar item** carrying a count when something is waiting, listing what
+    is blocked on you, which shells and commands are open, and your servers.
+  - **Native notifications** posted by the application itself, so macOS and
+    Windows show and route them correctly. Destructive requests stay on screen.
+- **An encrypted vault** (AES-256-GCM, key in the OS keychain) for credentials,
+  sitting above your config files and below the process environment. Your `.env`
+  is never modified.
+- **Human approval**, per server: the engine pauses, shows you the machine and
+  the command in full, and waits. Every failure denies.
+- `ssh-manager vault` and `ssh-manager control` in the CLI, and the control
+  plane in the interactive menu.
+
+### Changed
+
+- **Approval can no longer be set from a file or the environment.** It is the
+  switch whose accidental override would disable a requested protection.
+  It lives in the vault and is preserved by connection-setting overrides. This
+  is not isolation from a process with control of the local user account. An existing
+  `SSH_SERVER_*_APPROVAL` is reported loudly on start rather than silently
+  ignored. Never released before this version, so no published behaviour changes.
+- Keychain lookups now time out after five seconds instead of blocking forever
+  on a host with no user session — a server over SSH, a container, a CI runner.
+
+### Fixed
+
+- Vault changes reload without restarting; editing a server keeps omitted
+  credentials, accounts, proxies, restrictions and approval. Process environment
+  overrides cannot erase an existing approval policy.
+- Recovery decrypts every credential before writing, previews replacements, and
+  refuses stale previews. Backup and restore are also available in Options → Vault.
+- SSH host keys are verified during the handshake. Remote MCP tools share one
+  approval/policy boundary; aliases resolve consistently, approvals are requested
+  once, and config changes invalidate old pooled connections. Working directories
+  with spaces or shell metacharacters are quoted.
+- Desktop groups persist in user state rather than inside the signed application.
+  Release metadata is regenerated after notarization/stapling; publishing waits
+  for platform checks. Release candidates use npm `next` without changing stable
+  Homebrew or MCP Registry entries.
+- First-run welcome now has local SVG illustrations, reduced-motion support and
+  keyboard-accessible dialogs. Add/import actions open their forms directly.
+  Server protection and lost control-plane connections are visible. Sidebar,
+  theme, server layout and collapsed groups survive a new local port.
+- `mkdirSync` under an unwritable path could hang indefinitely on Linux, which
+  cost this project's CI a six-hour job before anyone looked.
+
 ## [3.8.5] - 2026-08-28
 
 ### Security

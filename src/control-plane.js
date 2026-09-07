@@ -1,0 +1,2291 @@
+// The control plane — the thing that answers "what did my agents do on my
+// servers, and what am I letting them do next".
+//
+// It is two servers in one process:
+//
+//   * a **stream socket** the engine connects to when it needs a decision
+//     (the protocol in approval.js), and
+//   * a **local HTTP server** serving one page and a small API, so a human can
+//     see the queue and decide.
+//
+// It is deliberately not an Electron app and adds no dependency: Node's http
+// and net, plus one HTML file. That keeps it runnable anywhere the engine runs
+// — including on a server, reached through the SSH tunnels this project already
+// manages — and leaves the door open to wrapping it in a desktop shell later.
+//
+// ## Why the token is not optional
+//
+// This process approves root shell commands. An unauthenticated HTTP server on
+// localhost is reachable by **every process on the machine, and by any web page
+// the user has open** (a page can POST to 127.0.0.1). Without a secret in the
+// URL, a visited website could approve an agent's `rm -rf`. So:
+//
+//   * a random token is required on every request,
+//   * the Host header must be a loopback literal, which blocks DNS rebinding,
+//   * the listener binds 127.0.0.1 explicitly, never 0.0.0.0.
+
+import crypto from 'crypto';
+import fs from 'fs';
+import http from 'http';
+import net from 'net';
+import os from 'os';
+import { execFile } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { logger } from './logger.js';
+import { safeInteger } from './shell-quote.js';
+import { SecretStore, defaultVaultPath, SECRET_FIELDS, publicServerConfig } from './secret-store.js';
+import { ConfigLoader } from './config-loader.js';
+import { serializeRecovery, decryptRecoveryContent } from './vault-recovery.js';
+import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
+import { appendCommand, readCommandLog, trimCommandLog, clearCommandLog, commandLogPath, recordsOutput } from './command-log.js';
+import { MAX_SOCKET_PATH, VALID_APPROVAL_MODES } from './approval.js';
+import { VALID_MODES } from './policy.js';
+import { connectServer } from './ssh-connection.js';
+import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck, createAlertConfig, checkAlertThresholds } from './health-monitor.js';
+import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
+import { listSavedCommands, commandsForServer, saveCommand, deleteCommand as deleteSavedCommand, suggestedCommands } from './saved-commands.js';
+import { READERS, WELL_KNOWN, importFile, readTransmit, plan } from './server-import.js';
+import { listGroups, getGroup, createGroup, updateGroup, deleteGroup, executeOnGroup, setServerConfigProvider } from './server-groups.js';
+import { readPublishedTunnels } from './tunnel-manager.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Host headers accepted. Anything else is a rebinding attempt or a mistake. */
+const ALLOWED_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/** Merge form edits while preserving fields the form did not display.
+ * Empty secret inputs mean unchanged; explicit null removes a secret.
+ * @param {Record<string, any>} existing
+ * @param {Record<string, any>} patch
+ * @returns {Record<string, any>}
+ */
+function mergeServerPatch(existing, patch) {
+  const result = { ...existing };
+  for (const [field, value] of Object.entries(patch)) {
+    if (['name', '__proto__', 'prototype', 'constructor'].includes(field)
+      || /^has(?:Password|Passphrase|SudoPassword)$/.test(field) || value === undefined) continue;
+    if (SECRET_FIELDS.includes(field)) {
+      if (value === null) delete result[field];
+      else if (value !== '') result[field] = value;
+    } else if (field === 'accounts' && Array.isArray(value)) {
+      result.accounts = value.map(account => {
+        if (!account || typeof account !== 'object' || Array.isArray(account)) throw new Error('Invalid account');
+        const old = existing.accounts?.find(item => item.id === account.id) || {};
+        return mergeServerPatch(old, account);
+      });
+    } else {
+      // Keep an explicit empty value so the lower-priority .env cannot fill
+      // the cleared field back in when the engine merges config sources.
+      result[field] = value === null ? '' : value;
+    }
+  }
+  return result;
+}
+
+/** How many audit entries the timeline holds in memory. */
+const TIMELINE_LIMIT = 500;
+
+/**
+ * A pending decision: the engine is blocked on this until someone answers.
+ * @typedef {Object} PendingRequest
+ * @property {Object} request - What the engine asked
+ * @property {(decision: string, reason?: string) => void} settle - Answer it
+ * @property {number} receivedAt - Epoch ms, for showing how long it has waited
+ */
+
+/**
+ * How much terminal output is replayed to a screen that attaches late. Enough
+ * for a login banner and a screenful, small enough that idle shells cost little.
+ */
+const TERMINAL_BACKLOG_BYTES = 64 * 1024;
+
+/**
+ * How long an idle SFTP connection is kept. Long enough that browsing feels
+ * instant, short enough that walking away closes the session.
+ */
+const SFTP_IDLE_MS = 5 * 60 * 1000;
+
+/** Where `npm run build:ui` puts the built interface. */
+const APP_DIR = path.resolve(__dirname, '..', 'dist', 'ui');
+
+
+
+/**
+ * A pooled SFTP session can stop answering without ever failing: the machine
+ * went away, the network moved, the far end was killed. ssh2 has no deadline of
+ * its own for a request in flight, so the screen would sit on "Loading…"
+ * forever — which is worse than an error, because the operator cannot tell it
+ * apart from a slow directory.
+ *
+ * @template T
+ * @param {Promise<T>} work - The operation in flight
+ * @param {number} [ms] - How long to wait
+ * @returns {Promise<T>}
+ */
+function withTimeout(work, ms = 15000) {
+  return Promise.race([
+    work,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('The server stopped answering')), ms).unref()),
+  ]);
+}
+
+
+/**
+ * Whether a group exists, without the exception.
+ *
+ * `getGroup` throws for an unknown name — reasonable for a tool call, wrong as
+ * a test, and using it as one made every "create" report the group missing.
+ *
+ * @param {string} name - Group name
+ * @returns {any|null}
+ */
+function findGroup(name) {
+  try {
+    return getGroup(name);
+  } catch {
+    return null;
+  }
+}
+
+/** @param {any} sftp - SFTP session @param {string} dir - Path to resolve */
+function realpath(sftp, dir) {
+  return new Promise(resolve => {
+    sftp.realpath(dir, (/** @type {Error|null} */ error, /** @type {string} */ resolved) =>
+      resolve(error ? dir : resolved));
+  });
+}
+
+/** @param {any} sftp - SFTP session @param {string} dir - Directory to list */
+function readdir(sftp, dir) {
+  return new Promise((resolve, reject) => {
+    sftp.readdir(dir, (/** @type {Error|null} */ error, /** @type {any[]} */ list) =>
+      (error ? reject(error) : resolve(list)));
+  });
+}
+
+/**
+ * One SFTP entry as a file browser wants it: types decoded from the POSIX mode,
+ * times in milliseconds, and the full path already joined so the caller never
+ * has to guess how to join at the root.
+ *
+ * @param {string} dir - The directory being listed
+ * @param {any} item - An ssh2 directory entry
+ */
+function describe(dir, item) {
+  const attrs = item.attrs || {};
+  const mode = attrs.mode || 0;
+  const S_IFMT = 0o170000;
+  return {
+    name: item.filename,
+    path: dir === '/' ? `/${item.filename}` : `${dir}/${item.filename}`,
+    size: attrs.size ?? 0,
+    isDirectory: (mode & S_IFMT) === 0o040000,
+    isSymlink: (mode & S_IFMT) === 0o120000,
+    modifyTime: (attrs.mtime ?? 0) * 1000,
+    accessTime: (attrs.atime ?? 0) * 1000,
+    permissions: mode & 0o7777,
+    owner: attrs.uid ?? 0,
+    group: attrs.gid ?? 0,
+  };
+}
+
+/**
+ * How much JSON a request may carry.
+ *
+ * Every route but one takes a handful of fields, and 8 KB was plenty for those
+ * — until import, where confirming a hundred servers read out of another
+ * application is a perfectly ordinary thing to do and lands around 20 KB. One
+ * megabyte is far more than any of them needs and still refuses anything that
+ * looks like an attempt to fill memory.
+ */
+/**
+ * One open shell, remote or local. `close` releases whatever is behind it.
+ *
+ * @typedef {Object} TerminalEntry
+ * @property {string} label - What to call it in a log line
+ * @property {(data: Buffer) => void} write - Keystrokes in
+ * @property {(rows: number, cols: number) => void} resize - Window size
+ * @property {() => void} close - Release the shell and its connection
+ * @property {Set<import('http').ServerResponse>} subscribers - Attached pages
+ * @property {string[]} backlog - Frames kept for a page that attaches late
+ * @property {number} backlogBytes - Size of that backlog
+ */
+
+/**
+ * Opens a pseudo-terminal on the machine this process runs on.
+ *
+ * @typedef {(options: {cols: number, rows: number, cwd?: string}) => Promise<{
+ *   onData: (handler: (chunk: Buffer|string) => void) => void,
+ *   onExit: (handler: () => void) => void,
+ *   write: (data: Buffer) => void,
+ *   resize: (cols: number, rows: number) => void,
+ *   kill: () => void,
+ *   shell: string,
+ * }>} LocalShellFactory
+ */
+
+const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_RECOVERY_BYTES = 16 * 1024 * 1024;
+
+// Preferences are a handful of booleans and a list of folded category names.
+const PREFERENCES_LIMIT_BYTES = 64 * 1024;
+
+// How long an announcement nobody heard is kept for the first page that opens.
+// Sized for the worst real case: a file dropped on a *cold* Dock icon launches
+// the application, so the event exists long before there is an interface to
+// tell. Long enough for a slow machine to get a window up; short enough that
+// nobody is asked about a file they dropped in another session.
+const ANNOUNCE_REPLAY_MS = 30 * 1000;
+
+export class ControlPlane {
+  /**
+   * @param {Object} options - Configuration
+   * @param {string} options.socketPath - Where the engine connects
+   * @param {number} [options.port] - HTTP port; 0 picks a free one
+   * @param {string[]} [options.auditPaths] - JSONL audit logs to read
+   * @param {string} [options.vaultPath] - Encrypted store to manage servers in
+   */
+  constructor({ socketPath, port = 0, auditPaths = [], vaultPath = defaultVaultPath() }) {
+    this.socketPath = socketPath;
+    this.port = port;
+    this.auditPaths = auditPaths;
+    this.store = new SecretStore(vaultPath);
+    // Live command output from the engine, kept with a bounded scrollback so a
+    // window opened mid-command still shows what came before.
+    this.streams = new StreamRegistry();
+    this.streamServer = null;
+    // Interactive shells opened from the terminal screen, keyed by id. An
+    // entry hides where it came from behind write/resize/close, because a
+    // local shell and a remote one differ only in how they were opened.
+    /** @type {Map<string, TerminalEntry>} */
+    this.terminals = new Map();
+
+    // Set by a desktop shell that can allocate a local pseudo-terminal. Left
+    // null everywhere else — the engine ships no native module and will not
+    // grow one, so a shell on *this* machine is something the host process
+    // offers, not something the control plane can conjure.
+    /** @type {LocalShellFactory|null} */
+    this.localShell = null;
+
+    // SFTP connections, kept alive between requests. A file manager makes tens
+    // of calls to browse one directory tree, and an SSH handshake per `ls` —
+    // several hundred milliseconds each — would make the screen unusable. Idle
+    // connections are dropped after SFTP_IDLE_MS so nothing stays open on a
+    // machine nobody is looking at.
+    /** @type {Map<string, {ssh: any, sftp: any, timer: NodeJS.Timeout|null, revision: string}>} */
+    this.sftpPool = new Map();
+
+    /** @type {string|null} The tokenised URL, once the server is listening. */
+    this.url = null;
+    this.token = crypto.randomBytes(24).toString('hex');
+
+    /** @type {Map<string, PendingRequest>} */
+    this.pending = new Map();
+    /** @type {Object[]} */
+    this.timeline = [];
+    /** @type {Set<import('http').ServerResponse>} */
+    this.subscribers = new Set();
+    /** @type {{event: Record<string, any>, at: number}[]} */
+    this.undelivered = [];
+
+    this.socketServer = null;
+    this.httpServer = null;
+    /** @type {Map<string, number>} */
+    this.auditOffsets = new Map();
+    this.auditTimer = null;
+  }
+
+  /**
+   * Start both servers.
+   * @returns {Promise<{url: string, socketPath: string}>} Where to point a browser
+   */
+  async start() {
+    // Groups are the union of .server-groups.json and the per-server `group`
+    // field, so the group layer needs to know what servers exist. Wired here
+    // rather than inside the options handler: the write routes need it too, and
+    // without it they cannot tell a config-derived group from an unknown one.
+    setServerConfigProvider(() => {
+      try {
+        const raw = this.store.read();
+        return Object.fromEntries(
+          Object.entries(raw.servers).map(([name, config]) => [name, { ...config, name }])
+        );
+      } catch {
+        // An unreadable vault means no config-derived groups, not a failure.
+        return {};
+      }
+    });
+
+    // Checked before binding, because bind() reports an over-long path as
+    // EADDRINUSE — an error that sends you looking for a process that does not
+    // exist, on a socket file that is not there. macOS/BSD cap sun_path at 104
+    // bytes, and a project checked out under a long path reaches that easily.
+    for (const [label, socket] of [['approval', this.socketPath], ['stream', streamSocketPath()]]) {
+      const size = Buffer.byteLength(socket);
+      if (size > MAX_SOCKET_PATH) {
+        throw new Error(
+          `The ${label} socket path is ${size} bytes, over the ${MAX_SOCKET_PATH}-byte limit for Unix sockets: `
+          + `${socket}\nSet SSH_MANAGER_HOME to a shorter directory.`
+        );
+      }
+    }
+    await this.#startSocketServer();
+    await this.#startStreamServer();
+    const url = await this.#startHttpServer();
+    this.#startAuditTail();
+    return { url, socketPath: this.socketPath };
+  }
+
+  async #startStreamServer() {
+    this.streamServer = await listenForStreams(this.streams);
+
+    // Every command an agent runs passes through here, which is why the log can
+    // exist without anything being configured on the servers themselves.
+    trimCommandLog();
+    this.streams.subscribe(event => {
+      if (event.type !== 'end') return;
+      const stream = this.streams.get(event.id);
+      if (!stream) return;
+      appendCommand({
+        ts: new Date().toISOString(),
+        server: stream.server,
+        command: stream.command,
+        code: event.code ?? null,
+        durationMs: stream.startedAt ? Date.now() - Date.parse(stream.startedAt) : undefined,
+        output: stream.scrollback,
+      });
+    });
+    // Push every stream event straight to open pages: this is the "watch the
+    // agent work" path, and buffering it would defeat the point.
+    this.streams.subscribe(event => this.#broadcast({ type: 'stream', event }));
+  }
+
+  /** Stop everything and release the socket. */
+  async stop() {
+    if (this.auditTimer) clearInterval(this.auditTimer);
+    for (const response of this.subscribers) response.end();
+    this.subscribers.clear();
+
+    // Answer anything still waiting rather than leaving the engine hanging on a
+    // socket that is about to disappear.
+    for (const [, entry] of this.pending) {
+      entry.settle('deny', 'Control plane shutting down');
+    }
+    this.pending.clear();
+
+    // Interactive shells hold an SSH connection each; leaving them would leak
+    // a session per terminal ever opened.
+    for (const id of [...this.terminals.keys()]) this.#disposeTerminal(id);
+    for (const name of [...this.sftpPool.keys()]) this.#releaseSftp(name);
+
+    await Promise.all([
+      new Promise(resolve => (this.socketServer ? this.socketServer.close(() => resolve(undefined)) : resolve(undefined))),
+      new Promise(resolve => (this.httpServer ? this.httpServer.close(() => resolve(undefined)) : resolve(undefined))),
+      new Promise(resolve => (this.streamServer ? this.streamServer.close(() => resolve(undefined)) : resolve(undefined))),
+    ]);
+    for (const socket of [this.socketPath, streamSocketPath()]) {
+      try { fs.unlinkSync(socket); } catch { /* already gone */ }
+    }
+  }
+
+  async #startSocketServer() {
+    // A socket left behind by a crash makes bind() fail; clearing it is what
+    // lets the control plane restart without manual cleanup.
+    try {
+      if (fs.statSync(this.socketPath).isSocket()) fs.unlinkSync(this.socketPath);
+    } catch { /* nothing there */ }
+
+    fs.mkdirSync(path.dirname(this.socketPath), { recursive: true, mode: 0o700 });
+
+    this.socketServer = net.createServer(socket => this.#handleEngineConnection(socket));
+    await new Promise((resolve, reject) => {
+      this.socketServer?.once('error', reject);
+      this.socketServer?.listen(this.socketPath, () => resolve(undefined));
+    });
+    // Only this user may ask us to decide.
+    try { fs.chmodSync(this.socketPath, 0o600); } catch { /* best effort */ }
+  }
+
+  /**
+   * One engine connection carries one request and waits for one reply.
+   * @param {import('net').Socket} socket - The engine's connection
+   */
+  #handleEngineConnection(socket) {
+    let buffer = '';
+    let handled = false;
+
+    socket.on('data', chunk => {
+      if (handled) return;
+      buffer += chunk.toString();
+      const newline = buffer.indexOf('\n');
+      if (newline === -1) return;
+      handled = true;
+
+      /** @type {any} */
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newline));
+      } catch (error) {
+        logger.warn('Unreadable approval request', { error: error.message });
+        socket.destroy();
+        return;
+      }
+
+      const settle = (decision, reason) => {
+        if (socket.destroyed) return;
+        socket.write(`${JSON.stringify({ id: request.id, decision, reason })}\n`);
+        socket.end();
+        this.pending.delete(request.id);
+        this.#broadcast({ type: 'resolved', id: request.id, decision, reason });
+        this.#record({
+          ts: new Date().toISOString(),
+          server: request.server,
+          tool: request.tool,
+          command: request.command,
+          allowed: decision === 'allow',
+          reason: `approval ${decision}${reason ? `: ${reason}` : ''}`,
+          source: 'control-plane',
+        });
+      };
+
+      this.pending.set(request.id, { request, settle, receivedAt: Date.now() });
+      this.#broadcast({ type: 'pending', request });
+      logger.info('Approval requested', { server: request.server, tool: request.tool });
+
+      // If the engine gives up first (its own deadline), drop the entry so the
+      // UI does not offer a decision nobody is waiting for.
+      socket.on('close', () => {
+        if (this.pending.has(request.id)) {
+          this.pending.delete(request.id);
+          this.#broadcast({ type: 'expired', id: request.id });
+        }
+      });
+    });
+
+    socket.on('error', () => { /* engine went away */ });
+  }
+
+  /**
+   * @returns {Promise<string>} The URL to open, token included
+   */
+  async #startHttpServer() {
+    this.httpServer = http.createServer((req, res) => {
+      Promise.resolve().then(() => this.#handleHttp(req, res)).catch(error => {
+        logger.error('Control plane request failed', { error: error.message });
+        if (!res.headersSent) this.#json(res, 500, { error: 'Request failed' });
+        else if (!res.writableEnded) res.end();
+      });
+    });
+    await new Promise((resolve, reject) => {
+      this.httpServer?.once('error', reject);
+      // 127.0.0.1, never 0.0.0.0: this must not be reachable from the network.
+      this.httpServer?.listen(this.port, '127.0.0.1', () => resolve(undefined));
+    });
+    const address = /** @type {import('net').AddressInfo} */ (this.httpServer.address());
+    // Port 0 asks the OS to choose; remember what it chose, or callers that
+    // outlive the returned URL — a desktop window reopening, a status command —
+    // have no way to build it again.
+    this.port = address.port;
+    this.url = `http://127.0.0.1:${address.port}/?token=${this.token}`;
+    return this.url;
+  }
+
+  /**
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #handleHttp(req, res) {
+    let url;
+    try {
+      url = new URL(req.url || '/', 'http://127.0.0.1');
+    } catch {
+      return this.#json(res, 400, { error: 'Malformed request URL' });
+    }
+
+    // DNS rebinding: a hostile page can resolve its own domain to 127.0.0.1 and
+    // reach us. The Host header is what tells the two apart.
+    const host = (req.headers.host || '').replace(/:\d+$/, '');
+    if (!ALLOWED_HOSTS.has(host)) {
+      res.writeHead(403, { 'content-type': 'text/plain' });
+      res.end('Forbidden host\n');
+      return;
+    }
+
+    const token = url.searchParams.get('token') || req.headers['x-control-token'];
+    if (typeof token !== 'string' || !this.#tokenMatches(token)) {
+      res.writeHead(401, { 'content-type': 'text/plain' });
+      res.end('Missing or invalid token\n');
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/') return this.#serveApp(res);
+    if (req.method === 'GET' && url.pathname === '/legacy') return this.#serveUi(res);
+    if (req.method === 'GET' && (url.pathname === '/app.js' || url.pathname === '/app.css'
+      || url.pathname.startsWith('/assets/'))) return this.#serveAppAsset(url.pathname, res);
+    if (req.method === 'GET' && url.pathname === '/api/state') return this.#serveState(res);
+    if (req.method === 'GET' && url.pathname === '/api/events') return this.#serveEvents(res);
+    if (req.method === 'POST' && url.pathname === '/api/decide') return this.#handleDecision(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/terminal') return this.#openTerminal(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/terminal/stream') return this.#streamTerminal(url.searchParams.get('id'), res);
+    if (req.method === 'POST' && url.pathname === '/api/terminal/input') return this.#terminalInput(url.searchParams.get('id'), req, res);
+    if (req.method === 'POST' && url.pathname === '/api/terminal/resize') return this.#terminalResize(url.searchParams.get('id'), req, res);
+    if (req.method === 'DELETE' && url.pathname === '/api/terminal') return this.#closeTerminal(url.searchParams.get('id'), res);
+
+    // Files. Deliberately not path-restricted, for the same reason the terminal
+    // is not: whoever holds this token already has a shell on the machine.
+    if (req.method === 'GET' && url.pathname === '/api/files') return this.#listFiles(url.searchParams, res);
+    if (req.method === 'GET' && url.pathname === '/api/files/read') return this.#readFile(url.searchParams, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/write') return this.#writeFile(url.searchParams, req, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/mkdir') return this.#fileOp('mkdir', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/rename') return this.#fileOp('rename', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/files/delete') return this.#fileOp('delete', req, res);
+
+    // The local side of the file browser. This process runs on the operator's
+    // own machine, so it can read that machine's filesystem — which is what
+    // makes a local/remote pair possible at all. A page in a browser could not,
+    // but the page is not what reads the disk here.
+    if (req.method === 'GET' && url.pathname === '/api/local/files') return this.#listLocal(url.searchParams, res);
+    if (req.method === 'GET' && url.pathname === '/api/local/read') return this.#readLocal(url.searchParams, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/mkdir') return this.#localOp('mkdir', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/touch') return this.#localOp('touch', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/rename') return this.#localOp('rename', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/delete') return this.#localOp('delete', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/local/reveal') return this.#localOp('reveal', req, res);
+    if (req.method === 'POST' && url.pathname === '/api/transfer') return this.#transfer(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/execute') return this.#execute(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/preferences') return this.#servePreferences(res);
+    if (req.method === 'PUT' && url.pathname === '/api/preferences') return this.#savePreferences(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/options') return this.#serveOptions(res);
+    if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
+      return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/health') {
+      return this.#probeHealth(url.searchParams.get('name'), res);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/streams') {
+      const id = url.searchParams.get('id');
+      return this.#json(res, 200, id ? { stream: this.streams.get(id) } : { streams: this.streams.list() });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
+    if (req.method === 'GET' && url.pathname === '/api/vault/status') return this.#vaultStatus(res);
+    if (req.method === 'POST' && url.pathname === '/api/vault/backup') return this.#vaultBackup(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/vault/restore') return this.#vaultRestore(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/import/sources') return this.#importSources(res);
+    if (req.method === 'POST' && url.pathname === '/api/import/preview') return this.#importPreview(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/import/apply') return this.#importApply(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/history') {
+      return this.#json(res, 200, {
+        entries: readCommandLog(safeInteger(url.searchParams.get('limit'), 500)),
+        path: commandLogPath(),
+        recordsOutput: recordsOutput(),
+      });
+    }
+    if (req.method === 'DELETE' && url.pathname === '/api/history') {
+      // Offered because it is the operator's machine and their record.
+      clearCommandLog();
+      return this.#json(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/thresholds') {
+      return this.#json(res, 200, { thresholds: this.#readThresholds() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/thresholds') {
+      return this.#readJsonBody(req, res, payload => {
+        const thresholds = createAlertConfig({
+          cpu: safeInteger(payload.cpu, 80),
+          memory: safeInteger(payload.memory, 90),
+          disk: safeInteger(payload.disk, 85),
+          enabled: payload.enabled !== false,
+        });
+        fs.mkdirSync(path.dirname(this.#thresholdsPath()), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(this.#thresholdsPath(), `${JSON.stringify(thresholds, null, 2)}\n`, { mode: 0o600 });
+        this.#broadcast({ type: 'thresholds' });
+        return this.#json(res, 200, { thresholds });
+      });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/migration') return this.#migrationState(res);
+    if (req.method === 'POST' && url.pathname === '/api/groups') return this.#saveGroup(req, res);
+    if (req.method === 'DELETE' && url.pathname === '/api/groups') return this.#deleteGroup(url.searchParams.get('name'), res);
+    if (req.method === 'POST' && url.pathname === '/api/groups/run') return this.#runOnGroup(req, res);
+
+    // Saved commands: named shortcuts a person picks from a list, as opposed to
+    // the aliases an agent expands.
+    if (req.method === 'GET' && url.pathname === '/api/commands') {
+      const server = url.searchParams.get('server');
+      return this.#json(res, 200, {
+        commands: server ? commandsForServer(server) : listSavedCommands(),
+        suggestions: listSavedCommands().length === 0 ? suggestedCommands() : [],
+      });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/commands') {
+      return this.#readJsonBody(req, res, payload => {
+        try {
+          return this.#json(res, 200, { command: saveCommand(payload) });
+        } catch (error) {
+          return this.#json(res, 400, { error: error.message });
+        }
+      });
+    }
+    if (req.method === 'DELETE' && url.pathname === '/api/commands') {
+      const id = url.searchParams.get('id');
+      return this.#json(res, id && deleteSavedCommand(id) ? 200 : 404,
+        id ? { ok: true } : { error: 'Which command?' });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/migration') return this.#runMigration(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/servers') return this.#saveServer(req, res);
+    if (req.method === 'DELETE' && url.pathname === '/api/servers') {
+      return this.#deleteServer(url.searchParams.get('name'), res);
+    }
+
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('Not found\n');
+  }
+
+  /**
+   * Constant-time token comparison, so a caller cannot learn the token one
+   * character at a time from response timings.
+   * @param {string} candidate - Token supplied by the caller
+   * @returns {boolean} True on match
+   */
+  #tokenMatches(candidate) {
+    const expected = Buffer.from(this.token);
+    const actual = Buffer.from(candidate);
+    if (expected.length !== actual.length) return false;
+    return crypto.timingSafeEqual(expected, actual);
+  }
+
+  /**
+   * Shown only when the built interface is missing — a source checkout that has
+   * not run `npm run build:ui`.
+   *
+   * This used to be a second, complete implementation of every screen. Keeping
+   * two of those in step is work nobody does, and the one that drifts is always
+   * the one nobody looks at. A fallback that says what to run is more useful
+   * than a fallback that quietly behaves differently.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveUi(res) {
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-security-policy': 'default-src \'none\'; style-src \'unsafe-inline\'',
+    });
+    res.end(`<!doctype html>
+<meta charset="utf-8">
+<title>SSH Manager — interface not built</title>
+<style>
+  body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         max-width: 34rem; margin: 20vh auto; padding: 0 1.5rem; color: #111418; }
+  code { background: #edeff3; border-radius: 4px; padding: 0.15em 0.4em; font-size: 0.9em; }
+  p { color: #4a5058; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #111418; color: #e6e8eb; } code { background: #23272e; } p { color: #99a1ab; }
+  }
+</style>
+<h1>The interface has not been built</h1>
+<p>The control plane is running and its API is answering — only the page is missing.
+   This happens in a source checkout that has not built it yet.</p>
+<p>From the repository root:</p>
+<p><code>npm run build:ui</code></p>
+<p>Then reload. An installed copy from npm ships the built interface, so this
+   page should never appear there.</p>
+`);
+  }
+
+  /** @param {import('http').ServerResponse} res - Response */
+  #serveState(res) {
+    const pending = [...this.pending.values()].map(entry => ({
+      ...entry.request,
+      waitingMs: Date.now() - entry.receivedAt,
+    }));
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ pending, timeline: this.timeline.slice(-TIMELINE_LIMIT) }));
+  }
+
+  /** @param {import('http').ServerResponse} res - Response */
+  #serveEvents(res) {
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+    });
+    res.write(': connected\n\n');
+    this.subscribers.add(res);
+    res.on('close', () => this.subscribers.delete(res));
+
+    // Anything the shell said while there was nobody to hear it. Drained
+    // whether or not it is still fresh, so a stale event is discarded rather
+    // than kept for the next page.
+    const held = this.undelivered.splice(0, this.undelivered.length);
+    const now = Date.now();
+    for (const item of held) {
+      if (now - item.at < ANNOUNCE_REPLAY_MS) this.#broadcast(item.event);
+    }
+  }
+
+  /**
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #handleDecision(req, res) {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+      // A decision is a few dozen bytes; anything larger is not one.
+      if (body.length > 4096) req.destroy();
+    });
+    req.on('end', () => {
+      /** @type {any} */
+      let payload;
+      try {
+        payload = JSON.parse(body);
+      } catch {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end('{"error":"malformed body"}');
+        return;
+      }
+
+      const entry = this.pending.get(payload.id);
+      if (!entry) {
+        // Already answered, or the engine timed out while the page was open.
+        res.writeHead(409, { 'content-type': 'application/json' });
+        res.end('{"error":"no longer pending"}');
+        return;
+      }
+
+      entry.settle(payload.decision === 'allow' ? 'allow' : 'deny', payload.reason);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+  }
+
+  /**
+   * Servers held in the vault.
+   *
+   * Never returns a secret, only whether one is set: the page is the most
+   * exposed surface here, and a credential has no reason to travel to it. The
+   * CLI does not print them either.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  /**
+   * Push an event to every open page.
+   *
+   * The desktop shell is in this same process and occasionally knows something
+   * the interface cannot ask for — a file dropped on the Dock icon, which
+   * arrives as an AppKit event with no HTTP request behind it. This is the door
+   * for that, and deliberately the only one: everything else the page needs, it
+   * fetches.
+   *
+   * An announcement made while no page is listening would simply vanish, and
+   * that is exactly the case that matters: the drop is what *launched* the
+   * application, so the event is ready a second or two before the interface
+   * has connected its stream. Held, then, and handed to the first page that
+   * arrives — once, and only if it arrives soon.
+   *
+   * @param {Record<string, any>} event - Must carry a `type` the page knows
+   */
+  announce(event) {
+    if (this.subscribers.size === 0) {
+      this.undelivered.push({ event, at: Date.now() });
+      return;
+    }
+    this.#broadcast(event);
+  }
+
+  /**
+   * Offer a shell on the machine this process runs on.
+   *
+   * The second door for a host process, beside `announce()`. A pseudo-terminal
+   * cannot be allocated from plain Node — it needs `forkpty`, which means a
+   * native module — and the engine deliberately has none: it is published on
+   * npm and installs on machines with no compiler. So the desktop shell, which
+   * is built with a toolchain and already rebuilds native modules for Electron,
+   * hands one down instead.
+   *
+   * Nothing calls this in the npm package, and the interface asks before it
+   * offers: no local shell is not a broken local shell.
+   *
+   * @param {LocalShellFactory|null} factory - Opens a local pseudo-terminal
+   */
+  setLocalShellProvider(factory) {
+    this.localShell = factory;
+  }
+
+  /**
+   * Which places on *this* machine actually hold servers to import.
+   *
+   * Offering "FileZilla" to somebody who has never installed it is a dead end
+   * dressed as a feature, so each source is probed and only the ones with
+   * something in them come back. The count is part of the answer: "23 servers"
+   * is a reason to click, "FileZilla" on its own is a question.
+   */
+  #importSources(res) {
+    /** @type {{id: string, label: string, count: number}[]} */
+    const found = [];
+
+    for (const [id, candidates] of Object.entries(WELL_KNOWN)) {
+      const file = candidates().find(path => fs.existsSync(path));
+      if (!file) continue;
+      try {
+        const { servers, source } = importFile(file);
+        if (servers.length) found.push({ id, label: source, count: servers.length });
+      } catch {
+        // A file that exists but cannot be parsed is not worth offering.
+      }
+    }
+
+    if (process.platform === 'darwin') {
+      try {
+        const transmit = readTransmit([]);
+        if (transmit.length) {
+          found.push({ id: 'transmit', label: 'Transmit favourites', count: transmit.length });
+        }
+      } catch { /* Transmit is not installed, or plutil said no */ }
+    }
+
+    return this.#json(res, 200, { sources: found, formats: READERS.map(r => r.id) });
+  }
+
+  /**
+   * Read something without writing anything.
+   *
+   * Import is the one operation where "show me what you are about to do" is not
+   * a nicety: the alternative is finding out afterwards that forty rows landed
+   * with the wrong names.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #importPreview(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      /** @type {string|null} */
+      let temporary = null;
+      try {
+        let servers = [];
+        let source = '';
+        /** @type {string[]} */
+        const warnings = [];
+
+        if (payload.source === 'transmit') {
+          servers = readTransmit(warnings);
+          source = 'Transmit favourites';
+        } else if (payload.source) {
+          const candidates = WELL_KNOWN[String(payload.source)];
+          if (!candidates) return this.#json(res, 400, { error: `Unknown source: ${payload.source}` });
+          const file = candidates().find(path => fs.existsSync(path));
+          if (!file) return this.#json(res, 404, { error: 'Nothing found for that source on this machine' });
+          ({ servers, source } = importFile(file));
+        } else if (payload.filename && typeof payload.content === 'string') {
+          // The browser can hand over a file's bytes but not its path, and the
+          // readers open files themselves (a spreadsheet is a zip). So it lands
+          // in a temp file, keeping its extension, which is what detection uses.
+          const safe = path.basename(String(payload.filename)).replace(/[^\w.-]/g, '_');
+          temporary = path.join(os.tmpdir(), `ssh-manager-import-${Date.now()}-${safe}`);
+          fs.writeFileSync(temporary, Buffer.from(payload.content, 'base64'), { mode: 0o600 });
+          ({ servers, source } = importFile(temporary, payload.format || undefined));
+        } else {
+          return this.#json(res, 400, { error: 'Give either a source or a file' });
+        }
+
+        const existing = [...Object.keys(this.store.exists() ? this.store.read().servers : {})];
+        const { fresh, conflicts } = plan(servers, existing);
+        return this.#json(res, 200, { source, fresh, conflicts, warnings });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      } finally {
+        if (temporary) { try { fs.rmSync(temporary, { force: true }); } catch { /* temp */ } }
+      }
+    });
+  }
+
+  /**
+   * Write the servers the operator just looked at.
+   *
+   * Takes the list back rather than re-reading the file: what they confirmed is
+   * what gets written, even if the file changed underneath in the meantime.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #importApply(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      const servers = Array.isArray(payload.servers) ? payload.servers : [];
+      if (!servers.length) return this.#json(res, 400, { error: 'Nothing to import' });
+      let written = 0;
+      try {
+        for (const server of servers) {
+          const { name, ...config } = server;
+          if (!name || !config.host) continue;
+          this.store.setServer(String(name), config);
+          written++;
+        }
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+      logger.info('Servers imported from the control plane', { count: written });
+      this.#broadcast({ type: 'servers' });
+      return this.#json(res, 200, { ok: true, written });
+    });
+  }
+
+  #serveServers(res) {
+    /** @type {any[]} */
+    let servers = [];
+    try {
+      const raw = this.store.read();
+      servers = Object.entries(raw.servers).map(([name, config]) => ({ ...publicServerConfig(config), name }));
+    } catch (error) {
+      logger.error('Cannot read the vault', { error: error.message });
+      return this.#json(res, 500, { error: 'Cannot read the vault. Restore it before editing servers.' });
+    }
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ servers, vaultPath: this.store.vaultPath }));
+  }
+
+  /** @param {import('http').ServerResponse} res */
+  #vaultStatus(res) {
+    const check = this.store.checkKey();
+    let count = 0;
+    try { count = this.store.listServers().length; } catch { /* reported by checkKey */ }
+    return this.#json(res, 200, {
+      exists: this.store.exists(), readable: check.ok, reason: check.reason,
+      servers: count, secrets: check.checked, keySource: this.store.keySource,
+    });
+  }
+
+  /** @param {import('http').IncomingMessage} req @param {import('http').ServerResponse} res */
+  #vaultBackup(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      try {
+        const servers = this.store.getAllDecrypted();
+        if (!Object.keys(servers).length) return this.#json(res, 400, { error: 'The vault is empty' });
+        const content = serializeRecovery(servers, String(payload.passphrase || ''));
+        if (Buffer.byteLength(content) > MAX_RECOVERY_BYTES) {
+          return this.#json(res, 413, { error: 'Recovery exceeds the 16 MB interface limit. Use ssh-manager vault backup for this vault.' });
+        }
+        return this.#json(res, 200, {
+          filename: `ssh-manager-recovery-${new Date().toISOString().slice(0, 10)}.json`, content,
+        });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      }
+    });
+  }
+
+  /** @returns {string} */
+  #vaultRevision() {
+    try {
+      return crypto.createHash('sha256').update(fs.readFileSync(this.store.vaultPath)).digest('hex');
+    } catch (error) {
+      if (error.code === 'ENOENT') return 'missing';
+      throw error;
+    }
+  }
+
+  /** @param {import('http').IncomingMessage} req @param {import('http').ServerResponse} res */
+  #vaultRestore(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      try {
+        const content = String(payload.content || '');
+        if (Buffer.byteLength(content) > MAX_RECOVERY_BYTES) return this.#json(res, 413, { error: 'Recovery files must be at most 16 MB.' });
+        const servers = decryptRecoveryContent(content, String(payload.passphrase || ''));
+        const names = Object.keys(servers);
+        if (!names.length) return this.#json(res, 400, { error: 'The recovery file contains no servers' });
+        const revision = this.#vaultRevision();
+        const check = this.store.checkKey();
+        let existing = [];
+        try { existing = this.store.listServers(); } catch { /* unreadable vault will be replaced explicitly */ }
+        const preview = {
+          servers: names,
+          conflicts: names.filter(name => existing.includes(name)),
+          removed: check.ok ? [] : existing.filter(name => !names.includes(name)),
+          replacesUnreadable: !check.ok,
+          revision,
+        };
+        if (payload.confirm !== true) return this.#json(res, 200, preview);
+        if (payload.revision !== revision) {
+          return this.#json(res, 409, { error: 'The vault changed. Preview the recovery file again before restoring.' });
+        }
+        this.store.restoreServers(servers, { replaceUnreadable: !check.ok, expectedRevision: revision });
+        this.#broadcast({ type: 'servers' });
+        return this.#json(res, 200, { ok: true, ...preview });
+      } catch (error) {
+        return this.#json(res, error.code === 'VAULT_CHANGED' ? 409 : 400, { error: error.message });
+      }
+    }, MAX_RECOVERY_BYTES * 2 + 4096);
+  }
+
+
+
+  /**
+   * Create or edit a group.
+   *
+   * Groups come from two places: explicit lists in `.server-groups.json`, and
+   * the per-server `group` field of the config. The second kind is derived at
+   * read time and cannot be edited here — writing it back would duplicate into
+   * a file what the config already says, and the two would drift.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #saveGroup(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      const name = String(payload.name || '').trim();
+      if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+        return this.#json(res, 400, { error: 'Name must use letters, digits, dashes and underscores' });
+      }
+      const servers = Array.isArray(payload.servers) ? payload.servers.map(String) : [];
+      const options = {
+        description: payload.description ? String(payload.description) : undefined,
+        strategy: payload.strategy === 'sequential' ? 'sequential' : 'parallel',
+        delay: safeInteger(payload.delay, 0),
+        stopOnError: Boolean(payload.stopOnError),
+      };
+
+      try {
+        const existing = findGroup(name);
+        // A config-derived group has no entry to update; saving one would write
+        // a shadow copy that stops following the config.
+        if (existing?.fromConfig && !existing.explicit) {
+          return this.#json(res, 409, {
+            error: `"${name}" comes from the servers' own group field. Edit it there, or pick another name.`,
+          });
+        }
+        if (existing) updateGroup(name, { servers, ...options });
+        else createGroup(name, servers, options);
+        this.#broadcast({ type: 'options' });
+        return this.#json(res, 200, { ok: true, name });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * @param {string|null} name - Group to delete
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #deleteGroup(name, res) {
+    if (!name) return this.#json(res, 400, { error: 'Which group?' });
+    try {
+      const existing = findGroup(name);
+      if (existing?.fromConfig && !existing.explicit) {
+        return this.#json(res, 409, {
+          error: `"${name}" is derived from the servers' group field — remove it there instead.`,
+        });
+      }
+      deleteGroup(name);
+      this.#broadcast({ type: 'options' });
+      return this.#json(res, 200, { ok: true });
+    } catch (error) {
+      return this.#json(res, 400, { error: error.message });
+    }
+  }
+
+  /**
+   * Run one command across a group.
+   *
+   * Answered immediately and reported on the event stream, like transfers: a
+   * command across twenty machines takes as long as the slowest one, and a
+   * request held open that long times out somewhere in between.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #runOnGroup(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.group || '');
+      const command = String(payload.command || '');
+      if (!command.trim()) return this.#json(res, 400, { error: 'A command is required' });
+
+      const group = findGroup(name);
+      if (!group) return this.#json(res, 404, { error: 'No such group' });
+
+      const id = crypto.randomUUID();
+      this.#json(res, 200, { id, servers: group.servers.length });
+
+      /** @type {Record<string, any>} */
+      let vault = {};
+      try {
+        vault = this.store.getAllDecrypted();
+      } catch (error) {
+        this.#broadcast({ type: 'group-run', id, state: 'failed', error: error.message });
+        return;
+      }
+
+      this.#broadcast({ type: 'group-run', id, group: name, command, state: 'started', total: group.servers.length });
+      let done = 0;
+
+      await executeOnGroup(name, async serverName => {
+        const config = vault[serverName];
+        if (!config) throw new Error(`${serverName} is not in the vault`);
+        let ssh;
+        try {
+          ssh = await connectServer(serverName, vault, { readyTimeout: 15000 });
+          const result = await ssh.execCommand(command, { timeout: 120000 });
+          done++;
+          this.#broadcast({
+            type: 'group-run', id, state: 'progress', done, server: serverName,
+            code: result.code, stdout: result.stdout, stderr: result.stderr,
+          });
+          return result;
+        } finally {
+          try { ssh?.dispose(); } catch { /* best effort */ }
+        }
+      }).then(
+        () => this.#broadcast({ type: 'group-run', id, state: 'done', done }),
+        error => this.#broadcast({ type: 'group-run', id, state: 'failed', error: error.message })
+      );
+    });
+  }
+
+
+  /** @returns {string} Beside the vault, like the thresholds. */
+  #preferencesPath() {
+    return path.join(path.dirname(this.store.vaultPath), 'preferences.json');
+  }
+
+  /**
+   * What the interface remembers about itself: the introduction has been seen,
+   * the rail is collapsed, the theme is dark, this category is folded.
+   *
+   * Held here rather than in the browser's `localStorage`, which cannot work.
+   * The control plane binds port 0 — the operating system picks a free one —
+   * so the page's origin is `http://127.0.0.1:<a different port>` on every
+   * launch, and `localStorage` is scoped to an origin. Every preference was
+   * therefore forgotten between launches, which is why the introduction came
+   * back each time however carefully it had been finished.
+   *
+   * Opaque on purpose: the interface owns the shape, this owns the file. The
+   * only rules are that it is a flat object and that it stays small.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #servePreferences(res) {
+    this.#json(res, 200, { preferences: this.#readPreferences() });
+  }
+
+  /** @returns {Record<string, any>} */
+  #readPreferences() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.#preferencesPath(), 'utf8'));
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      // Absent on a first run, and unreadable is the same answer: no
+      // preferences yet. Never a reason to fail the screen.
+      return {};
+    }
+  }
+
+  /**
+   * Merge, never replace. Two screens can each remember one thing without
+   * the second erasing the first, and an interface that only knows about the
+   * key it just changed does not have to send the rest back.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #savePreferences(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return this.#json(res, 400, { error: 'Preferences must be an object' });
+      }
+      const merged = { ...this.#readPreferences(), ...payload };
+      // A cap, because this is a preferences file and not a database, and
+      // nothing should be able to grow it without limit.
+      const encoded = JSON.stringify(merged, null, 2);
+      if (encoded.length > PREFERENCES_LIMIT_BYTES) {
+        return this.#json(res, 413, { error: 'Too many preferences' });
+      }
+      try {
+        fs.mkdirSync(path.dirname(this.#preferencesPath()), { recursive: true });
+        fs.writeFileSync(this.#preferencesPath(), `${encoded}\n`, { mode: 0o600 });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+      return this.#json(res, 200, { preferences: merged });
+    });
+  }
+
+  /** @returns {string} Where the thresholds live — beside the vault, not on the servers. */
+  #thresholdsPath() {
+    return path.join(path.dirname(this.store.vaultPath), 'thresholds.json');
+  }
+
+  /**
+   * The levels at which a machine is worth mentioning.
+   *
+   * Kept on this machine rather than pushed to each server, which is what the
+   * engine's `ssh_alert_setup` does: writing a config file onto twenty
+   * production boxes to hold three numbers is a lot of blast radius for a
+   * preference, and it only helps something that runs *there* — nothing does.
+   * The watching happens here.
+   *
+   * @returns {{cpu: number, memory: number, disk: number, enabled: boolean}}
+   */
+  #readThresholds() {
+    try {
+      return { ...createAlertConfig({}), ...JSON.parse(fs.readFileSync(this.#thresholdsPath(), 'utf8')) };
+    } catch {
+      return createAlertConfig({});
+    }
+  }
+
+  /**
+   * What is still living in a .env rather than in the vault.
+   *
+   * Offered, never performed. Somebody upgrading from 3.8 has a working setup
+   * and no obligation to change it; the vault earns its place by being better,
+   * not by moving their files while they are not looking. This route exists so
+   * the interface can *mention* it — which is the part that was missing, since
+   * nobody reads a changelog.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #migrationState(res) {
+    try {
+      const loader = new ConfigLoader();
+      // Deliberately without the vault: what is wanted here is what the files
+      // alone hold, so a server present in both is not counted as pending.
+      const loaded = await loader.load({ vaultPath: null });
+      const fromFiles = loaded instanceof Map ? Object.fromEntries(loaded) : loaded;
+      const inVault = new Set(this.store.exists() ? this.store.listServers() : []);
+
+      const pending = Object.entries(fromFiles)
+        .filter(([name]) => !inVault.has(name))
+        .map(([name, config]) => ({
+          name,
+          host: config.host,
+          user: config.user,
+          // The count, never the values: this travels to a browser.
+          secrets: SECRET_FIELDS.filter(field => config[field]).length,
+          source: config.source ?? 'env',
+        }));
+
+      return this.#json(res, 200, {
+        pending,
+        inVault: inVault.size,
+        envPath: loader.envPath ?? null,
+        // A vault with no recovery file is a vault that does not survive this
+        // machine, and that is exactly what the operator should know before
+        // being told they can clean up their .env.
+        hasVault: this.store.exists(),
+      });
+    } catch (error) {
+      return this.#json(res, 200, { pending: [], inVault: 0, error: error.message });
+    }
+  }
+
+  /**
+   * Copy servers from the files into the vault. Named ones only — a button
+   * that moves everything is a button somebody presses by accident.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #runMigration(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const wanted = Array.isArray(payload.servers) ? payload.servers.map(String) : [];
+      if (wanted.length === 0) return this.#json(res, 400, { error: 'Name the servers to import' });
+
+      try {
+        const loaded = await new ConfigLoader().load({ vaultPath: null });
+        const fromFiles = loaded instanceof Map ? Object.fromEntries(loaded) : loaded;
+
+        const imported = [];
+        for (const name of wanted) {
+          if (!fromFiles[name]) continue;
+          this.store.setServer(name, fromFiles[name]);
+          imported.push(name);
+        }
+        // The .env is not touched, here or anywhere: it stays the fallback, and
+        // removing it is the operator's decision to make later, deliberately.
+        logger.info('Servers imported from files into the vault', { count: imported.length });
+        this.#broadcast({ type: 'servers' });
+        return this.#json(res, 200, { imported });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * Add or replace a server.
+   *
+   * A field left empty on an existing server keeps its stored value, so editing
+   * the port does not silently wipe the password — the form cannot show it, so
+   * it must not require re-typing it either.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #saveServer(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      const name = String(payload.name || '').trim().toLowerCase();
+      if (!name || !/^[a-z0-9_]+$/.test(name)) {
+        return this.#json(res, 400, { error: 'Name must use letters, digits and underscores only' });
+      }
+      if (!payload.host) return this.#json(res, 400, { error: 'A host is required' });
+      if (payload.mode && !VALID_MODES.has(payload.mode)) {
+        return this.#json(res, 400, { error: 'Invalid security mode' });
+      }
+      if (payload.approval && !VALID_APPROVAL_MODES.has(payload.approval)) {
+        return this.#json(res, 400, { error: 'Invalid approval mode' });
+      }
+
+      try {
+        // The UI shows only some fields. Omitting proxy, platform, audit or
+        // policy settings while changing a port must leave them intact.
+        const existing = this.store.getAllDecrypted()[name] || {};
+        const config = mergeServerPatch(existing, payload);
+        this.store.setServer(name, config);
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+      logger.info('Server saved from the control plane', { server: name });
+      this.#broadcast({ type: 'servers' });
+      return this.#json(res, 200, { ok: true, name });
+    });
+  }
+
+  /**
+   * @param {string|null} name - Server to remove
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #deleteServer(name, res) {
+    if (!name) return this.#json(res, 400, { error: 'No server named' });
+    const removed = this.store.removeServer(name);
+    if (!removed) return this.#json(res, 404, { error: 'No such server in the vault' });
+    logger.info('Server removed from the control plane', { server: name });
+    this.#broadcast({ type: 'servers' });
+    return this.#json(res, 200, { ok: true });
+  }
+
+  /**
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   * @param {(payload: any) => any} handler - Called with the parsed body
+   * @param {number} [maxBytes] - Route-specific request size limit
+   */
+  #readJsonBody(req, res, handler, maxBytes = MAX_BODY_BYTES) {
+    req.setEncoding('utf8');
+    let body = '';
+    let bytes = 0;
+    let refused = false;
+    req.on('data', chunk => {
+      if (refused) return;
+      body += chunk;
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > maxBytes) {
+        // Answer, then stop reading. Destroying the socket silently — which is
+        // what this did — reaches the browser as "Failed to fetch" with no
+        // status and no message, and the operator has no way to know that a
+        // limit was the reason. Importing a hundred servers hit it and looked
+        // like a network fault.
+        refused = true;
+        this.#json(res, 413, {
+          error: `Body too large: over ${Math.round(maxBytes / 1024)} KB`,
+        });
+        req.destroy();
+      }
+    });
+    req.on('end', async () => {
+      if (refused) return;
+      let payload;
+      try {
+        payload = JSON.parse(body);
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('object required');
+      } catch {
+        return this.#json(res, 400, { error: 'malformed body' });
+      }
+      try {
+        await handler(payload);
+      } catch (error) {
+        logger.error('Control plane request failed', { error: error.message });
+        if (!res.headersSent) this.#json(res, 500, { error: 'Request failed' });
+        else if (!res.writableEnded) res.end();
+      }
+    });
+  }
+
+  /**
+   * @param {import('http').ServerResponse} res - Response
+   * @param {number} status - HTTP status
+   * @param {any} payload - JSON body
+   */
+  #json(res, status, payload) {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(JSON.stringify(payload));
+  }
+
+
+  /**
+   * The control plane's interface: a built React app under `dist/ui`.
+   *
+   * Committed rather than built on install, for the same reason xterm.js is
+   * vendored — `npm install mcp-ssh-manager` must never compile anything. If
+   * the build is missing (a source checkout that has not run `npm run build:ui`)
+   * this falls back to the single-file page rather than showing a blank screen.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveApp(res) {
+    const index = path.join(APP_DIR, 'index.html');
+    if (!fs.existsSync(index)) return this.#serveUi(res);
+    try {
+      // Vite emits root-relative asset URLs; the token has to ride along on
+      // them for the same reason it does on the vendored files — a <script>
+      // tag cannot authenticate itself.
+      const html = fs.readFileSync(index, 'utf8')
+        .replace(/(src|href)="\.?\/(app\.(?:js|css))"/g, (_, attr, file) => `${attr}="/${file}?token=${this.token}"`);
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'content-security-policy':
+          'default-src \'none\'; style-src \'self\' \'unsafe-inline\'; '
+          + 'script-src \'self\'; connect-src \'self\'; img-src \'self\' data:; font-src \'self\'',
+      });
+      res.end(html);
+    } catch {
+      this.#serveUi(res);
+    }
+  }
+
+  /**
+   * Static files from the build. The allowlist is by shape rather than by name
+   * because the font filenames are chosen by the bundler, but the shape is
+   * narrow and every path is resolved and checked to be inside APP_DIR — a
+   * path from a URL is how traversal happens.
+   *
+   * @param {string} pathname - Requested path
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveAppAsset(pathname, res) {
+    const types = {
+      '.js': 'text/javascript', '.css': 'text/css', '.ttf': 'font/ttf',
+      '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png',
+    };
+    const type = types[path.extname(pathname)];
+    const resolved = path.resolve(APP_DIR, `.${pathname}`);
+    if (!type || !resolved.startsWith(APP_DIR + path.sep)) {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('Not found\n');
+      return;
+    }
+    try {
+      let body = fs.readFileSync(resolved);
+      // A stylesheet's url() references are fetched by the browser with no way
+      // to add the token, exactly like a <script> tag. Same fix, same reason:
+      // stamp it in when serving. Without this the fonts 401 and the page
+      // silently falls back to the system stack.
+      if (type === 'text/css') {
+        body = Buffer.from(
+          body.toString('utf8').replace(/url\(([^)"']*\/assets\/[^)"']+)\)/g,
+            (_, asset) => `url(${asset}?token=${this.token})`)
+        );
+      }
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
+      res.end(body);
+    } catch {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('Not found\n');
+    }
+  }
+
+  /**
+   * Open an interactive shell on a server.
+   *
+   * `ssh2` allocates the remote pseudo-terminal itself, so this needs no native
+   * module: colours, `top`, `vim`, Ctrl-C and window resizing all work because
+   * the remote side believes it is talking to a real terminal.
+   *
+   * Deliberately not subject to the readonly/restricted modes: those exist to
+   * constrain an *agent*, and whoever holds this token is the operator who
+   * configured them and already has the credentials. Constraining them here
+   * would be theatre.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #openTerminal(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const cols = payload.cols || 80;
+      const rows = payload.rows || 24;
+      if (payload.local) return this.#openLocalTerminal(res, cols, rows, payload.cwd);
+
+      const name = String(payload.server || '').toLowerCase();
+      /** @type {Record<string, any>} */
+      let servers = {};
+      try {
+        servers = this.store.getAllDecrypted();
+      } catch (error) {
+        return this.#json(res, 500, { error: `Cannot read the vault: ${error.message}` });
+      }
+      if (!servers[name]) return this.#json(res, 404, { error: 'No such server in the vault' });
+
+      const id = crypto.randomUUID();
+      let ssh;
+
+      try {
+        ssh = await connectServer(name, servers, { readyTimeout: 15000 });
+        const stream = await new Promise((resolve, reject) => {
+          ssh.client.shell(
+            { term: 'xterm-256color', cols, rows },
+            (error, channel) => (error ? reject(error) : resolve(channel))
+          );
+        });
+
+        const entry = this.#registerTerminal(id, {
+          label: name,
+          write: data => stream.write(data),
+          resize: (nextRows, nextCols) => stream.setWindow(nextRows, nextCols, 0, 0),
+          close: () => {
+            try { stream.end(); } catch { /* already closed */ }
+            try { ssh.dispose(); } catch { /* best effort */ }
+          },
+        });
+
+        stream.on('data', chunk => entry.push('stdout', chunk));
+        stream.stderr?.on('data', chunk => entry.push('stderr', chunk));
+        stream.on('close', () => this.#disposeTerminal(id));
+
+        logger.info('Interactive shell opened', { server: name });
+        return this.#json(res, 200, { id, server: name });
+      } catch (error) {
+        try { ssh?.dispose(); } catch { /* best effort */ }
+        return this.#json(res, 502, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * A shell on the machine this process is running on.
+   *
+   * Only when a host has offered one. `ssh-manager ui` served in a browser has
+   * no local shell and says so plainly rather than pretending: the page asks
+   * the options endpoint first and does not offer what cannot be given.
+   *
+   * Not gated by the readonly/restricted modes, for the same reason the remote
+   * shell is not: those constrain an *agent*, and whoever holds this token is
+   * the person sitting at the machine.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   * @param {number} cols - Terminal width
+   * @param {number} rows - Terminal height
+   * @param {string} [cwd] - Where to start
+   */
+  async #openLocalTerminal(res, cols, rows, cwd) {
+    if (!this.localShell) {
+      return this.#json(res, 501, { error: 'No local shell here — this build cannot open one' });
+    }
+    const id = crypto.randomUUID();
+    try {
+      const pty = await this.localShell({ cols, rows, cwd });
+      const entry = this.#registerTerminal(id, {
+        label: `local:${pty.shell}`,
+        write: data => pty.write(data),
+        resize: (nextRows, nextCols) => pty.resize(nextCols, nextRows),
+        close: () => { try { pty.kill(); } catch { /* already gone */ } },
+      });
+      pty.onData(chunk => entry.push('stdout', Buffer.from(chunk)));
+      pty.onExit(() => this.#disposeTerminal(id));
+      logger.info('Local shell opened', { shell: pty.shell });
+      return this.#json(res, 200, { id, server: 'This machine', local: true });
+    } catch (error) {
+      return this.#json(res, 500, { error: error.message });
+    }
+  }
+
+  /**
+   * Everything an open shell needs that has nothing to do with where it runs:
+   * the subscriber set, the bounded backlog, and the frame format.
+   *
+   * @param {string} id - Terminal id
+   * @param {{label: string, write: (data: Buffer) => void, resize: (rows: number, cols: number) => void, close: () => void}} plumbing - What differs
+   * @returns {TerminalEntry & {push: (channel: string, chunk: Buffer) => void}}
+   */
+  #registerTerminal(id, plumbing) {
+    const entry = /** @type {any} */ ({
+      ...plumbing,
+      subscribers: new Set(),
+      backlog: [],
+      backlogBytes: 0,
+    });
+    // Base64 because terminal output is bytes, not text: escape sequences and
+    // partial UTF-8 do not survive a round trip through JSON strings.
+    entry.push = (channel, chunk) => {
+      const line = `data: ${JSON.stringify({ channel, chunk: chunk.toString('base64') })}\n\n`;
+      // Kept so a screen that attaches after the shell opened still shows the
+      // login banner and the first prompt, which arrive in the gap between the
+      // shell opening and the browser subscribing. Bounded, or a `tail -f` left
+      // running would grow the process without limit.
+      entry.backlog.push(line);
+      entry.backlogBytes += line.length;
+      while (entry.backlogBytes > TERMINAL_BACKLOG_BYTES && entry.backlog.length > 1) {
+        entry.backlogBytes -= entry.backlog.shift().length;
+      }
+      for (const subscriber of entry.subscribers) {
+        try { subscriber.write(line); } catch { entry.subscribers.delete(subscriber); }
+      }
+    };
+    this.terminals.set(id, entry);
+    return entry;
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #streamTerminal(id, res) {
+    const entry = id ? this.terminals.get(id) : null;
+    if (!entry) return this.#json(res, 404, { error: 'No such terminal' });
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+    });
+    res.write(': connected\n\n');
+    for (const line of entry.backlog) {
+      try { res.write(line); } catch { break; }
+    }
+    entry.subscribers.add(res);
+    res.on('close', () => entry.subscribers.delete(res));
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #terminalInput(id, req, res) {
+    const entry = id ? this.terminals.get(id) : null;
+    if (!entry) return this.#json(res, 404, { error: 'No such terminal' });
+    this.#readJsonBody(req, res, payload => {
+      try {
+        entry.write(Buffer.from(String(payload.data || ''), 'base64'));
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #terminalResize(id, req, res) {
+    const entry = id ? this.terminals.get(id) : null;
+    if (!entry) return this.#json(res, 404, { error: 'No such terminal' });
+    this.#readJsonBody(req, res, payload => {
+      try {
+        // Without this, a full-screen program draws for the wrong window size
+        // and the display is garbled the moment anyone resizes.
+        entry.resize(payload.rows || 24, payload.cols || 80);
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, 500, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * @param {string|null} id - Terminal id
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #closeTerminal(id, res) {
+    if (!id || !this.terminals.has(id)) return this.#json(res, 404, { error: 'No such terminal' });
+    this.#disposeTerminal(id);
+    return this.#json(res, 200, { ok: true });
+  }
+
+  /**
+   * Close a shell and release its SSH connection.
+   * @param {string} id - Terminal id
+   */
+  #disposeTerminal(id) {
+    const entry = this.terminals.get(id);
+    if (!entry) return;
+    this.terminals.delete(id);
+    for (const subscriber of entry.subscribers) {
+      try { subscriber.end(); } catch { /* already gone */ }
+    }
+    try { entry.close(); } catch { /* best effort */ }
+    logger.info('Interactive shell closed', { shell: entry.label });
+  }
+
+
+
+
+
+  /**
+   * Move files between this machine and a server, in either direction.
+   *
+   * Done here rather than by the browser downloading and re-uploading: the
+   * bytes never leave this process, which is both faster and the only way a
+   * multi-gigabyte file works at all. Progress is reported on the event stream
+   * so the page can show it without polling.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #transfer(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.server || '').toLowerCase();
+      const direction = payload.direction === 'download' ? 'download' : 'upload';
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      if (items.length === 0) return this.#json(res, 400, { error: 'Nothing to transfer' });
+
+      const id = crypto.randomUUID();
+      // Answered immediately: a transfer can take minutes, and a request left
+      // open that long is a request that times out somewhere in between.
+      this.#json(res, 200, { id, count: items.length });
+
+      let done = 0;
+      const announce = (extra = {}) =>
+        this.#broadcast({ type: 'transfer', id, direction, server: name, done, total: items.length, ...extra });
+      announce({ state: 'started' });
+
+      try {
+        await this.#withSftp(name, async sftp => {
+          for (const item of items) {
+            const local = path.resolve(String(item.local));
+            const remote = String(item.remote);
+            await new Promise((resolve, reject) => {
+              const from = direction === 'upload' ? fs.createReadStream(local) : sftp.createReadStream(remote);
+              const to = direction === 'upload' ? sftp.createWriteStream(remote) : fs.createWriteStream(local);
+              from.on('error', reject);
+              to.on('error', reject);
+              to.on('close', resolve);
+              to.on('finish', resolve);
+              from.pipe(to);
+            });
+            done++;
+            announce({ state: 'progress', file: path.basename(local) });
+          }
+        });
+        announce({ state: 'done' });
+        logger.info('Transfer finished', { server: name, direction, count: items.length });
+      } catch (error) {
+        announce({ state: 'failed', error: error.message });
+        logger.warn('Transfer failed', { server: name, direction, error: error.message });
+      }
+    });
+  }
+
+  /**
+   * List a directory on this machine.
+   *
+   * No path restriction, deliberately and for the same reason as the terminal:
+   * whoever holds this token already has a shell here. A sandbox that a shell
+   * sits next to is decoration.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #listLocal(params, res) {
+    const dir = params.get('path') || os.homedir();
+    try {
+      const resolved = path.resolve(dir);
+      const entries = fs.readdirSync(resolved, { withFileTypes: true }).map(entry => {
+        const full = path.join(resolved, entry.name);
+        let stat;
+        try {
+          // lstat, not stat: a symlink must report as one rather than as
+          // whatever it points at, and a broken link must not throw.
+          stat = fs.lstatSync(full);
+        } catch {
+          stat = null;
+        }
+        return {
+          name: entry.name,
+          path: full,
+          size: stat?.size ?? 0,
+          isDirectory: entry.isDirectory(),
+          isSymlink: entry.isSymbolicLink(),
+          modifyTime: stat?.mtimeMs ?? 0,
+          accessTime: stat?.atimeMs ?? 0,
+          permissions: stat ? stat.mode & 0o7777 : 0,
+          owner: stat?.uid ?? 0,
+          group: stat?.gid ?? 0,
+        };
+      });
+      return this.#json(res, 200, { path: resolved, entries, home: os.homedir(), separator: path.sep });
+    } catch (error) {
+      return this.#json(res, error.code === 'ENOENT' ? 404 : 403, { error: error.message });
+    }
+  }
+
+  /**
+   * Stream a local file out, so the remote pane can upload it without the
+   * browser ever holding the bytes.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #readLocal(params, res) {
+    const file = params.get('path') || '';
+    try {
+      const resolved = path.resolve(file);
+      const stream = fs.createReadStream(resolved);
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-disposition': `attachment; filename="${path.basename(resolved).replace(/["\r\n]/g, '_')}"`,
+      });
+      stream.on('error', () => res.end());
+      stream.pipe(res);
+    } catch (error) {
+      return this.#json(res, 404, { error: error.message });
+    }
+  }
+
+  /**
+   * mkdir / rename / delete / reveal on this machine.
+   *
+   * @param {'mkdir'|'touch'|'rename'|'delete'|'reveal'} kind - Which operation
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #localOp(kind, req, res) {
+    this.#readJsonBody(req, res, payload => {
+      try {
+        if (kind === 'mkdir') fs.mkdirSync(path.resolve(String(payload.path)), { recursive: true });
+        else if (kind === 'touch') {
+          // 'wx' fails when the file exists rather than truncating it: "New
+          // file" must never be a way to silently empty one.
+          fs.closeSync(fs.openSync(path.resolve(String(payload.path)), 'wx'));
+        }
+        else if (kind === 'rename') fs.renameSync(path.resolve(String(payload.from)), path.resolve(String(payload.to)));
+        else if (kind === 'delete') fs.rmSync(path.resolve(String(payload.path)), { recursive: Boolean(payload.isDirectory), force: false });
+        else if (kind === 'reveal') {
+          // execFile, never a shell: a path is not ours to trust even when it
+          // came from our own listing, and this one round-trips through a
+          // browser on the way.
+          const opener = process.platform === 'darwin' ? 'open'
+            : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+          execFile(opener, [path.resolve(String(payload.path))], () => { /* best effort */ });
+        }
+        logger.info(`Local ${kind}`, { path: payload.path ?? payload.to });
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * Run one command on a server and hand back what it printed.
+   *
+   * Same reasoning as the terminal and the file routes: this is the operator's
+   * own hands, not an agent's, so the readonly/restricted modes do not apply.
+   * It exists because a file browser needs `chmod` and `chown`, and because
+   * "run this on that machine" is the shortest path between a screen and an
+   * answer.
+   *
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #execute(req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.server || '').toLowerCase();
+      const command = String(payload.command || '');
+      if (!command.trim()) return this.#json(res, 400, { error: 'A command is required' });
+
+      /** @type {Record<string, any>} */
+      let servers = {};
+      try {
+        servers = this.store.getAllDecrypted();
+      } catch (error) {
+        return this.#json(res, 500, { error: `Cannot read the vault: ${error.message}` });
+      }
+      if (!servers[name]) return this.#json(res, 404, { error: 'No such server in the vault' });
+
+      let ssh;
+      try {
+        ssh = await connectServer(name, servers, { readyTimeout: 15000 });
+        const result = await ssh.execCommand(command, { timeout: 60000 });
+        logger.info('Command run from the control plane', { server: name });
+        return this.#json(res, 200, { stdout: result.stdout, stderr: result.stderr, code: result.code });
+      } catch (error) {
+        return this.#json(res, 502, { error: error.message });
+      } finally {
+        try { ssh?.dispose(); } catch { /* best effort */ }
+      }
+    });
+  }
+
+  /**
+   * Borrow a live SFTP session for a server, opening one if needed.
+   *
+   * The idle timer restarts on every use, so an operator browsing a tree keeps
+   * one connection and someone who wandered off keeps none.
+   *
+   * @param {string} name - Server name, already lowercased
+   * @returns {Promise<any>} an ssh2 SFTP session
+   */
+  async #sftp(name) {
+    const revision = this.#vaultRevision();
+    const existing = this.sftpPool.get(name);
+    if (existing && existing.revision === revision) {
+      if (existing.timer) clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS);
+      return existing.sftp;
+    }
+    if (existing) this.#releaseSftp(name);
+
+    /** @type {Record<string, any>} */
+    const servers = this.store.getAllDecrypted();
+    if (!servers[name]) throw Object.assign(new Error('No such server in the vault'), { status: 404 });
+
+    const ssh = await connectServer(name, servers, { readyTimeout: 15000 });
+    let sftp;
+    try { sftp = await ssh.getSFTP(); } catch (error) { ssh.dispose(); throw error; }
+    const entry = { ssh, sftp, revision, timer: setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS) };
+    this.sftpPool.set(name, entry);
+    logger.info('SFTP session opened', { server: name });
+    return sftp;
+  }
+
+  /** @param {string} name - Server name */
+  #releaseSftp(name) {
+    const entry = this.sftpPool.get(name);
+    if (!entry) return;
+    this.sftpPool.delete(name);
+    if (entry.timer) clearTimeout(entry.timer);
+    try { entry.ssh.dispose(); } catch { /* best effort */ }
+    logger.info('SFTP session released', { server: name });
+  }
+
+  /**
+   * Turn an SFTP callback into a promise, and a dropped connection into a
+   * retry. A pooled session can die between two requests — the machine
+   * rebooted, the network moved — and the operator should not have to know
+   * that; they clicked a folder.
+   *
+   * @param {string} name - Server name
+   * @param {(sftp: any) => Promise<any>} run - What to do with the session
+   */
+  async #withSftp(name, run) {
+    try {
+      return await withTimeout(run(await this.#sftp(name)));
+    } catch (error) {
+      if (/** @type {any} */ (error).status === 404) throw error;
+      this.#releaseSftp(name);
+      return withTimeout(run(await this.#sftp(name)));
+    }
+  }
+
+  /**
+   * List a directory. Returns the shape a file browser wants — one stat per
+   * entry, already merged — because a browser that has to stat every row makes
+   * one round trip per file.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #listFiles(params, res) {
+    const name = String(params.get('server') || '').toLowerCase();
+    const requested = params.get('path') || '.';
+    try {
+      const result = await this.#withSftp(name, async sftp => {
+        // '.' means the home directory, and the browser needs its real name:
+        // without resolving it the breadcrumb has nothing to show, and every
+        // path built from there is relative to a directory it cannot name.
+        const dir = requested === '.' ? await realpath(sftp, '.') : requested;
+        const list = await readdir(sftp, dir);
+        return { dir, entries: list.map(item => describe(dir, item)) };
+      });
+      return this.#json(res, 200, { path: result.dir, entries: result.entries });
+    } catch (error) {
+      return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+    }
+  }
+
+  /**
+   * Stream a file down. Streamed rather than buffered: a control plane that
+   * reads a 4 GB log into memory to hand it over is a control plane that dies.
+   *
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #readFile(params, res) {
+    const name = String(params.get('server') || '').toLowerCase();
+    const file = params.get('path') || '';
+    try {
+      const sftp = await this.#sftp(name);
+      const stream = sftp.createReadStream(file);
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        // The name is quoted and stripped of quotes and control characters: a
+        // filename is remote input, and this header is parsed by the browser.
+        'content-disposition': `attachment; filename="${String(file.split('/').pop()).replace(/[""\r\n]/g, '_')}"`,
+      });
+      stream.on('error', (/** @type {Error} */ error) => {
+        logger.warn('File read failed', { server: name, error: error.message });
+        res.end();
+      });
+      stream.pipe(res);
+    } catch (error) {
+      return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+    }
+  }
+
+  /**
+   * Stream a file up.
+   * @param {URLSearchParams} params - Query
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #writeFile(params, req, res) {
+    const name = String(params.get('server') || '').toLowerCase();
+    const file = params.get('path') || '';
+    try {
+      const sftp = await this.#sftp(name);
+      await new Promise((resolve, reject) => {
+        const stream = sftp.createWriteStream(file);
+        stream.on('close', resolve);
+        stream.on('error', reject);
+        req.on('error', reject);
+        req.pipe(stream);
+      });
+      logger.info('File written', { server: name, path: file });
+      return this.#json(res, 200, { ok: true });
+    } catch (error) {
+      return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+    }
+  }
+
+  /**
+   * mkdir / rename / delete. One handler because they differ only in the call.
+   *
+   * @param {'mkdir'|'rename'|'delete'} kind - Which operation
+   * @param {import('http').IncomingMessage} req - Request
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #fileOp(kind, req, res) {
+    this.#readJsonBody(req, res, async payload => {
+      const name = String(payload.server || '').toLowerCase();
+      try {
+        await this.#withSftp(name, sftp => new Promise((resolve, reject) => {
+          const done = (/** @type {Error|null} */ error) => (error ? reject(error) : resolve(true));
+          if (kind === 'mkdir') return sftp.mkdir(String(payload.path), done);
+          if (kind === 'rename') return sftp.rename(String(payload.from), String(payload.to), done);
+          // rmdir and unlink are different calls, and the caller knows which it
+          // clicked on — asking SFTP to guess would mean a stat per delete.
+          return payload.isDirectory
+            ? sftp.rmdir(String(payload.path), done)
+            : sftp.unlink(String(payload.path), done);
+        }));
+        logger.info(`File ${kind}`, { server: name });
+        return this.#json(res, 200, { ok: true });
+      } catch (error) {
+        return this.#json(res, /** @type {any} */ (error).status || 502, { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * Groups and known host keys — the two pieces of state that live in files and
+   * are therefore readable from here.
+   *
+   * Tunnels are deliberately absent: tunnel-manager keeps them in a Map inside
+   * the MCP server's process, so this process cannot see them. Showing an empty
+   * or stale tunnel list would be worse than showing none.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveOptions(res) {
+    /** @type {any[]} */
+    let groups = [];
+    try {
+      groups = listGroups();
+    } catch (error) {
+      logger.warn('Cannot list groups', { error: error.message });
+    }
+
+    /** @type {any[]} */
+    let hostKeys = [];
+    try {
+      hostKeys = listKnownHosts();
+    } catch (error) {
+      logger.warn('Cannot read known_hosts', { error: error.message });
+    }
+
+    // Tunnels are opened inside the MCP server's process; it publishes them to
+    // a file so this one can show them. `stale` means the file was written by a
+    // process that is no longer running — showing those as open would be a lie.
+    const tunnelState = readPublishedTunnels();
+
+    this.#json(res, 200, {
+      groups,
+      hostKeys,
+      tunnels: tunnelState.tunnels,
+      tunnelsStale: tunnelState.stale,
+      // Whether a shell on *this* machine can be opened at all. False for a
+      // control plane served over the network, where it would be a stranger's
+      // shell on somebody's laptop.
+      localShell: Boolean(this.localShell),
+    });
+  }
+
+  /**
+   * Forget a host key.
+   *
+   * The reason this belongs in a control plane: when a server is rebuilt its
+   * host key changes, every connection then fails with a warning, and the fix
+   * is to remove the stale entry. Doing that by hand means editing
+   * ~/.ssh/known_hosts with a line number from an error message.
+   *
+   * @param {string|null} host - Host to forget
+   * @param {string|null} port - Port, defaults to 22
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #forgetHostKey(host, port, res) {
+    if (!host) return this.#json(res, 400, { error: 'No host named' });
+    try {
+      const removed = removeHostKey(host, Number(port) || 22);
+      if (!removed) return this.#json(res, 404, { error: 'No such host key' });
+      logger.info('Host key forgotten from the control plane', { host, port });
+      this.#broadcast({ type: 'options' });
+      return this.#json(res, 200, { ok: true });
+    } catch (error) {
+      return this.#json(res, 500, { error: error.message });
+    }
+  }
+
+  /**
+   * Probe one server's health, or every server when no name is given.
+   *
+   * The control plane opens its own SSH connection for this: it holds the
+   * vault, so it has the credentials, and the MCP server is driven by an agent
+   * rather than by us. Connections are opened per probe and closed straight
+   * after — a dashboard that quietly holds a connection open to every machine
+   * is a dashboard nobody should run.
+   *
+   * Only ever on request. Nothing is polled in the background: each probe costs
+   * an SSH handshake, and a control plane that connects to every production box
+   * on a timer would be worse than no dashboard at all.
+   *
+   * @param {string|null} name - Server to probe, or null for all
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #probeHealth(name, res) {
+    /** @type {Record<string, any>} */
+    let servers = {};
+    try {
+      servers = this.store.getAllDecrypted();
+    } catch (error) {
+      return this.#json(res, 500, { error: `Cannot read the vault: ${error.message}` });
+    }
+
+    const targets = name ? [name.toLowerCase()].filter(n => servers[n]) : Object.keys(servers);
+    if (targets.length === 0) {
+      return this.#json(res, 200, { results: [] });
+    }
+
+    const thresholds = this.#readThresholds();
+
+    // In parallel: one slow or unreachable machine must not delay the others.
+    const results = await Promise.all(targets.map(async serverName => {
+      const config = { ...servers[serverName], name: serverName };
+      const started = Date.now();
+      let ssh;
+      try {
+        // Short, because this is a dashboard: a machine that has not answered
+        // in eight seconds is "unreachable" as far as the screen is concerned,
+        // and the operator would rather see that than watch a spinner.
+        ssh = await connectServer(serverName, servers, { readyTimeout: 8000 });
+        const result = await ssh.execCommand(buildComprehensiveHealthCheckCommand(), { timeout: 20000 });
+        const health = parseComprehensiveHealthCheck(result.stdout);
+        // Crossings are computed here rather than in the page: the same answer
+        // has to serve a notification, and a threshold evaluated in a browser
+        // cannot raise one when nobody is looking at the browser.
+        const alerts = thresholds.enabled ? checkAlertThresholds(health, thresholds) : [];
+        return {
+          server: serverName, host: config.host, reachable: true,
+          tookMs: Date.now() - started, alerts, ...health,
+        };
+      } catch (error) {
+        // Unreachable is a legitimate answer, not an error: it is exactly what
+        // the operator wants to see on the screen.
+        return {
+          server: serverName,
+          host: config.host,
+          reachable: false,
+          tookMs: Date.now() - started,
+          error: error.message,
+        };
+      } finally {
+        try { ssh?.dispose(); } catch { /* best effort */ }
+      }
+    }));
+
+    this.#broadcast({ type: 'health', results });
+    return this.#json(res, 200, { results });
+  }
+
+  /**
+   * Follow the audit logs so the timeline shows what happened without approval
+   * too — the engine writes them whether or not anyone is watching.
+   */
+  #startAuditTail() {
+    if (this.auditPaths.length === 0) return;
+
+    const readNew = () => {
+      for (const auditPath of this.auditPaths) {
+        try {
+          const { size } = fs.statSync(auditPath);
+          // First sight of this file: start at its end, so opening the control
+          // plane does not replay months of history. Record the offset even when
+          // there is nothing to read — otherwise an empty log is treated as
+          // "unseen" forever and every later line is skipped as history.
+          if (!this.auditOffsets.has(auditPath)) {
+            this.auditOffsets.set(auditPath, size);
+            continue;
+          }
+          const from = /** @type {number} */ (this.auditOffsets.get(auditPath));
+          if (size <= from) {
+            // Truncated or rotated: start over rather than reading garbage.
+            if (size < from) this.auditOffsets.set(auditPath, 0);
+            continue;
+          }
+          const fd = fs.openSync(auditPath, 'r');
+          const buffer = Buffer.alloc(size - from);
+          fs.readSync(fd, buffer, 0, buffer.length, from);
+          fs.closeSync(fd);
+          this.auditOffsets.set(auditPath, size);
+
+          for (const line of buffer.toString('utf8').split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              this.#record({ ...JSON.parse(line), source: 'audit' });
+            } catch { /* partial line, it will come round again */ }
+          }
+        } catch { /* file not created yet */ }
+      }
+    };
+
+    readNew();
+    this.auditTimer = setInterval(readNew, 1000);
+    this.auditTimer.unref?.();
+  }
+
+  /** @param {Object} entry - Timeline entry */
+  #record(entry) {
+    this.timeline.push(entry);
+    if (this.timeline.length > TIMELINE_LIMIT) this.timeline.shift();
+    this.#broadcast({ type: 'timeline', entry });
+  }
+
+  /** @param {Object} event - Event to push to every open page */
+  #broadcast(event) {
+    const payload = `data: ${JSON.stringify(event)}\n\n`;
+    for (const response of this.subscribers) {
+      try { response.write(payload); } catch { this.subscribers.delete(response); }
+    }
+  }
+}

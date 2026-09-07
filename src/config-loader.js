@@ -5,6 +5,8 @@ import path from 'path';
 import os from 'os';
 import { logger } from './logger.js';
 import { VALID_MODES } from './policy.js';
+import { SecretStore, defaultVaultPath } from './secret-store.js';
+import { resolveConfigOptions } from './config-paths.js';
 
 /**
  * A resolved SSH server configuration, as produced by this loader and consumed
@@ -34,6 +36,7 @@ import { VALID_MODES } from './policy.js';
  * @property {string} [proxyCommand] Custom proxy command (`%h` / `%p` placeholders).
  * @property {boolean} [forwardAgent] Forward the local ssh-agent to this server.
  * @property {string} [mode] Security mode: `unrestricted`, `readonly` or `restricted`.
+ * @property {string} [approval] Human approval mode: `never`, `destructive` or `always`.
  * @property {string[]} [allowPatterns] Regex sources allowed in `restricted` mode.
  * @property {string[]} [denyPatterns] Regex sources always refused.
  * @property {string} [auditLog] Path to a per-server audit log.
@@ -82,6 +85,8 @@ export class ConfigLoader {
     this.servers = new Map();
     /** @type {string|null} */
     this.configSource = null;
+    /** @type {string|null} The .env actually read, once one has been. */
+    this.envPath = null;
   }
 
   /**
@@ -93,14 +98,17 @@ export class ConfigLoader {
    * @returns {Promise<Map<string, ServerConfig>>}
    */
   async load(options = {}) {
+    const defaults = resolveConfigOptions(options.envPath);
     const {
-      envPath = path.join(process.cwd(), '.env'),
-      tomlPath = process.env.SSH_CONFIG_PATH || path.join(os.homedir(), '.codex', 'ssh-config.toml'),
-      preferToml = false
+      envPath = defaults.envPath,
+      tomlPath = defaults.tomlPath,
+      preferToml = defaults.preferToml
     } = options;
 
     // Clear existing servers
     this.servers.clear();
+    this.envPath = null;
+    this.configSource = null;
 
     // Load in reverse priority order (lowest to highest)
     let loadedFromToml = false;
@@ -121,6 +129,9 @@ export class ConfigLoader {
     if (!preferToml && fs.existsSync(envPath)) {
       try {
         this.loadEnvConfig(envPath);
+        // Kept so callers can name the file they are talking about — the
+        // control plane tells the operator which .env it found.
+        this.envPath = envPath;
         loadedFromEnv = true;
         logger.info(`Loaded SSH configuration from .env: ${envPath}`);
       } catch (error) {
@@ -128,11 +139,49 @@ export class ConfigLoader {
       }
     }
 
+    // Load the encrypted vault (v4). It sits above the files and below the
+    // process environment: a credential the user deliberately stored in the
+    // vault should win over one left in a .env, but an operator overriding
+    // things from the environment for one run must still win over both.
+    // Absent vault → this is a no-op, and behaviour is exactly as before.
+    let loadedFromVault = false;
+    const vaultPath = options.vaultPath === null ? null : options.vaultPath || defaultVaultPath();
+    const store = new SecretStore(vaultPath || defaultVaultPath());
+    if (vaultPath && store.exists()) {
+      try {
+        const vaultServers = store.getAllDecrypted();
+        for (const [name, config] of Object.entries(vaultServers)) {
+          const existing = this.servers.get(name);
+          this.servers.set(name, { ...(existing || {}), ...config, name });
+        }
+        loadedFromVault = Object.keys(vaultServers).length > 0;
+        if (loadedFromVault) {
+          logger.info(`Loaded ${Object.keys(vaultServers).length} server(s) from the encrypted vault`);
+        }
+      } catch (error) {
+        // Once adopted, the vault owns security settings as well as secrets.
+        // Falling back to files could silently remove approval or policy rules.
+        // The control plane can still start independently to restore the vault.
+        logger.error(`Failed to read the vault at ${vaultPath}`, { error: error.message });
+        this.servers.clear();
+        throw Object.assign(new Error(
+          `The encrypted vault at ${vaultPath} cannot be read. SSH operations are blocked to preserve its security settings. `
+          + 'Run ssh-manager control and restore a recovery file in Options > Vault, '
+          + 'or run ssh-manager vault restore <file>. '
+          + `Cause: ${error.message}`
+        ), { code: 'VAULT_UNREADABLE' });
+      }
+    }
+
     // Load from environment variables (highest priority, overwrites everything)
     this.loadEnvironmentVariables();
 
+    this.#rejectFileApproval();
+
     // Determine primary config source
-    if (loadedFromEnv) {
+    if (loadedFromVault) {
+      this.configSource = 'vault';
+    } else if (loadedFromEnv) {
       this.configSource = 'env';
     } else if (loadedFromToml) {
       this.configSource = 'toml';
@@ -144,6 +193,30 @@ export class ConfigLoader {
     }
 
     return this.servers;
+  }
+
+  /**
+   * Tell anyone who set approval in a file that it no longer does anything.
+   *
+   * Silently ignoring it would be the worst outcome available: they would
+   * believe an agent stops and waits for them on that server, and it would not.
+   * Better to say so on every start until they move it.
+   */
+  #rejectFileApproval() {
+    const named = new Set();
+    for (const key of Object.keys(process.env)) {
+      const match = key.match(/^SSH_SERVER_(.+)_APPROVAL$/);
+      if (match) named.add(match[1].toLowerCase());
+    }
+    if (process.env.SSH_MANAGER_APPROVAL) named.add('(all servers)');
+    if (named.size === 0) return;
+    logger.warn(
+      'Approval can no longer be set from a file or the environment, and these '
+      + 'settings are being ignored. Set it in the control plane instead: '
+      + '`ssh-manager control`, then the server\'s Approval field. It moved so '
+      + 'that a shell on one of your machines cannot turn off the gate that '
+      + 'exists to stop it.',
+      { ignored: [...named] });
   }
 
   /**
@@ -189,6 +262,8 @@ export class ConfigLoader {
           proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
           forwardAgent: parseBool(serverConfig.forward_agent),
           mode,
+          // approval is deliberately NOT read here — see loadEnvConfig below.
+
           allowPatterns: tomlAllow,
           denyPatterns: tomlDeny,
           auditLog: serverConfig.audit_log,
@@ -262,11 +337,28 @@ export class ConfigLoader {
           proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
           forwardAgent: parseBool(env[`SSH_SERVER_${match[1]}_FORWARD_AGENT`]),
           mode,
+          // approval is deliberately NOT read from files. It is the switch
+          // that makes an agent stop and wait for a human, and a switch that
+          // lives in a plain-text file next to the code is a switch the agent
+          // can flip on its own: one `sed -i` in .env and the gate it was meant
+          // to pass is gone. It lives in the vault instead, and the control
+          // plane is the only thing that writes it — a deliberate act by the
+          // person the gate exists to protect.
+          //
+          // This is defence in depth, not a wall: the vault key sits in the
+          // same user's keychain, so the same shell can in principle reach it.
+          // What it removes is the trivial path, which is the one that gets
+          // taken. See rejectFileApproval() for what happens to an old setting.
           allowPatterns: envAllow,
           denyPatterns: envDeny,
           auditLog: env[`SSH_SERVER_${match[1]}_AUDIT_LOG`],
           source: 'env'
         };
+
+        // The environment keeps its published precedence for connection fields,
+        // but it cannot switch off a gate that is controlled only by the vault.
+        const approval = this.servers.get(serverName)?.approval;
+        if (approval !== undefined) server.approval = approval;
 
         this.servers.set(serverName, server);
         processedServers.add(serverName);
@@ -381,6 +473,8 @@ export class ConfigLoader {
       if (server.denyPatterns && server.denyPatterns.length > 0) {
         lines.push(`SSH_SERVER_${upperName}_DENY_PATTERNS="${server.denyPatterns.join(';')}"`);
       }
+      // Not exported: writing APPROVAL into a .env would produce a file that
+      // looks like it configures approval and silently does not.
       if (server.auditLog) lines.push(`SSH_SERVER_${upperName}_AUDIT_LOG=${server.auditLog}`);
       lines.push('');
     }

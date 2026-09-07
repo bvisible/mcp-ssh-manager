@@ -1,0 +1,5 @@
+# Third-party code shipped as-is. Linting it would report thousands of style
+# issues in a file we must not edit — the point of vendoring is that it stays
+# byte-identical to what upstream published.
+vendor/
+node_modules/

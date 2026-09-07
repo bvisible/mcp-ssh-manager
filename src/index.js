@@ -4,10 +4,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import SSHManager from './ssh-manager.js';
+import { connectSSH, connectServer } from './ssh-connection.js';
 import * as dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { isDeepStrictEqual } from 'node:util';
+import { resolveEnvFilePath } from './config-paths.js';
 import { fileURLToPath } from 'url';
 import { ServerConfigManager } from './server-config-manager.js';
 import {
@@ -143,38 +147,15 @@ import {
 } from './database-manager.js';
 import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 import { evaluatePolicy } from './policy.js';
-import { shellQuote, safeInteger } from './shell-quote.js';
-import { auditLog } from './audit.js';
+import { needsApproval, isControlPlaneListening, requestDecision, buildRequest, isApprovalExempt, isReadOnlyAction, HANDLER_GATED_TOOLS } from './approval.js';
+import { shellQuote, shellPath, safeInteger } from './shell-quote.js';
+import { openStream } from './live-stream.js';
+import { auditLog, sanitize } from './audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Resolve .env file path with fallback chain:
-// 1. SSH_ENV_PATH env var (explicit override)
-// 2. ~/.ssh-manager/.env (user config dir — where ssh-manager CLI writes)
-// 3. process.cwd()/.env (standard working directory)
-// 4. ~/.env (home directory)
-// 5. __dirname/../.env (backward compat for local installs)
-function resolveEnvFilePath() {
-  if (process.env.SSH_ENV_PATH) {
-    return process.env.SSH_ENV_PATH;
-  }
-  const sshManagerHome = process.env.SSH_MANAGER_HOME || path.join(os.homedir(), '.ssh-manager');
-  const candidates = [
-    path.join(sshManagerHome, '.env'),
-    path.join(process.cwd(), '.env'),
-    path.join(os.homedir(), '.env'),
-    path.join(__dirname, '..', '.env'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return path.join(process.cwd(), '.env');
-}
-
-const envFilePath = resolveEnvFilePath();
+const envFilePath = resolveEnvFilePath({ projectRoot: path.join(__dirname, '..') });
 const envFile = dotenv.config({ path: envFilePath, processEnv: {} });
 const envFileValues = envFile.parsed || {};
 
@@ -250,10 +231,16 @@ const WRAPPED_COMMAND_TIMEOUT_GRACE_MS = 5000;
 // Map to track proxy jump dependencies (target -> jump server)
 const jumpDependencies = new Map();
 
-// Load server configuration (backward compatibility wrapper)
+// Tunnels own independent transports. Retain their original configuration for
+// local lookup and disposal even if the vault is removed or becomes unreadable.
+const tunnelConnections = new Map();
+
+// One immutable configuration snapshot per tool invocation: a vault edit while
+// a decision is pending must not redirect the approved action to another host.
+const toolContext = new AsyncLocalStorage();
+
 async function loadServerConfig() {
-  // This function is kept for backward compatibility
-  return serverConfigManager.getServers();
+  return toolContext.getStore()?.servers || serverConfigManager.getServers();
 }
 
 // ── Per-server security policy plumbing (v3.5.0+) ──────────────────────────────
@@ -265,16 +252,18 @@ async function loadServerConfig() {
 // absent — so pre-v3.5.0 configs see zero behavior change.
 
 async function getServerConfig(serverName) {
-  if (!serverName) return null;
   const servers = await loadServerConfig();
-  return servers[String(serverName).toLowerCase()] || null;
+  const name = serverName && resolveServerName(String(serverName), servers);
+  if (!name) throw new Error(`Server "${serverName}" not found`);
+  return servers[name];
 }
 
 // Apply policy + audit a denial in one shot. Returns null when allowed; returns
 // an MCP error response object when denied (handler should `return` it directly).
 async function applyServerPolicy(serverName, toolName, args, command) {
   const serverConfig = await getServerConfig(serverName);
-  const policy = evaluatePolicy(serverConfig, toolName, command);
+  const readOnlyAction = isReadOnlyAction(toolName, args);
+  const policy = evaluatePolicy(serverConfig, readOnlyAction ? `${toolName}:read` : toolName, command);
   if (!policy.allowed) {
     auditLog(serverConfig, toolName, args, policy);
     return {
@@ -293,6 +282,28 @@ async function applyServerPolicy(serverName, toolName, args, command) {
       isError: true,
     };
   }
+
+  // Servers without approval retain the headless v3 path. Once approval is
+  // enabled, an unavailable interface cannot count as the operator saying yes.
+  if (needsApproval(serverConfig, readOnlyAction ? `${toolName}:read` : toolName, command)) {
+    const decision = isControlPlaneListening()
+      ? await requestDecision(buildRequest(serverConfig, toolName, sanitize(args), command))
+      : { decision: 'deny', source: 'unavailable', reason: 'Approval is required; start ssh-manager control or the desktop app' };
+    auditLog(serverConfig, toolName, args, {
+      allowed: decision.decision === 'allow',
+      reason: `approval ${decision.decision} (${decision.source})${decision.reason ? `: ${decision.reason}` : ''}`,
+    });
+    if (decision.decision !== 'allow') {
+      return {
+        content: [{ type: 'text', text: formatJSONResponse({
+          server: serverConfig.name, tool: toolName, success: false,
+          error: `Approval denied${decision.reason ? `: ${decision.reason}` : ''}`, code: -3,
+        }) }],
+        isError: true,
+      };
+    }
+  }
+
   return null;
 }
 
@@ -312,7 +323,10 @@ async function auditOk(serverName, toolName, args, executionResult) {
  * @param {number} [timeoutMs]
  */
 async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30000) {
-  // Pass through rawCommand and platform if specified
+  // Pass through rawCommand and platform if specified. onStdout/onStderr ride
+  // along in otherOptions to SSHManager.execCommand, which calls them as output
+  // arrives — that is what makes live streaming possible without a second
+  // execution path.
   const { rawCommand, platform = 'linux', ...otherOptions } = options;
 
   // Windows targets: encode the command as PowerShell -EncodedCommand (UTF-16
@@ -428,6 +442,14 @@ function setupKeepalive(serverName, ssh) {
 function closeConnection(serverName) {
   const normalizedName = serverName.toLowerCase();
 
+  // Dependants and interactive sessions hold the old transport too.
+  for (const [dependent, jump] of [...jumpDependencies]) {
+    if (jump === normalizedName) closeConnection(dependent);
+  }
+  for (const session of listSessions()) {
+    if (session.server === normalizedName) closeSession(session.id);
+  }
+
   // Clear keepalive interval
   if (keepaliveIntervals.has(normalizedName)) {
     clearInterval(keepaliveIntervals.get(normalizedName));
@@ -450,6 +472,17 @@ function closeConnection(serverName) {
   logger.logConnection(serverName, 'closed');
 }
 
+function openTunnelServers() {
+  return Object.fromEntries(listTunnels().map(tunnel =>
+    [tunnel.server, tunnelConnections.get(tunnel.id)?.config || {}]));
+}
+
+function disposeTunnelConnection(tunnelId) {
+  const ssh = tunnelConnections.get(tunnelId);
+  tunnelConnections.delete(tunnelId);
+  ssh?.dispose();
+}
+
 // Clean up old connections
 function cleanupOldConnections() {
   const now = Date.now();
@@ -461,56 +494,13 @@ function cleanupOldConnections() {
   }
 }
 
-// Create a socket from a proxy command (e.g., "ncat --proxy 127.0.0.1:1080 --proxy-type socks5 %h %p")
-// The command is executed through the system shell, matching OpenSSH ProxyCommand semantics,
-// so quoted arguments and shell metacharacters work as users expect.
-async function createProxyCommandSocket(proxyCommand, host, port) {
-  const { spawn } = await import('child_process');
-  const { Duplex } = await import('stream');
-
-  const cmd = proxyCommand.replace(/%h/g, host).replace(/%p/g, port.toString());
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, {
-      shell: true,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    // Cast: Node accepts a {readable, writable} pair here, but the bundled
-    // types only model the stream/iterable overloads.
-    const socket = Duplex.from(/** @type {any} */ ({
-      readable: child.stdout,
-      writable: child.stdin,
-      allowHalfOpen: false
-    }));
-
-    // Forward proxy stderr to the MCP server's stderr for debugging
-    child.stderr.on('data', (chunk) => {
-      process.stderr.write(`[proxy-command] ${chunk}`);
-    });
-
-    let settled = false;
-    const settle = (fn, arg) => {
-      if (settled) return;
-      settled = true;
-      fn(arg);
-    };
-
-    socket.on('close', () => {
-      if (!child.killed) child.kill();
-    });
-
-    child.on('error', (err) => settle(reject, err));
-    child.on('spawn', () => settle(resolve, socket));
-    child.on('exit', (code, signal) => {
-      // Only surface unexpected exits — a kill() after a successful connection is normal.
-      if (!settled && code !== 0) {
-        settle(reject, new Error(`Proxy command exited with code ${code}${signal ? ` (${signal})` : ''}`));
-      } else if (settled && code !== 0 && !signal && !socket.destroyed) {
-        socket.destroy(new Error(`Proxy command exited with code ${code}`));
-      }
-    });
-  });
+function connectionMatchesConfig(name, servers, seen = new Set()) {
+  if (seen.has(name)) return false;
+  seen.add(name);
+  const ssh = connections.get(name);
+  if (!ssh || !isDeepStrictEqual(ssh.config, servers[name])) return false;
+  const jump = jumpDependencies.get(name);
+  return !jump || connectionMatchesConfig(jump, servers, seen);
 }
 
 // Get or create SSH connection with reconnection support
@@ -534,6 +524,13 @@ async function getConnection(serverName) {
   }
 
   const normalizedName = resolvedName;
+  const serverConfig = servers[normalizedName];
+
+  // A renamed host, credential, or jump configuration invalidates the pool.
+  // Compare objects, never print or persist a credential-bearing signature.
+  if (connections.has(normalizedName) && !connectionMatchesConfig(normalizedName, servers)) {
+    closeConnection(normalizedName);
+  }
 
   // Check if we have an existing connection
   if (connections.has(normalizedName)) {
@@ -554,56 +551,11 @@ async function getConnection(serverName) {
   }
 
   // Create new connection
-  const serverConfig = servers[normalizedName];
   const ssh = new SSHManager(serverConfig);
 
   try {
-    if (serverConfig.proxyJump) {
-      const jumpServerName = serverConfig.proxyJump.toLowerCase();
-
-      // Validate jump server exists
-      if (!servers[jumpServerName]) {
-        throw new Error(
-          `Proxy jump server "${serverConfig.proxyJump}" not found. ` +
-          `Available servers: ${Object.keys(servers).join(', ')}`
-        );
-      }
-
-      // Detect circular proxy jumps
-      const visited = new Set([normalizedName]);
-      let current = jumpServerName;
-      while (current) {
-        if (visited.has(current)) {
-          throw new Error(`Circular proxy jump detected: ${[...visited, current].join(' -> ')}`);
-        }
-        visited.add(current);
-        current = servers[current]?.proxyJump?.toLowerCase() || null;
-      }
-
-      // Connect to jump server (recursive — handles chained jumps)
-      const jumpSSH = await getConnection(serverConfig.proxyJump);
-
-      // Create forwarded stream through the jump server
-      const stream = await jumpSSH.forwardOut(
-        '127.0.0.1', 0,
-        serverConfig.host, serverConfig.port || 22
-      );
-
-      // Connect target through the forwarded stream
-      await ssh.connect({ sock: stream });
-      jumpDependencies.set(normalizedName, jumpServerName);
-      ssh.jumpConnection = jumpSSH;
-    } else if (serverConfig.proxyCommand) {
-      // Create socket via proxy command (e.g., SOCKS5 proxy)
-      const socket = await createProxyCommandSocket(
-        serverConfig.proxyCommand,
-        serverConfig.host,
-        serverConfig.port || 22
-      );
-      await ssh.connect({ sock: socket });
-    } else {
-      await ssh.connect();
-    }
+    const jumpName = await connectSSH(ssh, servers, { resolveJump: getConnection });
+    if (jumpName) jumpDependencies.set(normalizedName, jumpName);
 
     connections.set(normalizedName, ssh);
     connectionTimestamps.set(normalizedName, Date.now());
@@ -664,9 +616,33 @@ logger.info('MCP Server initialized', { version: serverVersion });
  */
 function registerToolConditional(toolName, schema, handler) {
   if (isToolEnabled(toolName)) {
-    // Cast: registerTool infers its handler signature from the zod schema, which
-    // this generic wrapper cannot express while staying one helper for 37 tools.
-    server.registerTool(toolName, schema, /** @type {any} */ (handler));
+    const guarded = async (args, extra) => {
+      // These handlers inspect local state or release existing resources. They
+      // must remain usable during vault recovery; handlers that actually read
+      // configuration (such as server listing) still load it explicitly.
+      if (isApprovalExempt(toolName, args)) return handler(args, extra);
+      const servers = await serverConfigManager.getServers();
+      return toolContext.run({ servers }, async () => {
+        if (HANDLER_GATED_TOOLS.has(toolName)) {
+          return handler(args, extra);
+        }
+        // Fail closed for newly added remote tools with an unresolved target.
+        // Local tools must be explicitly exempted above.
+        try {
+          const config = await getServerConfig(args.server);
+          const canonicalArgs = { ...args, server: config.name };
+          const command = toolName === 'ssh_execute'
+            ? expandCommandAlias(args.command) : args.command;
+          const denied = await applyServerPolicy(config.name, toolName, canonicalArgs, command);
+          if (denied) return denied;
+          return handler(canonicalArgs, extra);
+        } catch (error) {
+          return { isError: true, content: [{ type: 'text', text: error.message }] };
+        }
+      });
+    };
+    // The runtime zod schema validates args before this shared guard runs.
+    server.registerTool(toolName, schema, /** @type {any} */ (guarded));
     logger.debug(`Registered tool: ${toolName}`);
   } else {
     logger.debug(`Skipped disabled tool: ${toolName}`);
@@ -693,8 +669,6 @@ registerToolConditional(
     // regex by hiding a destructive command behind an alias.
     const expandedCommand = expandCommandAlias(command);
 
-    const denied = await applyServerPolicy(serverName, 'ssh_execute', { command, cwd }, expandedCommand);
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -719,9 +693,9 @@ registerToolConditional(
       if (workingDir) {
         if (platform === 'windows') {
           const escapedDir = workingDir.replace(/'/g, '\'\'');
-          fullCommand = `Set-Location '${escapedDir}'; ${expandedCommand}`;
+          fullCommand = `Set-Location -LiteralPath '${escapedDir}'; ${expandedCommand}`;
         } else {
-          fullCommand = `cd ${workingDir} && ${expandedCommand}`;
+          fullCommand = `cd -- ${shellPath(workingDir)} && ${expandedCommand}`;
         }
       } else {
         fullCommand = expandedCommand;
@@ -730,7 +704,21 @@ registerToolConditional(
       // Log command execution
       const startTime = logger.logCommand(serverName, fullCommand, workingDir);
 
-      const result = await execCommandWithTimeout(ssh, fullCommand, { platform }, cappedTimeout);
+      // Mirror the command to the control plane while it runs, when one is
+      // watching. openStream returns null otherwise, and every call below is
+      // optional-chained — so this costs one stat() when nobody is looking.
+      const live = openStream(serverName, fullCommand);
+      const result = await execCommandWithTimeout(
+        ssh,
+        fullCommand,
+        {
+          platform,
+          onStdout: live ? chunk => live.write('stdout', chunk) : undefined,
+          onStderr: live ? chunk => live.write('stderr', chunk) : undefined,
+        },
+        cappedTimeout
+      );
+      live?.end(result.code ?? null);
 
       // Log command result
       logger.logCommandResult(serverName, fullCommand, startTime, result);
@@ -807,8 +795,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, localPath, remotePath }) => {
-    const denied = await applyServerPolicy(serverName, 'ssh_upload', { localPath, remotePath });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -925,8 +911,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, source, destination, exclude = [], dryRun = false, delete: deleteFiles = false, compress = true, verbose = false, checksum = false, timeout = 30000 }) => {
-    const denied = await applyServerPolicy(serverName, 'ssh_sync', { source, destination, dryRun, delete: deleteFiles });
-    if (denied) return denied;
 
     try {
       await getConnection(serverName);
@@ -1262,8 +1246,6 @@ registerToolConditional(
     // mode, which is exactly why it must consult the policy layer: without this
     // it was a way to run commands on a server the operator locked down
     // (GHSA-m793-whw6-f537).
-    const denied = await applyServerPolicy(serverName, 'ssh_tail', { file, lines, follow, grep });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -1693,6 +1675,11 @@ registerToolConditional(
   async ({ session: sessionId, command, timeout = 30000 }) => {
     try {
       const session = getSession(sessionId);
+      const currentConfig = await getServerConfig(session.serverName);
+      if (!isDeepStrictEqual(session.ssh.config, currentConfig)) {
+        closeSession(sessionId);
+        throw new Error('Server configuration changed; start a new session');
+      }
 
       // Resolve the session's underlying server to its policy.
       const denied = await applyServerPolicy(session.serverName, 'ssh_session_send', { session: sessionId, command }, command);
@@ -1933,6 +1920,7 @@ registerToolConditional(
       const result = await executeOnGroup(
         groupName,
         async (serverName) => {
+          serverName = (await getServerConfig(serverName)).name;
           // Per-server policy: each server in the group is evaluated independently.
           // A server in readonly/restricted mode refuses the command; others
           // execute normally. Refusal is surfaced as a per-server failure rather
@@ -1956,9 +1944,9 @@ registerToolConditional(
             if (platform === 'windows') {
               // Single-quote escaping: replace ' with '' (PowerShell convention)
               const escapedDir = workingDir.replace(/'/g, '\'\'');
-              fullCommand = `Set-Location '${escapedDir}'; ${command}`;
+              fullCommand = `Set-Location -LiteralPath '${escapedDir}'; ${command}`;
             } else {
-              fullCommand = `cd ${workingDir} && ${command}`;
+              fullCommand = `cd -- ${shellPath(workingDir)} && ${command}`;
             }
           } else {
             fullCommand = command;
@@ -2252,11 +2240,6 @@ registerToolConditional(
     }
   },
   async ({ server, files, options = {} }) => {
-    const denied = await applyServerPolicy(server, 'ssh_deploy', {
-      files: files.map((f) => ({ local: f.local, remote: f.remote })),
-      options,
-    });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(server);
@@ -2364,8 +2347,6 @@ registerToolConditional(
     // ssh_execute_sudo is in READONLY_BLOCKED_TOOLS, so readonly mode blocks
     // it at the tool level. In restricted mode the command itself is matched
     // against ALLOW/DENY patterns.
-    const denied = await applyServerPolicy(server, 'ssh_execute_sudo', { command, cwd }, command);
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(server);
@@ -2403,16 +2384,16 @@ registerToolConditional(
       if (cwd) {
         if (platform === 'windows') {
           const escapedDir = cwd.replace(/'/g, '\'\'');
-          fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
+          fullCommand = `Set-Location -LiteralPath '${escapedDir}'; ${fullCommand}`;
         } else {
-          fullCommand = `cd ${cwd} && ${fullCommand}`;
+          fullCommand = `cd -- ${shellPath(cwd)} && ${fullCommand}`;
         }
       } else if (serverConfig?.defaultDir) {
         if (platform === 'windows') {
           const escapedDir = serverConfig.defaultDir.replace(/'/g, '\'\'');
-          fullCommand = `Set-Location '${escapedDir}'; ${fullCommand}`;
+          fullCommand = `Set-Location -LiteralPath '${escapedDir}'; ${fullCommand}`;
         } else {
-          fullCommand = `cd ${serverConfig.defaultDir} && ${fullCommand}`;
+          fullCommand = `cd -- ${shellPath(serverConfig.defaultDir)} && ${fullCommand}`;
         }
       }
 
@@ -2737,7 +2718,7 @@ registerToolConditional(
         for (const [serverName, ssh] of connections.entries()) {
           const timestamp = connectionTimestamps.get(serverName);
           const ageMinutes = Math.floor((now - timestamp) / 1000 / 60);
-          const isValid = await isConnectionValid(ssh);
+          const isValid = ssh.connected;
 
           activeConnections.push({
             server: serverName,
@@ -2787,7 +2768,8 @@ registerToolConditional(
           throw new Error('Server name is required for disconnect action');
         }
 
-        closeConnection(server);
+        const openServers = Object.fromEntries([...connections].map(([name, ssh]) => [name, ssh.config]));
+        closeConnection(resolveServerName(server, openServers) || server.toLowerCase());
         return {
           content: [
             {
@@ -2804,7 +2786,7 @@ registerToolConditional(
 
         // Also check and remove dead connections
         for (const [serverName, ssh] of connections.entries()) {
-          const isValid = await isConnectionValid(ssh);
+          const isValid = ssh.connected;
           if (!isValid) {
             closeConnection(serverName);
           }
@@ -2857,9 +2839,7 @@ registerToolConditional(
         throw new Error(`Server "${server}" not found`);
       }
 
-      const serverConfig = servers[resolvedName];
-      const ssh = new SSHManager(serverConfig);
-      await ssh.connect();
+      const ssh = await connectServer(resolvedName, servers);
 
       const config = {
         type,
@@ -2869,7 +2849,14 @@ registerToolConditional(
         remotePort
       };
 
-      const tunnel = await createTunnel(resolvedName, ssh, config);
+      let tunnel;
+      try {
+        tunnel = await createTunnel(resolvedName, ssh, config);
+      } catch (error) {
+        ssh.dispose();
+        throw error;
+      }
+      tunnelConnections.set(tunnel.id, ssh);
 
       let output = '✅ SSH tunnel created\n';
       output += `ID: ${tunnel.id}\n`;
@@ -2928,11 +2915,10 @@ registerToolConditional(
   },
   async ({ server }) => {
     try {
-      const servers = await loadServerConfig();
       let resolvedName = null;
 
       if (server) {
-        resolvedName = resolveServerName(server, servers);
+        resolvedName = resolveServerName(server, openTunnelServers());
         if (!resolvedName) {
           throw new Error(`Server "${server}" not found`);
         }
@@ -3020,19 +3006,21 @@ registerToolConditional(
       if (tunnelId) {
         // Close specific tunnel
         closeTunnel(tunnelId);
+        disposeTunnelConnection(tunnelId);
         output = `✅ Tunnel ${tunnelId} closed`;
 
         logger.info('SSH tunnel closed', { id: tunnelId });
       } else if (server) {
         // Close all tunnels for server
-        const servers = await loadServerConfig();
-        const resolvedName = resolveServerName(server, servers);
+        const resolvedName = resolveServerName(server, openTunnelServers());
 
         if (!resolvedName) {
           throw new Error(`Server "${server}" not found`);
         }
 
+        const open = listTunnels(resolvedName);
         const count = closeServerTunnels(resolvedName);
+        for (const tunnel of open) disposeTunnelConnection(tunnel.id);
         output = `✅ Closed ${count} tunnel(s) for server ${resolvedName}`;
 
         logger.info('Server tunnels closed', {
@@ -3074,20 +3062,13 @@ registerToolConditional(
       autoAccept: z.boolean().optional().describe('Automatically accept new keys (use with caution)')
     }
   },
-  async ({ action, server, autoAccept = false }) => {
-    // Mutating actions (accept, remove) are blocked in readonly mode at the
-    // tool level. Pure-read actions (verify, list, check) are allowed regardless,
-    // so we only gate when the action would modify state.
-    if (server && (action === 'accept' || action === 'remove')) {
-      const denied = await applyServerPolicy(server, 'ssh_key_manage', { action, autoAccept });
-      if (denied) return denied;
-    }
+  async ({ action, server }) => {
     try {
-      const servers = await loadServerConfig();
       let resolvedName, serverConfig, host, port;
 
       // Resolve server details for actions that need them
       if (server && action !== 'list') {
+        const servers = await loadServerConfig();
         resolvedName = resolveServerName(server, servers);
         if (!resolvedName) {
           throw new Error(`Server "${server}" not found`);
@@ -3264,9 +3245,10 @@ registerToolConditional(
         if (knownHosts.length === 0) {
           output += 'No hosts in known_hosts file\n';
         } else {
-          // Map server names to known hosts
+          // Names are optional labels from the last loaded snapshot. Reading
+          // known_hosts must not require unlocking or repairing the vault.
           const serverMap = new Map();
-          for (const [name, config] of Object.entries(servers)) {
+          for (const [name, config] of Object.entries(serverConfigManager.servers)) {
             const key = `${config.host}:${config.port || 22}`;
             serverMap.set(key, name);
           }
@@ -3440,8 +3422,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, type, name, database, dbUser, dbPassword, dbHost, dbPort, paths, exclude, backupDir, retention = 7, compress = true }) => {
-    const denied = await applyServerPolicy(serverName, 'ssh_backup_create', { type, name, database, paths });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -3727,8 +3707,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, backupId, database, dbUser, dbPassword, dbHost, dbPort, targetPath, backupDir }) => {
-    const denied = await applyServerPolicy(serverName, 'ssh_backup_restore', { backupId, database, targetPath });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -3846,8 +3824,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, schedule, type, name, database, paths, retention = 7 }) => {
-    const denied = await applyServerPolicy(serverName, 'ssh_backup_schedule', { schedule, type, name, database, paths });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -4061,8 +4037,6 @@ registerToolConditional(
   async ({ server: serverName, services }) => {
     // Read-only tools stay enabled under readonly/restricted, so they are the
     // ones that most need the policy check (GHSA-m793-whw6-f537).
-    const denied = await applyServerPolicy(serverName, 'ssh_service_status', { services });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -4153,12 +4127,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, action, pid, signal = 'TERM', sortBy = 'cpu', limit = 20, filter }) => {
-    // Only the `kill` action mutates remote state — gate just that branch so
-    // operators on readonly servers can still `list` / `info` processes.
-    if (action === 'kill') {
-      const denied = await applyServerPolicy(serverName, 'ssh_process_manager', { action, pid, signal });
-      if (denied) return denied;
-    }
     try {
       const ssh = await getConnection(serverName);
 
@@ -4306,11 +4274,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, action, cpuThreshold, memoryThreshold, diskThreshold, enabled = true }) => {
-    // `set` writes config on the remote; `get` and `check` are read-only.
-    if (action === 'set') {
-      const denied = await applyServerPolicy(serverName, 'ssh_alert_setup', { action, cpuThreshold, memoryThreshold, diskThreshold, enabled });
-      if (denied) return denied;
-    }
     try {
       const ssh = await getConnection(serverName);
       const configPath = '/etc/ssh-manager-alerts.json';
@@ -4495,8 +4458,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, type, database, outputFile, dbUser, dbPassword, dbHost, dbPort, compress = true, tables }) => {
-    const denied = await applyServerPolicy(serverName, 'ssh_db_dump', { type, database, outputFile, tables });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
@@ -4609,8 +4570,6 @@ registerToolConditional(
     }
   },
   async ({ server: serverName, type, database, inputFile, dbUser, dbPassword, dbHost, dbPort, drop = true }) => {
-    const denied = await applyServerPolicy(serverName, 'ssh_db_import', { type, database, inputFile, drop });
-    if (denied) return denied;
 
     try {
       const ssh = await getConnection(serverName);
