@@ -50,6 +50,8 @@ interface WorkspaceState {
   /** Set by anything that wants the import dialog opened on the Servers screen. */
   wantsImport: boolean;
   setWantsImport: (wants: boolean) => void;
+  wantsAdd: boolean;
+  setWantsAdd: (wants: boolean) => void;
 
   serverDraft: { host: string; port?: number } | null;
   setServerDraft: (draft: { host: string; port?: number } | null) => void;
@@ -63,11 +65,9 @@ interface WorkspaceState {
 
 const STORAGE_KEY = 'ssh-manager.sidebar-expanded';
 
-// Collapsed until somebody opens it. The rail's icons carry labels on hover and
-// the screens are what people came for; starting 192px narrower gives that space
-// to the content instead. A choice, once made, is remembered.
+// Labels help on a first run; preserve every explicit choice made previously.
 function readExpanded(): boolean {
-  return readPreference(STORAGE_KEY) === 'true';
+  return readPreference(STORAGE_KEY) !== 'false';
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
@@ -81,6 +81,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   wantsImport: false,
   setWantsImport: wantsImport => set({ wantsImport }),
+  wantsAdd: false,
+  setWantsAdd: wantsAdd => set({ wantsAdd }),
 
   serverDraft: null,
   setServerDraft: serverDraft => set({ serverDraft }),
@@ -115,3 +117,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setPendingCount: pendingCount => set({ pendingCount }),
 }));
+
+/** Module evaluation can precede async hydration in the bundled application. */
+export function initializeWorkspace(): void {
+  useWorkspace.setState({ expanded: readExpanded() });
+}

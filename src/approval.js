@@ -37,6 +37,32 @@ const ASK_ALWAYS = 'always';
 
 export const VALID_APPROVAL_MODES = new Set([ASK_NEVER, ASK_DESTRUCTIVE, ASK_ALWAYS]);
 
+// These operations inspect local state or release resources that are already
+// open. Closing a connection must remain possible when the approval UI is gone.
+const APPROVAL_EXEMPT_TOOLS = new Set([
+  'ssh_list_servers', 'ssh_history', 'ssh_session_list', 'ssh_session_close',
+  'ssh_tunnel_list', 'ssh_tunnel_close', 'ssh_alias', 'ssh_command_alias',
+  'ssh_hooks', 'ssh_profile', 'ssh_group_manage',
+]);
+
+// These two identify their targets through a session or a group, so their
+// handlers apply the same gate after resolving each underlying server.
+export const HANDLER_GATED_TOOLS = new Set(['ssh_session_send', 'ssh_execute_group']);
+
+/** Whether this invocation only inspects local state or closes a connection. */
+export function isApprovalExempt(toolName, args = {}) {
+  return APPROVAL_EXEMPT_TOOLS.has(toolName)
+    || (toolName === 'ssh_connection_status' && args.action !== 'reconnect')
+    || (toolName === 'ssh_key_manage' && args.action === 'list');
+}
+
+/** Read actions on tools that also offer mutations retain readonly access. */
+export function isReadOnlyAction(toolName, args = {}) {
+  return (toolName === 'ssh_process_manager' && args.action !== 'kill')
+    || (toolName === 'ssh_alert_setup' && args.action !== 'set')
+    || (toolName === 'ssh_key_manage' && ['verify', 'check', 'list'].includes(args.action));
+}
+
 // sun_path limit for Unix domain sockets: 104 bytes on macOS/BSD, 108 on Linux.
 // Take the smaller so a path that works on one platform works on both.
 export const MAX_SOCKET_PATH = 104;
@@ -85,10 +111,10 @@ export function approvalMode(serverConfig) {
   const raw = serverConfig?.approval ?? ASK_NEVER;
   const normalized = String(raw).toLowerCase();
   if (!VALID_APPROVAL_MODES.has(normalized)) {
-    logger.warn(`Unknown approval mode "${raw}", falling back to "${ASK_NEVER}"`, {
+    logger.warn(`Unknown approval mode "${raw}", requiring approval`, {
       server: serverConfig?.name,
     });
-    return ASK_NEVER;
+    return ASK_ALWAYS;
   }
   return normalized;
 }
@@ -259,7 +285,7 @@ export function buildRequest(serverConfig, toolName, sanitizedArgs, command) {
     mode: serverConfig?.mode || 'unrestricted',
     tool: toolName,
     command,
-    destructive: isDestructive(toolName, command),
+    destructive: !isReadOnlyAction(toolName, sanitizedArgs) && isDestructive(toolName, command),
     args: sanitizedArgs,
   };
 }

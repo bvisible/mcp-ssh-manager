@@ -20,10 +20,10 @@ jobs:
     timeout-minutes: 15
 
     strategy:
-      # 18.x and 20.x are the required status checks on main; 22.x is the
-      # current active LTS and package.json claims engines >=18.
+      # Preserve the required test (18.x) and test (20.x) check names.
+      # Newer runtimes are additional compatibility coverage.
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [18.x, 20.x, 22.x, 24.x]
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,7 +78,7 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: '20.x'
+        node-version: '24.x'
         cache: 'npm'
 
     - name: Install dependencies
@@ -115,3 +115,41 @@ jobs:
         # Basic check for common secret patterns
         ! grep -r "password\|secret\|token\|api_key" .env 2>/dev/null || true
         ! git ls-files | xargs grep -E "(password|secret|token|api_key)\s*=\s*['\"]" 2>/dev/null || true
+
+  interface:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/package-lock.json
+      - name: Install engine and interface
+        run: npm ci && npm ci --prefix ui
+      - name: Typecheck, build and verify the committed interface
+        run: npm run build --prefix ui && git diff --exit-code -- dist/ui
+      - name: Install browser
+        working-directory: ui
+        run: npx playwright install --with-deps chromium
+      - name: Browser flows
+        run: npm --prefix ui run test:e2e
+      - name: Upgrade from the actual published 3.8.5 package
+        run: node scripts/test-upgrade-from-published.mjs 3.8.5
+      - name: Keep browser failure reports and traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-failure-${{ matrix.os }}
+          path: |
+            ui/playwright-report/
+            ui/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

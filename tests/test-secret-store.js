@@ -16,13 +16,6 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
-import {
-  SecretStore,
-  encryptValue,
-  decryptValue,
-  SECRET_FIELDS
-} from '../src/secret-store.js';
-import { ConfigLoader } from '../src/config-loader.js';
 
 let passed = 0;
 function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); passed++; }
@@ -35,6 +28,9 @@ const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-mgr-vault-'));
 // key source and point SSH_MANAGER_HOME at the scratch directory.
 process.env.SSH_MANAGER_KEY_SOURCE = 'file';
 process.env.SSH_MANAGER_HOME = scratch;
+process.env.SSH_LOG_FILE = path.join(scratch, 'log');
+const { SecretStore, encryptValue, decryptValue, SECRET_FIELDS } = await import('../src/secret-store.js');
+const { ConfigLoader } = await import('../src/config-loader.js');
 
 /** A store whose key lives in the scratch directory, never the real keychain. */
 function makeStore(name = 'vault.json') {
@@ -147,7 +143,7 @@ function testListingDoesNotNeedTheKey() {
   ok('listing server names never unlocks the vault');
 }
 
-async function testLoaderPrecedenceAndFallback() {
+async function testLoaderPrecedenceAndFailure() {
   const dir = fs.mkdtempSync(path.join(scratch, 'loader-'));
   const envPath = path.join(dir, 'test.env');
   fs.writeFileSync(envPath, [
@@ -181,14 +177,15 @@ async function testLoaderPrecedenceAndFallback() {
   assert.strictEqual(after.size, 3);
   ok('the vault takes precedence over .env without dropping .env-only servers');
 
-  // 3. A corrupt vault must not take the .env down with it.
+  // 3. An adopted vault can hold stricter security rules than the .env. Its
+  // corruption must block loading rather than silently bypass those rules.
   const brokenPath = path.join(dir, 'broken.json');
   fs.writeFileSync(brokenPath, '{ this is not json');
   const withBroken = new ConfigLoader();
-  const salvaged = await withBroken.load({ envPath, tomlPath: '/nonexistent', vaultPath: brokenPath });
-  assert.strictEqual(salvaged.get('fromenv').password, 'env-password',
-    'a corrupt vault must not prevent .env servers from loading');
-  ok('a corrupt vault is reported but never blocks the other sources');
+  await assert.rejects(withBroken.load({ envPath, tomlPath: '/nonexistent', vaultPath: brokenPath }),
+    error => error.code === 'VAULT_UNREADABLE' && /ssh-manager vault restore/.test(error.message));
+  assert.strictEqual(withBroken.servers.size, 0, 'partial fallback configuration must not remain accessible');
+  ok('a corrupt adopted vault blocks fallback and explains recovery');
 }
 
 function testSecretFieldListMatchesTheLoader() {
@@ -209,7 +206,7 @@ async function main() {
     testSecretsAreNotReadableOnDisk();
     testCrudRoundTrip();
     testListingDoesNotNeedTheKey();
-    await testLoaderPrecedenceAndFallback();
+    await testLoaderPrecedenceAndFailure();
     testSecretFieldListMatchesTheLoader();
     console.log(`\n✅ secret store tests passed (${passed} checks)`);
   } finally {

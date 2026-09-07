@@ -12,8 +12,6 @@ import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { writeRecoveryFile, readRecoveryFile, describeRecoveryFile } from '../src/vault-recovery.js';
-import { SecretStore } from '../src/secret-store.js';
 
 let passed = 0;
 function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); passed++; }
@@ -21,6 +19,9 @@ function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'recovery-'));
 process.env.SSH_MANAGER_KEY_SOURCE = 'file';
 process.env.SSH_MANAGER_HOME = scratch;
+process.env.SSH_LOG_FILE = path.join(scratch, 'log');
+const { writeRecoveryFile, readRecoveryFile, describeRecoveryFile } = await import('../src/vault-recovery.js');
+const { SecretStore } = await import('../src/secret-store.js');
 
 const SERVERS = {
   prod: { host: 'prod.example.com', user: 'deploy', password: 'hunter2', port: 22, defaultDir: '/var/www' },

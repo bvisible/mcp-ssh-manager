@@ -34,12 +34,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { safeInteger } from './shell-quote.js';
-import { SecretStore, defaultVaultPath, SECRET_FIELDS } from './secret-store.js';
+import { SecretStore, defaultVaultPath, SECRET_FIELDS, publicServerConfig } from './secret-store.js';
 import { ConfigLoader } from './config-loader.js';
+import { serializeRecovery, decryptRecoveryContent } from './vault-recovery.js';
 import { StreamRegistry, listenForStreams, streamSocketPath } from './live-stream.js';
 import { appendCommand, readCommandLog, trimCommandLog, clearCommandLog, commandLogPath, recordsOutput } from './command-log.js';
-import { MAX_SOCKET_PATH } from './approval.js';
-import SSHManager from './ssh-manager.js';
+import { MAX_SOCKET_PATH, VALID_APPROVAL_MODES } from './approval.js';
+import { VALID_MODES } from './policy.js';
+import { connectServer } from './ssh-connection.js';
 import { buildComprehensiveHealthCheckCommand, parseComprehensiveHealthCheck, createAlertConfig, checkAlertThresholds } from './health-monitor.js';
 import { listKnownHosts, removeHostKey } from './ssh-key-manager.js';
 import { listSavedCommands, commandsForServer, saveCommand, deleteCommand as deleteSavedCommand, suggestedCommands } from './saved-commands.js';
@@ -51,6 +53,35 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Host headers accepted. Anything else is a rebinding attempt or a mistake. */
 const ALLOWED_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/** Merge form edits while preserving fields the form did not display.
+ * Empty secret inputs mean unchanged; explicit null removes a secret.
+ * @param {Record<string, any>} existing
+ * @param {Record<string, any>} patch
+ * @returns {Record<string, any>}
+ */
+function mergeServerPatch(existing, patch) {
+  const result = { ...existing };
+  for (const [field, value] of Object.entries(patch)) {
+    if (['name', '__proto__', 'prototype', 'constructor'].includes(field)
+      || /^has(?:Password|Passphrase|SudoPassword)$/.test(field) || value === undefined) continue;
+    if (SECRET_FIELDS.includes(field)) {
+      if (value === null) delete result[field];
+      else if (value !== '') result[field] = value;
+    } else if (field === 'accounts' && Array.isArray(value)) {
+      result.accounts = value.map(account => {
+        if (!account || typeof account !== 'object' || Array.isArray(account)) throw new Error('Invalid account');
+        const old = existing.accounts?.find(item => item.id === account.id) || {};
+        return mergeServerPatch(old, account);
+      });
+    } else {
+      // Keep an explicit empty value so the lower-priority .env cannot fill
+      // the cleared field back in when the engine merges config sources.
+      result[field] = value === null ? '' : value;
+    }
+  }
+  return result;
+}
 
 /** How many audit entries the timeline holds in memory. */
 const TIMELINE_LIMIT = 500;
@@ -196,6 +227,7 @@ function describe(dir, item) {
  */
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_RECOVERY_BYTES = 16 * 1024 * 1024;
 
 // Preferences are a handful of booleans and a list of folded category names.
 const PREFERENCES_LIMIT_BYTES = 64 * 1024;
@@ -242,7 +274,7 @@ export class ControlPlane {
     // several hundred milliseconds each — would make the screen unusable. Idle
     // connections are dropped after SFTP_IDLE_MS so nothing stays open on a
     // machine nobody is looking at.
-    /** @type {Map<string, {ssh: any, sftp: any, timer: NodeJS.Timeout|null}>} */
+    /** @type {Map<string, {ssh: any, sftp: any, timer: NodeJS.Timeout|null, revision: string}>} */
     this.sftpPool = new Map();
 
     /** @type {string|null} The tokenised URL, once the server is listening. */
@@ -439,7 +471,13 @@ export class ControlPlane {
    * @returns {Promise<string>} The URL to open, token included
    */
   async #startHttpServer() {
-    this.httpServer = http.createServer((req, res) => this.#handleHttp(req, res));
+    this.httpServer = http.createServer((req, res) => {
+      Promise.resolve().then(() => this.#handleHttp(req, res)).catch(error => {
+        logger.error('Control plane request failed', { error: error.message });
+        if (!res.headersSent) this.#json(res, 500, { error: 'Request failed' });
+        else if (!res.writableEnded) res.end();
+      });
+    });
     await new Promise((resolve, reject) => {
       this.httpServer?.once('error', reject);
       // 127.0.0.1, never 0.0.0.0: this must not be reachable from the network.
@@ -459,7 +497,12 @@ export class ControlPlane {
    * @param {import('http').ServerResponse} res - Response
    */
   #handleHttp(req, res) {
-    const url = new URL(req.url || '/', 'http://127.0.0.1');
+    let url;
+    try {
+      url = new URL(req.url || '/', 'http://127.0.0.1');
+    } catch {
+      return this.#json(res, 400, { error: 'Malformed request URL' });
+    }
 
     // DNS rebinding: a hostile page can resolve its own domain to 127.0.0.1 and
     // reach us. The Host header is what tells the two apart.
@@ -526,6 +569,9 @@ export class ControlPlane {
       return this.#json(res, 200, id ? { stream: this.streams.get(id) } : { streams: this.streams.list() });
     }
     if (req.method === 'GET' && url.pathname === '/api/servers') return this.#serveServers(res);
+    if (req.method === 'GET' && url.pathname === '/api/vault/status') return this.#vaultStatus(res);
+    if (req.method === 'POST' && url.pathname === '/api/vault/backup') return this.#vaultBackup(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/vault/restore') return this.#vaultRestore(req, res);
     if (req.method === 'GET' && url.pathname === '/api/import/sources') return this.#importSources(res);
     if (req.method === 'POST' && url.pathname === '/api/import/preview') return this.#importPreview(req, res);
     if (req.method === 'POST' && url.pathname === '/api/import/apply') return this.#importApply(req, res);
@@ -890,22 +936,86 @@ export class ControlPlane {
     let servers = [];
     try {
       const raw = this.store.read();
-      servers = Object.entries(raw.servers).map(([name, config]) => {
-        /** @type {Record<string, any>} */
-        const safe = { name };
-        for (const [field, value] of Object.entries(config)) {
-          // A boolean saying "there is a password" is all the UI needs to render
-          // the row and pre-fill the form sensibly.
-          safe[field] = SECRET_FIELDS.includes(field) ? undefined : value;
-          if (SECRET_FIELDS.includes(field)) safe[`has${field[0].toUpperCase()}${field.slice(1)}`] = true;
-        }
-        return safe;
-      });
+      servers = Object.entries(raw.servers).map(([name, config]) => ({ ...publicServerConfig(config), name }));
     } catch (error) {
       logger.error('Cannot read the vault', { error: error.message });
+      return this.#json(res, 500, { error: 'Cannot read the vault. Restore it before editing servers.' });
     }
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify({ servers, vaultPath: this.store.vaultPath }));
+  }
+
+  /** @param {import('http').ServerResponse} res */
+  #vaultStatus(res) {
+    const check = this.store.checkKey();
+    let count = 0;
+    try { count = this.store.listServers().length; } catch { /* reported by checkKey */ }
+    return this.#json(res, 200, {
+      exists: this.store.exists(), readable: check.ok, reason: check.reason,
+      servers: count, secrets: check.checked, keySource: this.store.keySource,
+    });
+  }
+
+  /** @param {import('http').IncomingMessage} req @param {import('http').ServerResponse} res */
+  #vaultBackup(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      try {
+        const servers = this.store.getAllDecrypted();
+        if (!Object.keys(servers).length) return this.#json(res, 400, { error: 'The vault is empty' });
+        const content = serializeRecovery(servers, String(payload.passphrase || ''));
+        if (Buffer.byteLength(content) > MAX_RECOVERY_BYTES) {
+          return this.#json(res, 413, { error: 'Recovery exceeds the 16 MB interface limit. Use ssh-manager vault backup for this vault.' });
+        }
+        return this.#json(res, 200, {
+          filename: `ssh-manager-recovery-${new Date().toISOString().slice(0, 10)}.json`, content,
+        });
+      } catch (error) {
+        return this.#json(res, 400, { error: error.message });
+      }
+    });
+  }
+
+  /** @returns {string} */
+  #vaultRevision() {
+    try {
+      return crypto.createHash('sha256').update(fs.readFileSync(this.store.vaultPath)).digest('hex');
+    } catch (error) {
+      if (error.code === 'ENOENT') return 'missing';
+      throw error;
+    }
+  }
+
+  /** @param {import('http').IncomingMessage} req @param {import('http').ServerResponse} res */
+  #vaultRestore(req, res) {
+    this.#readJsonBody(req, res, payload => {
+      try {
+        const content = String(payload.content || '');
+        if (Buffer.byteLength(content) > MAX_RECOVERY_BYTES) return this.#json(res, 413, { error: 'Recovery files must be at most 16 MB.' });
+        const servers = decryptRecoveryContent(content, String(payload.passphrase || ''));
+        const names = Object.keys(servers);
+        if (!names.length) return this.#json(res, 400, { error: 'The recovery file contains no servers' });
+        const revision = this.#vaultRevision();
+        const check = this.store.checkKey();
+        let existing = [];
+        try { existing = this.store.listServers(); } catch { /* unreadable vault will be replaced explicitly */ }
+        const preview = {
+          servers: names,
+          conflicts: names.filter(name => existing.includes(name)),
+          removed: check.ok ? [] : existing.filter(name => !names.includes(name)),
+          replacesUnreadable: !check.ok,
+          revision,
+        };
+        if (payload.confirm !== true) return this.#json(res, 200, preview);
+        if (payload.revision !== revision) {
+          return this.#json(res, 409, { error: 'The vault changed. Preview the recovery file again before restoring.' });
+        }
+        this.store.restoreServers(servers, { replaceUnreadable: !check.ok, expectedRevision: revision });
+        this.#broadcast({ type: 'servers' });
+        return this.#json(res, 200, { ok: true, ...preview });
+      } catch (error) {
+        return this.#json(res, error.code === 'VAULT_CHANGED' ? 409 : 400, { error: error.message });
+      }
+    }, MAX_RECOVERY_BYTES * 2 + 4096);
   }
 
 
@@ -1012,9 +1122,9 @@ export class ControlPlane {
       await executeOnGroup(name, async serverName => {
         const config = vault[serverName];
         if (!config) throw new Error(`${serverName} is not in the vault`);
-        const ssh = new SSHManager({ ...config, name: serverName });
+        let ssh;
         try {
-          await ssh.connect({ readyTimeout: 15000 });
+          ssh = await connectServer(serverName, vault, { readyTimeout: 15000 });
           const result = await ssh.execCommand(command, { timeout: 120000 });
           done++;
           this.#broadcast({
@@ -1023,7 +1133,7 @@ export class ControlPlane {
           });
           return result;
         } finally {
-          try { ssh.dispose(); } catch { /* best effort */ }
+          try { ssh?.dispose(); } catch { /* best effort */ }
         }
       }).then(
         () => this.#broadcast({ type: 'group-run', id, state: 'done', done }),
@@ -1219,25 +1329,18 @@ export class ControlPlane {
         return this.#json(res, 400, { error: 'Name must use letters, digits and underscores only' });
       }
       if (!payload.host) return this.#json(res, 400, { error: 'A host is required' });
-
-      const existing = this.store.read().servers[name];
-      /** @type {Record<string, any>} */
-      const config = {};
-      for (const [field, value] of Object.entries(payload)) {
-        if (field === 'name' || value === '' || value === null || value === undefined) continue;
-        config[field] = value;
+      if (payload.mode && !VALID_MODES.has(payload.mode)) {
+        return this.#json(res, 400, { error: 'Invalid security mode' });
       }
-      // Carry forward any secret the form did not resend.
-      if (existing) {
-        const decrypted = this.#decryptedServer(name);
-        for (const field of SECRET_FIELDS) {
-          if (config[field] === undefined && decrypted?.[field] !== undefined) {
-            config[field] = decrypted[field];
-          }
-        }
+      if (payload.approval && !VALID_APPROVAL_MODES.has(payload.approval)) {
+        return this.#json(res, 400, { error: 'Invalid approval mode' });
       }
 
       try {
+        // The UI shows only some fields. Omitting proxy, platform, audit or
+        // policy settings while changing a port must leave them intact.
+        const existing = this.store.getAllDecrypted()[name] || {};
+        const config = mergeServerPatch(existing, payload);
         this.store.setServer(name, config);
       } catch (error) {
         return this.#json(res, 500, { error: error.message });
@@ -1246,24 +1349,6 @@ export class ControlPlane {
       this.#broadcast({ type: 'servers' });
       return this.#json(res, 200, { ok: true, name });
     });
-  }
-
-  /**
-   * One server with its secrets decrypted, keyed by name.
-   *
-   * Used so an edit that did not resend a password keeps the stored one: the
-   * form cannot display a secret, so it must not require re-typing it.
-   *
-   * @param {string} name - Server name, lowercase
-   * @returns {Record<string, any>|undefined} The decrypted config
-   */
-  #decryptedServer(name) {
-    try {
-      return this.store.getAllDecrypted()[name];
-    } catch (error) {
-      logger.error('Cannot decrypt the stored server', { server: name, error: error.message });
-      return undefined;
-    }
   }
 
   /**
@@ -1282,15 +1367,19 @@ export class ControlPlane {
   /**
    * @param {import('http').IncomingMessage} req - Request
    * @param {import('http').ServerResponse} res - Response
-   * @param {(payload: any) => void} handler - Called with the parsed body
+   * @param {(payload: any) => any} handler - Called with the parsed body
+   * @param {number} [maxBytes] - Route-specific request size limit
    */
-  #readJsonBody(req, res, handler) {
+  #readJsonBody(req, res, handler, maxBytes = MAX_BODY_BYTES) {
+    req.setEncoding('utf8');
     let body = '';
+    let bytes = 0;
     let refused = false;
     req.on('data', chunk => {
       if (refused) return;
       body += chunk;
-      if (body.length > MAX_BODY_BYTES) {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > maxBytes) {
         // Answer, then stop reading. Destroying the socket silently — which is
         // what this did — reaches the browser as "Failed to fetch" with no
         // status and no message, and the operator has no way to know that a
@@ -1298,17 +1387,26 @@ export class ControlPlane {
         // like a network fault.
         refused = true;
         this.#json(res, 413, {
-          error: `Body too large: over ${Math.round(MAX_BODY_BYTES / 1024)} KB`,
+          error: `Body too large: over ${Math.round(maxBytes / 1024)} KB`,
         });
         req.destroy();
       }
     });
-    req.on('end', () => {
+    req.on('end', async () => {
       if (refused) return;
+      let payload;
       try {
-        handler(JSON.parse(body));
+        payload = JSON.parse(body);
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('object required');
       } catch {
-        this.#json(res, 400, { error: 'malformed body' });
+        return this.#json(res, 400, { error: 'malformed body' });
+      }
+      try {
+        await handler(payload);
+      } catch (error) {
+        logger.error('Control plane request failed', { error: error.message });
+        if (!res.headersSent) this.#json(res, 500, { error: 'Request failed' });
+        else if (!res.writableEnded) res.end();
       }
     });
   }
@@ -1429,10 +1527,10 @@ export class ControlPlane {
       if (!servers[name]) return this.#json(res, 404, { error: 'No such server in the vault' });
 
       const id = crypto.randomUUID();
-      const ssh = new SSHManager({ ...servers[name], name });
+      let ssh;
 
       try {
-        await ssh.connect({ readyTimeout: 15000 });
+        ssh = await connectServer(name, servers, { readyTimeout: 15000 });
         const stream = await new Promise((resolve, reject) => {
           ssh.client.shell(
             { term: 'xterm-256color', cols, rows },
@@ -1457,7 +1555,7 @@ export class ControlPlane {
         logger.info('Interactive shell opened', { server: name });
         return this.#json(res, 200, { id, server: name });
       } catch (error) {
-        try { ssh.dispose(); } catch { /* best effort */ }
+        try { ssh?.dispose(); } catch { /* best effort */ }
         return this.#json(res, 502, { error: error.message });
       }
     });
@@ -1806,16 +1904,16 @@ export class ControlPlane {
       }
       if (!servers[name]) return this.#json(res, 404, { error: 'No such server in the vault' });
 
-      const ssh = new SSHManager({ ...servers[name], name });
+      let ssh;
       try {
-        await ssh.connect({ readyTimeout: 15000 });
+        ssh = await connectServer(name, servers, { readyTimeout: 15000 });
         const result = await ssh.execCommand(command, { timeout: 60000 });
         logger.info('Command run from the control plane', { server: name });
         return this.#json(res, 200, { stdout: result.stdout, stderr: result.stderr, code: result.code });
       } catch (error) {
         return this.#json(res, 502, { error: error.message });
       } finally {
-        try { ssh.dispose(); } catch { /* best effort */ }
+        try { ssh?.dispose(); } catch { /* best effort */ }
       }
     });
   }
@@ -1830,21 +1928,23 @@ export class ControlPlane {
    * @returns {Promise<any>} an ssh2 SFTP session
    */
   async #sftp(name) {
+    const revision = this.#vaultRevision();
     const existing = this.sftpPool.get(name);
-    if (existing) {
+    if (existing && existing.revision === revision) {
       if (existing.timer) clearTimeout(existing.timer);
       existing.timer = setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS);
       return existing.sftp;
     }
+    if (existing) this.#releaseSftp(name);
 
     /** @type {Record<string, any>} */
     const servers = this.store.getAllDecrypted();
     if (!servers[name]) throw Object.assign(new Error('No such server in the vault'), { status: 404 });
 
-    const ssh = new SSHManager({ ...servers[name], name });
-    await ssh.connect({ readyTimeout: 15000 });
-    const sftp = await ssh.getSFTP();
-    const entry = { ssh, sftp, timer: setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS) };
+    const ssh = await connectServer(name, servers, { readyTimeout: 15000 });
+    let sftp;
+    try { sftp = await ssh.getSFTP(); } catch (error) { ssh.dispose(); throw error; }
+    const entry = { ssh, sftp, revision, timer: setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS) };
     this.sftpPool.set(name, entry);
     logger.info('SFTP session opened', { server: name });
     return sftp;
@@ -2093,12 +2193,12 @@ export class ControlPlane {
     const results = await Promise.all(targets.map(async serverName => {
       const config = { ...servers[serverName], name: serverName };
       const started = Date.now();
-      const ssh = new SSHManager(config);
+      let ssh;
       try {
         // Short, because this is a dashboard: a machine that has not answered
         // in eight seconds is "unreachable" as far as the screen is concerned,
         // and the operator would rather see that than watch a spinner.
-        await ssh.connect({ readyTimeout: 8000 });
+        ssh = await connectServer(serverName, servers, { readyTimeout: 8000 });
         const result = await ssh.execCommand(buildComprehensiveHealthCheckCommand(), { timeout: 20000 });
         const health = parseComprehensiveHealthCheck(result.stdout);
         // Crossings are computed here rather than in the page: the same answer
@@ -2120,7 +2220,7 @@ export class ControlPlane {
           error: error.message,
         };
       } finally {
-        try { ssh.dispose(); } catch { /* best effort */ }
+        try { ssh?.dispose(); } catch { /* best effort */ }
       }
     }));
 

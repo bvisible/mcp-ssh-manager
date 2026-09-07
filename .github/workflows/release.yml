@@ -1,118 +1,105 @@
-# Publishes to npm with build provenance, and attaches an SBOM to the release.
-#
-# Why this exists: publishing by hand from a laptop proves nothing about where
-# the tarball came from, and it broke twice on 2026-08-28 (expired token, then
-# a 2FA prompt). Publishing from CI with OIDC removes the token entirely and
-# stamps every release with a signed statement of which commit and which
-# workflow built it — verifiable by anyone with `npm audit signatures`.
-#
-# One-time setup on npmjs.com before the OIDC path works: package settings →
-# Trusted publisher → GitHub Actions, repository `bvisible/mcp-ssh-manager`,
-# workflow `release.yml`. Until then the run falls back to NPM_TOKEN if that
-# secret exists, still with --provenance.
+# Configure npm Trusted Publisher for this repository and release.yml. OIDC
+# supplies provenance; NPM_TOKEN remains an optional fallback for npm auth.
 name: Release
-
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Git tag to publish (e.g. v3.8.2). Must already exist.'
+        description: 'Exact existing version tag (v4.0.0 or v4.0.0-rc.1).'
         required: true
-
 permissions:
   contents: read
-
+concurrency:
+  group: npm-release-${{ inputs.tag }}
+  cancel-in-progress: false
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: write
-      # Required for both npm provenance and the SBOM attestation.
       id-token: write
       attestations: write
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20.x'
+          node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
-
+          cache: npm
+      - name: Validate exact tag and all manifests
+        id: version
+        run: node scripts/release-version.mjs
+        env:
+          RELEASE_REQUIRE_TAG: 'true'
+          RELEASE_TAG: ${{ inputs.tag }}
       - name: Install dependencies
-        run: npm ci
-
-      # Never publish a version the suite has not passed. The lockfile test also
-      # catches a tag whose package.json and lockfile versions disagree.
-      - name: Run full validation
-        run: npm run test:all
-
-      # Skip the publish when the version is already on the registry, so the
-      # workflow can be re-run (to regenerate an SBOM, or after a later step
-      # failed) without dying on a duplicate-version error.
-      - name: Publish to npm with provenance
+        run: npm ci && npm ci --prefix ui
+      - name: Validate source, interface and bundled output
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          NAME=$(node -p "require('./package.json').name")
-          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
-            echo "$NAME@$VERSION is already published — skipping publish, continuing with the SBOM."
-          else
-            npm publish --provenance --access public
-          fi
+          npm run test:all
+          npm run build --prefix ui
+          git diff --exit-code -- dist/ui
+          node scripts/test-upgrade-from-published.mjs 3.8.5
+      - name: Run browser flows
+        run: |
+          npm exec --prefix ui -- playwright install --with-deps chromium
+          npm --prefix ui run test:e2e
+      - name: Pack the reviewed package
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: Publish the reviewed tarball with provenance and the right channel
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      # A formula pinning an old version and sha256 is worse than no formula:
-      # `brew install` would silently give people the previous release. Updating
-      # it in the same run that publishes removes the chance to forget.
-      - name: Update the Homebrew formula
+          VERSION: ${{ steps.version.outputs.version }}
+          NPM_TAG: ${{ steps.version.outputs.npmTag }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          URL="https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-${VERSION}.tgz"
-          # Wait for the registry to serve the version we just published.
-          for _ in $(seq 1 30); do
-            if curl -fsL --head "$URL" >/dev/null 2>&1; then break; fi
-            sleep 5
-          done
-          SHA=$(curl -fsL "$URL" | shasum -a 256 | cut -d' ' -f1)
-          echo "version=$VERSION sha256=$SHA"
-          sed -i.bak -E "s|url \"https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-[^\"]+\"|url \"$URL\"|" Formula/ssh-manager.rb
-          sed -i.bak -E "s|sha256 \"[a-f0-9]+\"|sha256 \"$SHA\"|" Formula/ssh-manager.rb
-          rm -f Formula/ssh-manager.rb.bak
-          git diff --stat Formula/ssh-manager.rb
-
-      - name: Commit the formula update
-        run: |
-          if git diff --quiet Formula/ssh-manager.rb; then
-            echo "Formula already current."
-            exit 0
+          if npm view "mcp-ssh-manager@$VERSION" version >/dev/null 2>&1; then
+            EXPECTED=$(npm view "mcp-ssh-manager@$VERSION" dist.integrity)
+            ACTUAL=$(node -e 'const fs=require("fs"),crypto=require("crypto");console.log("sha512-"+crypto.createHash("sha512").update(fs.readFileSync(process.argv[1])).digest("base64"))' "$RUNNER_TEMP/mcp-ssh-manager-$VERSION.tgz")
+            test "$ACTUAL" = "$EXPECTED" || { echo 'Published version differs from the reviewed tarball; refusing to attest it.'; exit 1; }
+            echo "Identical version already published; preserving dist-tags."
+          else
+            npm publish "$RUNNER_TEMP/mcp-ssh-manager-$VERSION.tgz" --provenance --access public --tag "$NPM_TAG"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/ssh-manager.rb
-          git commit -m "chore(brew): point the formula at ${{ inputs.tag }}"
-          git push origin HEAD:main
-
       - name: Generate SBOM
         run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cyclonedx.json
-
-      - name: Attest the SBOM
+      - name: Attest the actual tarball
         uses: actions/attest-sbom@10926c72720ffc3f7b666661c8e55b1344e2a365 # v2
         with:
-          subject-path: 'package.json'
-          sbom-path: 'sbom.cyclonedx.json'
-
-      # Create the release if it does not exist yet, so a CI publish is
-      # self-sufficient: on the first 3.8.3 run this step failed because the
-      # release had not been created by hand beforehand.
-      - name: Attach SBOM to the GitHub release
-        run: |
-          if ! gh release view "${{ inputs.tag }}" >/dev/null 2>&1; then
-            gh release create "${{ inputs.tag }}" --title "${{ inputs.tag }}" --generate-notes
-          fi
-          gh release upload "${{ inputs.tag }}" sbom.cyclonedx.json --clobber
+          subject-path: '${{ runner.temp }}/mcp-ssh-manager-${{ steps.version.outputs.version }}.tgz'
+          sbom-path: sbom.cyclonedx.json
+      # Keep GitHub releases private until all desktop assets pass validation.
+      - name: Prepare a draft GitHub release with SBOM
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            flags=()
+            if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes --draft --latest=false "${flags[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" sbom.cyclonedx.json --clobber
+      # Produce a reviewed formula update, never push a new unchecked commit
+      # onto protected main. RC runs must not touch the stable formula at all.
+      - name: Prepare stable Homebrew update for a pull request
+        if: steps.version.outputs.prerelease == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          URL="https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-${VERSION}.tgz"
+          curl --retry 12 --retry-all-errors --retry-delay 5 -fsL "$URL" -o "$RUNNER_TEMP/published.tgz"
+          SHA=$(shasum -a 256 "$RUNNER_TEMP/published.tgz" | cut -d' ' -f1)
+          sed -i -E "s|url \"https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-[^\"]+\"|url \"$URL\"|" Formula/ssh-manager.rb
+          sed -i -E "s|sha256 \"[a-f0-9]+\"|sha256 \"$SHA\"|" Formula/ssh-manager.rb
+          git diff -- Formula/ssh-manager.rb > homebrew-update.patch
+          echo 'Homebrew update is ready in the artifact. Apply via a pull request after desktop release validation.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the stable Homebrew patch
+        if: steps.version.outputs.prerelease == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: homebrew-update
+          path: homebrew-update.patch

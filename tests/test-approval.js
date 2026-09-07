@@ -66,9 +66,10 @@ function testDefaultIsOff() {
     'a server with no approval setting must never require approval');
   ok('approval is off by default, even for a destructive command');
 
-  // An unreadable value must fail safe (off) rather than locking someone out.
-  assert.strictEqual(approvalMode({ approval: 'sometimes' }), 'never');
-  ok('an unknown approval mode falls back to off, not to blocking');
+  // Only absent/never is opt-out. A malformed explicit setting cannot silently
+  // remove the operator's approval requirement.
+  assert.strictEqual(approvalMode({ approval: 'sometimes' }), 'always');
+  ok('an unknown explicit approval mode requires approval');
 }
 
 function testModes() {

@@ -79,3 +79,11 @@ export const useTheme = create<ThemeState>(set => {
     },
   };
 });
+
+/** Reapply persisted state after the server preference cache has hydrated. */
+export function initializeTheme(): void {
+  const mode = readStored();
+  const resolved = mode === 'system' ? systemPrefers() : mode;
+  apply(resolved);
+  useTheme.setState({ mode, resolved });
+}

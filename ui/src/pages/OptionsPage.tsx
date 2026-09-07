@@ -18,6 +18,7 @@ import { useServersStore } from '@/stores/servers.store';
 import { useWorkspace } from '@/stores/workspace';
 import { useTheme, type ThemeMode } from '@/stores/theme';
 import { cn } from '@/lib/utils';
+import { VaultPanel } from '@/components/VaultPanel';
 import { PageHeader } from '@/components/layout/PageHeader';
 
 
@@ -185,8 +186,9 @@ export function OptionsPage() {
           scrolled through, which made "where is the thing I came for" a reading
           exercise. Tabs answer it before you scroll. */}
       <Tabs defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-6 mt-4 w-fit shrink-0">
+        <TabsList className="mx-6 mt-4 h-auto w-fit max-w-[calc(100%-3rem)] shrink-0 flex-wrap">
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          <TabsTrigger value="vault">Vault</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="groups">Groups</TabsTrigger>
           <TabsTrigger value="tunnels">Tunnels</TabsTrigger>
@@ -201,6 +203,8 @@ export function OptionsPage() {
           </h2>
           <ThemePicker />
         </TabsContent>
+
+        <TabsContent value="vault" className="mt-0"><VaultPanel /></TabsContent>
 
         <TabsContent value="alerts" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">

@@ -86,3 +86,7 @@ docs/images/.raw/
 
 # Debris from extracting an asar to inspect it
 asar-up/
+
+# Browser verification output
+ui/playwright-report/
+ui/test-results/

@@ -5,14 +5,22 @@
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Default groups file location
-const GROUPS_FILE = path.join(__dirname, '..', '.server-groups.json');
+const LEGACY_GROUPS_FILE = path.join(__dirname, '..', '.server-groups.json');
+
+// Shared by npm, the CLI and the desktop app. Never write inside an installed
+// package: updates replace it, and writing in a macOS bundle invalidates its seal.
+export function defaultGroupsPath() {
+  return process.env.SSH_GROUPS_FILE
+    || path.join(process.env.SSH_MANAGER_HOME || path.join(os.homedir(), '.ssh-manager'), 'groups.json');
+}
 
 // Group execution strategies
 const EXECUTION_STRATEGIES = {
@@ -23,9 +31,13 @@ const EXECUTION_STRATEGIES = {
 
 export class ServerGroups {
   constructor(options = {}) {
-    // Both options exist so this class can be instantiated in isolation (tests,
-    // embedding). The exported singleton below keeps the historical defaults.
-    this.groupsFile = options.groupsFile || GROUPS_FILE;
+    this.groupsFile = options.groupsFile || defaultGroupsPath();
+    // Explicit paths are isolated unless their caller explicitly opts into a
+    // legacy file. Migration is a read fallback until the first successful edit;
+    // simply upgrading or listing groups creates no files and retains rollback.
+    this.legacyGroupsFile = options.legacyGroupsFile
+      ?? (options.groupsFile || process.env.SSH_GROUPS_FILE ? null : LEGACY_GROUPS_FILE);
+    this.loadError = null;
     this.serverConfigProvider = typeof options.serverConfigProvider === 'function'
       ? options.serverConfigProvider
       : null;
@@ -73,10 +85,15 @@ export class ServerGroups {
    * Load groups from file
    */
   loadGroups() {
+    this.loadError = null;
     try {
-      if (fs.existsSync(this.groupsFile)) {
-        const data = fs.readFileSync(this.groupsFile, 'utf8');
+      const source = fs.existsSync(this.groupsFile) ? this.groupsFile : this.legacyGroupsFile;
+      if (source && fs.existsSync(source)) {
+        const data = fs.readFileSync(source, 'utf8');
         const stored = JSON.parse(data);
+        if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+          throw new Error(`Invalid server groups file: ${source}`);
+        }
 
         // Dynamic groups are deliberately never persisted (see saveGroups), so
         // they are missing from every file written after the first group edit.
@@ -86,6 +103,7 @@ export class ServerGroups {
         return { ...this.getDynamicGroups(), ...stored };
       }
     } catch (error) {
+      this.loadError = error;
       logger.warn('Failed to load server groups', { error: error.message });
     }
 
@@ -115,7 +133,9 @@ export class ServerGroups {
    * Save groups to file
    */
   saveGroups() {
+    const temporary = `${this.groupsFile}.${randomUUID()}.tmp`;
     try {
+      if (this.loadError) throw this.loadError;
       // Don't save dynamic groups
       const groupsToSave = {};
       for (const [name, group] of Object.entries(this.groups)) {
@@ -124,12 +144,18 @@ export class ServerGroups {
         }
       }
 
-      fs.writeFileSync(this.groupsFile, JSON.stringify(groupsToSave, null, 2));
+      fs.mkdirSync(path.dirname(this.groupsFile), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(temporary, `${JSON.stringify(groupsToSave, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+      fs.renameSync(temporary, this.groupsFile);
       logger.info('Server groups saved', { count: Object.keys(groupsToSave).length });
       return true;
     } catch (error) {
+      try { fs.rmSync(temporary, { force: true }); } catch { /* keep the original write error */ }
+      // A failed write is not a successful in-memory edit. Keep the UI and MCP
+      // responses consistent with what a restart will actually read.
+      this.groups = this.loadGroups();
       logger.error('Failed to save server groups', { error: error.message });
-      return false;
+      throw new Error(`Could not save server groups to ${this.groupsFile}: ${error.message}`);
     }
   }
 
@@ -519,16 +545,29 @@ export class ServerGroups {
   }
 }
 
-// Export singleton instance
-const serverGroups = new ServerGroups();
+// Resolve lazily, after CLI/environment setup, and refresh before each public
+// operation so an already-running MCP server sees edits from the desktop app.
+let serverGroups = null;
+let configProvider = null;
+function currentGroups() {
+  if (!serverGroups || serverGroups.groupsFile !== defaultGroupsPath()) {
+    serverGroups = new ServerGroups({ serverConfigProvider: configProvider });
+  } else {
+    serverGroups.groups = serverGroups.loadGroups();
+  }
+  return serverGroups;
+}
 
 // Export convenience functions
-export const setServerConfigProvider = (provider) => serverGroups.setServerConfigProvider(provider);
-export const getGroup = (name) => serverGroups.getGroup(name);
-export const createGroup = (name, servers, options) => serverGroups.createGroup(name, servers, options);
-export const updateGroup = (name, updates) => serverGroups.updateGroup(name, updates);
-export const deleteGroup = (name) => serverGroups.deleteGroup(name);
-export const addServersToGroup = (name, servers) => serverGroups.addServers(name, servers);
-export const removeServersFromGroup = (name, servers) => serverGroups.removeServers(name, servers);
-export const listGroups = () => serverGroups.listGroups();
-export const executeOnGroup = (name, executor, options) => serverGroups.executeOnGroup(name, executor, options);
+export const setServerConfigProvider = (provider) => {
+  configProvider = provider;
+  currentGroups().setServerConfigProvider(provider);
+};
+export const getGroup = (name) => currentGroups().getGroup(name);
+export const createGroup = (name, servers, options) => currentGroups().createGroup(name, servers, options);
+export const updateGroup = (name, updates) => currentGroups().updateGroup(name, updates);
+export const deleteGroup = (name) => currentGroups().deleteGroup(name);
+export const addServersToGroup = (name, servers) => currentGroups().addServers(name, servers);
+export const removeServersFromGroup = (name, servers) => currentGroups().removeServers(name, servers);
+export const listGroups = () => currentGroups().listGroups();
+export const executeOnGroup = (name, executor, options) => currentGroups().executeOnGroup(name, executor, options);

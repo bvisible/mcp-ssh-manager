@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Download, FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { imports, type ImportPreview, type ImportSource } from '@/lib/api';
 
 /** Base64 without a data: prefix, which is what the preview route expects. */
@@ -51,11 +52,6 @@ export function ImportDialog({ onClose, onImported }: {
       .catch(() => setSources([]));
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   const look = async (body: Parameters<typeof imports.preview>[0]) => {
     setBusy(true);
@@ -92,19 +88,19 @@ export function ImportDialog({ onClose, onImported }: {
     : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-      <div className="flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+    <Dialog open onOpenChange={open => !open && onClose()}>
+      <DialogContent showCloseButton={false} className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
         <div className="flex items-start gap-3 border-b border-border px-5 py-4">
           <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
             <Download className="h-4.5 w-4.5 text-primary" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-medium">Import servers</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <DialogTitle className="text-sm font-medium">Import servers</DialogTitle>
+            <DialogDescription className="mt-0.5 text-xs text-muted-foreground">
               {preview
                 ? preview.source
                 : 'From another tool, or from a file. No password is ever read.'}
-            </p>
+            </DialogDescription>
           </div>
           <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
@@ -248,7 +244,7 @@ export function ImportDialog({ onClose, onImported }: {
             </span>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

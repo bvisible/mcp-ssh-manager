@@ -1,8 +1,9 @@
 import { Client } from 'ssh2';
 import fs from 'fs';
 import os from 'os';
-import { isHostKnown, addHostKey } from './ssh-key-manager.js';
+import { trustedHostKeyAlgorithms, verifyHostKey } from './ssh-key-manager.js';
 import { logger } from './logger.js';
+import { shellPath } from './shell-quote.js';
 
 // Validate liveness-probe output across shells (bash, cmd.exe, PowerShell).
 // Normalize CRLF, stray quotes/backslashes and case before matching so quoted
@@ -110,46 +111,19 @@ class SSHManager {
         }
       };
 
-      // Add host key verification callback if enabled
+      // Verify the key ssh2 received on this connection, never a second
+      // ssh-keyscan connection. First contact remains noninteractive TOFU;
+      // a changed known key is refused before credentials are sent.
       if (this.hostKeyVerification) {
-        connConfig.hostVerifier = () => {
-          const port = this.config.port || 22;
-          const host = this.config.host;
-
-          // Check if host is already known
-          if (isHostKnown(host, port)) {
-            // For now, accept all known hosts
-            // TODO: Implement proper fingerprint comparison once we understand SSH2's hash format
-            logger.info('Host key verified', { host, port });
-            return true;
+        const trusted = trustedHostKeyAlgorithms(this.config.host, this.config.port || 22);
+        if (trusted.length) connConfig.algorithms.serverHostKey = trusted;
+        connConfig.hostVerifier = key => {
+          try {
+            return verifyHostKey(this.config.host, this.config.port || 22, key);
+          } catch (error) {
+            reject(error);
+            return false;
           }
-
-          // Host is not known
-          logger.info('New host detected', { host, port });
-
-          // If autoAcceptHostKey is enabled, accept and add the key
-          if (this.autoAcceptHostKey) {
-            logger.info('Auto-accept host key', { host, port });
-            // Schedule key addition after connection
-            setImmediate(async () => {
-              try {
-                await addHostKey(host, port);
-                logger.info('Host key added', { host, port });
-              } catch (err) {
-                logger.warn('Failed to add host key', {
-                  host,
-                  port,
-                  error: err.message
-                });
-              }
-            });
-            return true;
-          }
-
-          // For backward compatibility, accept new hosts by default
-          // In production, you might want to prompt the user or check a whitelist
-          logger.warn('Auto-accepting new host', { host, port });
-          return true;
         };
       }
 
@@ -192,7 +166,7 @@ class SSHManager {
     }
 
     const { timeout = 30000, cwd, rawCommand = false, stdin = null, onStdout, onStderr } = options;
-    const fullCommand = (cwd && !rawCommand) ? `cd ${cwd} && ${command}` : command;
+    const fullCommand = (cwd && !rawCommand) ? `cd -- ${shellPath(cwd)} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
       let stdout = '';
@@ -310,7 +284,7 @@ class SSHManager {
     }
 
     const { cwd, onStdout, onStderr } = options;
-    const fullCommand = cwd ? `cd ${cwd} && ${command}` : command;
+    const fullCommand = cwd ? `cd -- ${shellPath(cwd)} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
       this.client.exec(fullCommand, (err, stream) => {

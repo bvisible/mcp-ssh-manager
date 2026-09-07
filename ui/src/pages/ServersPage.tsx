@@ -24,10 +24,18 @@ export function ServersPage() {
   const [importing, setImporting] = useState(false);
   const wantsImport = useWorkspace(state => state.wantsImport);
   const setWantsImport = useWorkspace(state => state.setWantsImport);
+  const wantsAdd = useWorkspace(state => state.wantsAdd);
+  const setWantsAdd = useWorkspace(state => state.setWantsAdd);
   const serverDraft = useWorkspace(state => state.serverDraft);
   const setServerDraft = useWorkspace(state => state.setServerDraft);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!wantsAdd) return;
+    setAdding(true);
+    setWantsAdd(false);
+  }, [wantsAdd, setWantsAdd]);
 
   // Somebody pressed "Add as a server" on a known host. Open the form with what
   // that screen knew, and clear the draft so returning here later does not
@@ -54,6 +62,7 @@ export function ServersPage() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search"
+            aria-label="Search servers"
             className="h-8 pl-8 text-xs"
           />
         </div>

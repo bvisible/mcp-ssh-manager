@@ -1,153 +1,123 @@
-# Shipping the desktop app
+# Releasing SSH Manager
 
-What has to happen between `npm run build:mac` and somebody double-clicking the
-downloaded file without macOS refusing to open it.
+The npm engine remains compatible with Node 18+. Build the interface and desktop
+applications with **Node 24**: Electron 44's build tools require Node 22.12 or newer.
+The desktop release workflow builds macOS arm64/x64, Windows x64/arm64 (one NSIS
+installer), and Linux x64 (AppImage and deb). Linux desktop support must pass its
+first complete CI rehearsal before it is announced as available.
 
-## There is no Xcode project, and there does not need to be
+## Release gates
 
-The desktop app is Electron, assembled by `electron-builder`. Nothing here is an
-Xcode target: there is no `.xcodeproj`, no `.xcworkspace`, no `Package.swift`.
-Opening `desktop/electron` in Xcode shows a folder of JavaScript.
+1. Merge the release changes through a pull request. Keep the existing required
+   `lint`, `test (18.x)` and `test (20.x)` checks; also require the interface jobs
+   before release. They build/typecheck the UI, compare it with committed
+   `dist/ui`, run browser flows, and exercise an upgrade from the real npm 3.8.5.
+2. Update root/desktop package manifests and lockfiles, plus both version fields
+   in `server.json`. `scripts/release-version.mjs` checks their agreement.
+3. For a candidate, use a version such as `4.0.0-rc.1` and its exact `v4.0.0-rc.1`
+   tag. `release.yml` publishes with npm provenance to **next**, creates a draft
+   prerelease on GitHub, and leaves stable Homebrew and npm `latest` alone.
+4. Run **Release desktop apps** with `publish: false` against the candidate.
+   Install the artifacts on clean machines and verify imports, old configuration,
+   approvals, terminal, transfers, groups and persistence after restart. The CI
+   smoke launches the packaged application with an isolated home, renders its
+   real interface, writes a group outside the application, and runs a native PTY.
+5. Verify an actual desktop update from an earlier installed candidate. A build
+   or a download test alone does not prove quit/install/restart works. Confirm
+   servers, vault, saved commands and groups survive. Stable clients must not be
+   offered a candidate release.
+6. Publish the desktop workflow against the **exact version tag** only when all
+   candidates pass. It builds without upload credentials, signs, notarizes and
+   staples, smoke tests, verifies signatures, regenerates final metadata and DMG
+   blockmaps, and uploads validated CI artifacts. A separate job waits for every
+   platform, verifies SHA256 manifests, uploads to the draft, then makes the
+   release public. An already public release cannot have its installers replaced;
+   use a new version.
+7. For stable, repeat with `4.0.0`/`v4.0.0`. Apply the `homebrew-update` artifact
+   from the npm release as a pull request and run the formula workflow before
+   merging. The release workflow never pushes an unchecked commit onto `main`.
+   Publish `server.json` to the MCP Registry from the same tag only after npm is
+   available. Finally check npm dist-tags, GitHub assets/updater feeds, Homebrew
+   version and Registry version from a fresh machine. The Registry workflow skips
+   prereleases so a candidate cannot replace its stable listing.
 
-Signing is already done, and Xcode would not do it differently — `electron-builder`
-calls `codesign`, the same binary Xcode drives. The current build is signed:
+The npm publish and desktop build are separate operations. If a desktop gate
+fails after npm publication, npm may already be available but GitHub remains a
+draft. Fix and re-run against the same unchanged tag, or issue a new version when
+code changes; do not move a published version tag.
 
-```
-Identifier=com.bvisible.ssh-manager
-Authority=Developer ID Application: bVisible Sarl (BT249938WK)
-Authority=Developer ID Certification Authority
-Authority=Apple Root CA
-```
+## macOS signing and notarization
 
-Xcode is still needed, for exactly one thing: `notarytool`, which ships inside it.
+The application is Electron; no Xcode project is involved. A Developer ID
+Application certificate signs the app. Xcode command line tools provide
+`codesign`, `notarytool` and `stapler`.
 
-## The missing step is notarization
+GitHub Actions uses the maintainer's existing secrets:
 
-```
-$ spctl -a -vvv -t exec "dist/mac-arm64/SSH Manager.app"
-rejected
-source=Unnotarized Developer ID
-```
+- `MAC_CERT_P12`: base64 encoded Developer ID certificate and private key.
+- `MAC_CERT_PASSWORD`: its password.
+- `APPLE_API_KEY`: base64 encoded App Store Connect `.p8` key.
+- `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`: the matching key and issuer IDs.
 
-Signed but not notarized means anyone who **downloads** the DMG is told macOS
-"cannot check it for malicious software". It opens fine on the machine that built
-it only because a locally produced file carries no quarantine attribute.
+Never commit these files or values. The workflow imports the certificate into an
+isolated runner keychain and removes temporary key files on completion.
 
-`electron-builder` already tries on every build and gives up quietly:
+Electron Builder notarizes/staples the app before packaging. The workflow also
+submits and staples **each DMG**. Stapling changes its bytes, so updater hashes
+and `.dmg.blockmap` files are regenerated afterwards by
+`desktop/electron/finalize-artifacts.mjs`. The ZIP updater files and final DMGs
+are retained together with SHA256 manifests.
 
-```
-• skipped macOS notarization  reason=`notarize` options were unable to be generated
-```
+`./scripts/verify-mac-build.sh "path/to/SSH Manager.app"` checks the Developer ID,
+deep signature, Gatekeeper, stapled app and matching DMG, dependencies, interface,
+tray icon and local terminal helper. It runs **after** the application smoke test:
+normal use must not invalidate the signature.
 
-Nothing is missing from the configuration. What is missing is a credential, and
-only the account holder can create one.
+For a local diagnostic build that must not use signing credentials:
 
-### Option A — an App Store Connect API key (preferred)
-
-A key is revocable on its own, is not tied to a person's Apple ID, and works
-unattended in CI.
-
-1. App Store Connect → Users and Access → Integrations → App Store Connect API
-2. Generate a key with the **Developer** role; download the `.p8` **once**
-3. Keep the Key ID and Issuer ID
-
-```bash
-export APPLE_API_KEY=~/private_keys/AuthKey_XXXXXXXXXX.p8
-export APPLE_API_KEY_ID=XXXXXXXXXX
-export APPLE_API_ISSUER=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-npm run build:mac
-```
-
-### Option B — an app-specific password
-
-1. appleid.apple.com → Sign-In and Security → App-Specific Passwords
-2. Generate one for "notarytool"
-
-```bash
-export APPLE_ID=apple@bvisible.ch
-export APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx
-export APPLE_TEAM_ID=BT249938WK
-npm run build:mac
-```
-
-The build stops skipping, uploads, waits for Apple — a few minutes — and staples
-the ticket to the **app**.
-
-### The DMG needs submitting separately
-
-electron-builder notarizes the `.app` *before* packaging it into the disk image,
-so Apple has no ticket for the DMG and `stapler staple` on it fails with
-`Could not find base64 encoded ticket in response`. The app inside is notarized
-either way and Gatekeeper accepts it, but without a ticket on the DMG itself,
-opening the download offline makes Gatekeeper phone home.
-
-```bash
-xcrun notarytool submit "dist/SSH Manager-4.0.0-arm64.dmg" \
-  --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
-xcrun stapler staple "dist/SSH Manager-4.0.0-arm64.dmg"
+```sh
+npm ci
+npm run build:ui
+npm ci --prefix desktop/electron
+cd desktop/electron
+npm run prepare-engine
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir --publish never -c.mac.identity=-
 ```
 
-Then confirm what a downloader will see — including the quarantine attribute a
-real download carries, which is the whole point and is absent on a local build:
+This produces an ad hoc signed developer build, not a distributable application.
 
-```bash
-cp "dist/SSH Manager-4.0.0-arm64.dmg" /tmp/dl.dmg
-xattr -w com.apple.quarantine "0083;00000000;Safari;" /tmp/dl.dmg
-hdiutil attach /tmp/dl.dmg -nobrowse -readonly
-spctl -a -vvv -t exec "/Volumes/SSH Manager 4.0.0-arm64/SSH Manager.app"
-# want: accepted / source=Notarized Developer ID
-```
+## Windows signing
 
-Or just run `./scripts/verify-mac-build.sh`, which checks both.
+A successful Electron Builder log does **not** prove Authenticode was applied.
+The workflow runs `scripts/verify-windows-build.ps1` against the NSIS installer
+and both packaged application executables. Stable publication requires every
+signature to have `Valid` status. Unsigned dry runs and prereleases are retained
+with an explicit warning, for testing only.
 
-Never commit the key or the password. They belong in the shell, or in GitHub
-Actions secrets.
+The optional `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` repository secrets are
+passed to Electron Builder's Windows certificate support. They must contain real
+signing credentials supplied by the maintainer; no Windows credential is bundled
+or assumed to exist. Until a certificate or equivalent signing infrastructure is
+configured and the verification passes, **stable desktop publication is blocked**.
+Do not disable that check to make a release green.
 
-### Checking the result
+## Data belongs outside the application
 
-```bash
-./scripts/verify-mac-build.sh
-```
+The shared groups file is `${SSH_MANAGER_HOME:-~/.ssh-manager}/groups.json`;
+`SSH_GROUPS_FILE` overrides it. Reads fall back to a legacy `.server-groups.json`
+next to an installed engine only when the shared file does not exist. The first
+successful edit writes the shared file atomically and keeps the legacy file
+unchanged. Starting the application or listing groups creates nothing.
 
-One command instead of remembering four. It checks the bundle identifier, that
-the signature verifies all the way down, that it is a Developer ID and not a
-development certificate, that Gatekeeper accepts it, that the ticket is stapled,
-that the engine carries its dependencies, that the interface is bundled, and
-that the menu-bar icon reached the asar. Every one of those has failed here at
-least once, and none of them showed up in a build log that exited 0.
+MCP and desktop processes refresh this shared file before group operations.
+They report persistence errors instead of claiming an unsaved edit succeeded.
+For an old npm installation, back up package-local state **before replacing the
+package**; an installer cannot recover a legacy file npm has already deleted.
+See [MIGRATION.md](MIGRATION.md).
 
-## The Mac App Store is a different product
+## Mac App Store
 
-Not a further step along this path — a different one, and this application does
-not fit down it. Three reasons, in order of how hard they are to move.
-
-**The certificates do not exist.** The keychain holds `Developer ID Application`
-(direct distribution) and `Apple Development` (local builds). The store needs
-`Apple Distribution` and `3rd Party Mac Developer Installer`. Those are a
-request away, so this is the easy one.
-
-**Two entitlements the app relies on are refused outright.** `resources/entitlements.mac.plist`
-declares `com.apple.security.cs.disable-library-validation` and
-`com.apple.security.cs.allow-unsigned-executable-memory`. Both are rejected by
-App Store review. The first is what lets `ssh2` load its optional native
-bindings; without it the crypto acceleration and `cpu-features` go.
-
-**The sandbox removes the features people install this for.** A store build must
-declare `com.apple.security.app-sandbox`, which this one does not. Under it:
-
-| What the app does | Under the sandbox |
-|---|---|
-| Browses **your** filesystem — `fs.readdirSync` from `os.homedir()`, the left pane of the file browser | Only files the user picks one at a time through a system panel. The pane cannot exist. |
-| Spawns external binaries — `ssh-keyscan` for host keys, `rsync` for `ssh_sync` | Not permitted. Both features go. |
-| Opens SSH to any host and port you name | Allowed (`network.client`), the one part that survives intact. |
-| Serves the interface on a local port | Allowed (`network.server`), but the token-in-URL handoff needs rethinking. |
-
-So a store build would be an SSH client that cannot see your files, cannot sync,
-and cannot check a host key. That is not a constrained version of this app; it is
-a different, worse one wearing its name.
-
-**Recommendation: notarized Developer ID, distributed as a DMG from GitHub
-Releases and Homebrew.** It is the normal channel for developer tools, it costs
-one credential, and it keeps every feature. If the store ever becomes a
-requirement, it should be scoped as its own build target with its own honest
-feature list — not as a flag on this one.
+The release channel is Developer ID distribution through GitHub Releases.
+A Mac App Store build would require a separate sandbox design for arbitrary local
+file browsing, external tools such as rsync, host-key discovery and the local
+control-plane service. It is outside the current release scope.

@@ -13,8 +13,6 @@ import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ConfigLoader } from '../src/config-loader.js';
-import { SecretStore } from '../src/secret-store.js';
 
 let passed = 0;
 function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); passed++; }
@@ -22,6 +20,10 @@ function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'upgrade-'));
 process.env.SSH_MANAGER_KEY_SOURCE = 'file';
 process.env.SSH_MANAGER_HOME = scratch;
+process.env.SSH_LOG_FILE = path.join(scratch, 'log');
+process.env.SSH_CONFIG_PATH = path.join(scratch, 'absent.toml');
+const { ConfigLoader } = await import('../src/config-loader.js');
+const { SecretStore } = await import('../src/secret-store.js');
 
 /** A .env as someone running 3.8.x actually has one. */
 const ENV = `
@@ -45,6 +47,7 @@ SSH_SERVER_BASTION_KEYPATH=~/.ssh/bastion
 `;
 
 const envPath = path.join(scratch, '.env');
+process.env.SSH_ENV_PATH = envPath;
 fs.writeFileSync(envPath, ENV);
 
 /** @returns {Promise<Record<string, any>>} */
@@ -125,16 +128,15 @@ async function testTheProcessEnvironmentStillWinsOverEverything() {
   ok('the process environment still beats everything, vault included');
 }
 
-async function testAnUnreadableVaultDoesNotTakeTheEnvDownWithIt() {
-  // The failure that would hurt most: a vault whose key is gone must not stop
-  // servers that are perfectly well described in a .env from loading.
+async function testAnUnreadableAdoptedVaultBlocksFallback() {
+  // Once the operator adopts the vault, its approval and policy settings may
+  // be stricter than the original files. An unreadable vault must fail closed.
   const vaultPath = path.join(scratch, 'corrupt.json');
   fs.writeFileSync(vaultPath, '{ this is not json');
-  const servers = await load({ vaultPath });
-  assert.strictEqual(Object.keys(servers).length, 3,
-    'a broken vault must degrade to the .env, not take everything with it');
-  assert.strictEqual(servers.prod.password, 'motdepasse-prod');
-  ok('an unreadable vault degrades to the .env instead of failing the whole load');
+  await assert.rejects(load({ vaultPath }), error =>
+    error.code === 'VAULT_UNREADABLE' && /ssh-manager vault restore/.test(error.message));
+  assert.strictEqual(fs.readFileSync(envPath, 'utf8'), ENV);
+  ok('an unreadable adopted vault blocks unsafe fallback and explains how to restore');
 }
 
 async function testTheOfferIsMadeButNeverActedOn() {
@@ -206,7 +208,7 @@ async function main() {
     await testImportingDoesNotTouchTheEnv();
     await testTheVaultWinsButOnlyForWhatItHolds();
     await testTheProcessEnvironmentStillWinsOverEverything();
-    await testAnUnreadableVaultDoesNotTakeTheEnvDownWithIt();
+  await testAnUnreadableAdoptedVaultBlocksFallback();
     await testTheOfferIsMadeButNeverActedOn();
     console.log(`\n✅ upgrade tests passed (${passed} checks)`);
   } finally {

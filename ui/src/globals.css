@@ -181,6 +181,20 @@ body {
   font-family: var(--font-body);
 }
 
+@keyframes welcome-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.welcome-illustration { animation: welcome-arrive 450ms ease-out both; }
+.welcome-copy { animation: welcome-arrive 250ms ease-out both; }
+.welcome-dialog { max-height: calc(100dvh - 2rem); overflow-y: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-illustration, .welcome-copy { animation: none; }
+  .sidebar-nav { transition: none; }
+}
+
 /* macOS title bar drag region */
 .drag-region {
   -webkit-app-region: drag;

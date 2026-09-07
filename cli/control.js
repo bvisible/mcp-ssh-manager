@@ -2,8 +2,7 @@
 // `ssh-manager control` — run the control plane.
 //
 // Starts the approval socket the engine talks to and a local page to watch and
-// decide on. Runs in the foreground: closing it takes the control plane away,
-// and the engine goes back to deciding on its own.
+// decide on. Runs in the foreground until Ctrl-C.
 
 import fs from 'fs';
 import os from 'os';
@@ -53,8 +52,8 @@ ${GREEN}${BOLD}Control plane running${RESET}
 ${DIM}The link carries a one-time token for this run. It approves commands on your
 servers, so treat it like a password: do not paste it anywhere.
 
-Servers with APPROVAL=destructive or =always will now pause here for a decision.
-Close this process and they go back to running unattended.${RESET}
+Servers configured to require approval in the vault pause here for a decision.
+Run this process while using approval; stop it with Ctrl-C.${RESET}
 `);
 
   if (auditPaths.length === 0) {

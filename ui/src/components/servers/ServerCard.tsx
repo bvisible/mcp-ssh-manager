@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { Monitor, FolderOpen, Terminal, Pencil, Trash2 } from 'lucide-react'
+import { Monitor, FolderOpen, Terminal, Pencil, Trash2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -137,6 +137,7 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
             </span>
           </div>
 
+          <ServerProtection server={server} />
           {/* Connection status indicator */}
           {!editMode && isConnected && (
             <ConnectionIndicator hasBrowser={hasBrowser} hasTerminal={hasTerminal} />
@@ -212,6 +213,7 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
             </div>
           </div>
 
+          <div className="px-3 pb-2"><ServerProtection server={server} /></div>
           <div className="flex items-center justify-end gap-0.5 px-2 pb-2">
             {editMode ? (
               <>
@@ -247,6 +249,16 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
       {dialogEl}
     </>
   )
+}
+
+function ServerProtection({ server }: { server: ServerConfig }) {
+  const approval = server.approval ?? 'never';
+  return <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+    <span className="rounded border border-border px-1.5 py-0.5">{server.mode === 'readonly' ? 'Read only' : server.mode === 'restricted' ? 'Restricted' : 'Unrestricted'}</span>
+    <span className={cn('flex items-center gap-1 rounded border px-1.5 py-0.5', approval === 'never' ? 'border-border' : 'border-primary/30 bg-primary/10 text-foreground')}>
+      <ShieldCheck className="h-3 w-3" />{approval === 'always' ? 'Approval: every request' : approval === 'destructive' ? 'Approval: destructive' : 'Approval off'}
+    </span>
+  </div>;
 }
 
 // Connection status indicator

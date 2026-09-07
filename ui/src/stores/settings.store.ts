@@ -21,7 +21,13 @@ const STORAGE_KEY = 'ssh-manager.view-settings';
 
 function read(): Partial<SettingsState> {
   try {
-    return JSON.parse(readPreference(STORAGE_KEY) ?? '{}');
+    const stored = JSON.parse(readPreference(STORAGE_KEY) ?? '{}');
+    return {
+      serverViewMode: stored?.serverViewMode === 'list' ? 'list' : 'grid',
+      collapsedCategories: Array.isArray(stored?.collapsedCategories)
+        ? stored.collapsedCategories.filter((item: unknown): item is string => typeof item === 'string')
+        : [],
+    };
   } catch {
     // Stored by an older version, or truncated. Defaults are a fine answer.
     return {};
@@ -47,3 +53,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     writePreference(STORAGE_KEY, JSON.stringify({ serverViewMode, collapsedCategories }));
   },
 }));
+
+/** Restore view preferences explicitly before the first render. */
+export function initializeSettings(): void {
+  useSettingsStore.setState({ serverViewMode: 'grid', collapsedCategories: [], ...read() });
+}

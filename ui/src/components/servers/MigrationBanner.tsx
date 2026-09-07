@@ -22,6 +22,7 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
   const [pending, setPending] = useState<PendingServer[] | null>(null);
   const [envPath, setEnvPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(() => readPreference(DISMISSED_KEY) === 'true');
 
   useEffect(() => {
@@ -49,15 +50,15 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
         <FileKey className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">
-            {pending.length} server{pending.length > 1 ? 's are' : ' is'} configured in a file, not in the vault
+            Your existing setup keeps working
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {envPath && <><code className="font-mono">{envPath}</code> — </>}
             {withSecrets > 0
               ? `${withSecrets} of them keep${withSecrets > 1 ? '' : 's'} credentials in clear text. `
               : ''}
-            Importing encrypts the secrets and lets you edit these servers here. The file is left
-            exactly as it is, and keeps working.
+            Bring {pending.length} server{pending.length > 1 ? 's' : ''} into this workspace to edit
+            them here. Importing is optional and leaves the original configuration unchanged.
           </p>
 
           <ul className="mt-2 flex flex-wrap gap-1.5">
@@ -83,10 +84,13 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
+                setError(null);
                 try {
                   await migration.run(pending.map(server => server.name));
                   setPending([]);
                   onImported();
+                } catch (cause) {
+                  setError((cause as Error).message);
                 } finally {
                   setBusy(false);
                 }
@@ -102,10 +106,11 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
               {/* Said here rather than after the fact: the vault's key belongs
                   to this machine, and that is the thing to know before it
                   becomes the only copy of anything. */}
-              Afterwards, run <code className="font-mono">ssh-manager vault backup</code> — the
-              vault key lives in this machine's keychain and does not travel.
+              Afterwards, create a recovery backup in Options → Vault. Your encryption key
+              belongs to this machine; the backup lets you restore elsewhere.
             </p>
           </div>
+          {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
         </div>
         <button
           onClick={dismiss}

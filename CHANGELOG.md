@@ -5,7 +5,7 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] - 2026-08-31
+## [4.0.0] - Unreleased
 
 The control plane: a local application that shows what your agents are doing on
 your servers, and lets you stop them before they do it.
@@ -14,7 +14,8 @@ your servers, and lets you stop them before they do it.
 nothing running, the engine behaves exactly as 3.8.5 did — verified end to end
 by `scripts/test-upgrade-from-published.mjs`, which installs 3.8.5 from the
 registry, asks it what it sees over MCP, installs this version over the top and
-asks again. Same servers, same fields, byte-identical `.env`, no files created.
+asks again, then rolls back. Same 37 tool schemas, server fields and unchanged
+`.env` / TOML fixtures; no automatic vault or control plane.
 
 ### Added
 
@@ -41,9 +42,9 @@ asks again. Same servers, same fields, byte-identical `.env`, no files created.
 ### Changed
 
 - **Approval can no longer be set from a file or the environment.** It is the
-  one switch whose purpose is to constrain the agent, so the agent must not be
-  able to turn it off: a `.env` next to the code is the first thing a shell can
-  reach. It lives in the vault and only the control plane writes it. An existing
+  switch whose accidental override would disable a requested protection.
+  It lives in the vault and is preserved by connection-setting overrides. This
+  is not isolation from a process with control of the local user account. An existing
   `SSH_SERVER_*_APPROVAL` is reported loudly on start rather than silently
   ignored. Never released before this version, so no published behaviour changes.
 - Keychain lookups now time out after five seconds instead of blocking forever
@@ -51,6 +52,23 @@ asks again. Same servers, same fields, byte-identical `.env`, no files created.
 
 ### Fixed
 
+- Vault changes reload without restarting; editing a server keeps omitted
+  credentials, accounts, proxies, restrictions and approval. Process environment
+  overrides cannot erase an existing approval policy.
+- Recovery decrypts every credential before writing, previews replacements, and
+  refuses stale previews. Backup and restore are also available in Options → Vault.
+- SSH host keys are verified during the handshake. Remote MCP tools share one
+  approval/policy boundary; aliases resolve consistently, approvals are requested
+  once, and config changes invalidate old pooled connections. Working directories
+  with spaces or shell metacharacters are quoted.
+- Desktop groups persist in user state rather than inside the signed application.
+  Release metadata is regenerated after notarization/stapling; publishing waits
+  for platform checks. Release candidates use npm `next` without changing stable
+  Homebrew or MCP Registry entries.
+- First-run welcome now has local SVG illustrations, reduced-motion support and
+  keyboard-accessible dialogs. Add/import actions open their forms directly.
+  Server protection and lost control-plane connections are visible. Sidebar,
+  theme, server layout and collapsed groups survive a new local port.
 - `mkdirSync` under an unwritable path could hang indefinitely on Linux, which
   cost this project's CI a six-hour job before anyone looked.
 

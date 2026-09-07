@@ -69,6 +69,25 @@ function deriveKey(passphrase, salt) {
  * @returns {{ path: string, servers: number, secrets: number }}
  */
 export function writeRecoveryFile(servers, passphrase, outputPath) {
+  const content = serializeRecovery(servers, passphrase);
+  const file = JSON.parse(content);
+  fs.mkdirSync(path.dirname(path.resolve(outputPath)), { recursive: true });
+  const temporary = `${outputPath}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, content, { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, outputPath);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  return { path: path.resolve(outputPath), servers: file.contains.servers, secrets: file.contains.secrets };
+}
+
+/** Build the same encrypted file for CLI disk writes and browser downloads.
+ * @param {Record<string, any>} servers
+ * @param {string} passphrase
+ * @returns {string}
+ */
+export function serializeRecovery(servers, passphrase) {
   if (!passphrase || passphrase.length < 8) {
     throw new Error('The passphrase must be at least 8 characters — this is the only thing protecting the file.');
   }
@@ -81,8 +100,14 @@ export function writeRecoveryFile(servers, passphrase, outputPath) {
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
 
-  const secrets = Object.values(servers)
-    .reduce((count, server) => count + SECRET_FIELDS.filter(f => server?.[f]).length, 0);
+  /** @param {any} value @returns {number} */
+  const countSecrets = value => {
+    if (Array.isArray(value)) return value.reduce((sum, item) => sum + countSecrets(item), 0);
+    if (!value || typeof value !== 'object') return 0;
+    return Object.entries(value).reduce((sum, [field, item]) =>
+      sum + (SECRET_FIELDS.includes(field) ? (item ? 1 : 0) : countSecrets(item)), 0);
+  };
+  const secrets = Object.values(servers).reduce((sum, server) => sum + countSecrets(server), 0);
 
   const file = {
     format: FORMAT,
@@ -99,9 +124,7 @@ export function writeRecoveryFile(servers, passphrase, outputPath) {
     contains: { servers: Object.keys(servers).length, secrets },
   };
 
-  fs.mkdirSync(path.dirname(path.resolve(outputPath)), { recursive: true });
-  fs.writeFileSync(outputPath, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
-  return { path: path.resolve(outputPath), servers: file.contains.servers, secrets };
+  return `${JSON.stringify(file, null, 2)}\n`;
 }
 
 /**
@@ -112,25 +135,37 @@ export function writeRecoveryFile(servers, passphrase, outputPath) {
  * @returns {Record<string, any>} The servers, in the clear
  */
 export function readRecoveryFile(inputPath, passphrase) {
-  /** @type {any} */
-  let file;
+  let content;
   try {
-    file = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+    content = fs.readFileSync(inputPath, 'utf8');
   } catch (error) {
     throw new Error(`Cannot read ${inputPath}: ${error.message}`);
   }
+  return decryptRecoveryContent(content, passphrase);
+}
+
+/** @param {string} content @param {string} passphrase @returns {Record<string, any>} */
+export function decryptRecoveryContent(content, passphrase) {
+  const file = JSON.parse(content);
   if (file.format !== FORMAT) {
-    throw new Error(`${inputPath} is not a recovery file (found format "${file.format ?? 'none'}").`);
+    throw new Error(`Not a recovery file (found format "${file.format ?? 'none'}").`);
   }
 
   const kdf = file.kdf ?? {};
+  // Unauthenticated file metadata must not request unbounded memory or CPU
+  // from the desktop process before the GCM tag can be checked.
+  if (kdf.name !== 'scrypt' || !Number.isInteger(kdf.N) || kdf.N < 2 || kdf.N > SCRYPT.N
+    || (kdf.N & (kdf.N - 1)) !== 0 || !Number.isInteger(kdf.r) || kdf.r < 1 || kdf.r > SCRYPT.r
+    || !Number.isInteger(kdf.p) || kdf.p < 1 || kdf.p > SCRYPT.p) {
+    throw new Error('Unsupported recovery key derivation parameters');
+  }
   // Read the parameters from the file rather than assuming today's constants:
   // a file written by an older version must still open.
   const key = crypto.scryptSync(
     passphrase.normalize('NFKC'),
     Buffer.from(kdf.salt, 'base64'),
     KEY_BYTES,
-    { N: kdf.N, r: kdf.r, p: kdf.p, maxmem: kdf.maxmem ?? SCRYPT.maxmem }
+    { N: kdf.N, r: kdf.r, p: kdf.p, maxmem: SCRYPT.maxmem }
   );
 
   const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(file.iv, 'base64'));
@@ -140,7 +175,12 @@ export function readRecoveryFile(inputPath, passphrase) {
       decipher.update(Buffer.from(file.data, 'base64')),
       decipher.final(),
     ]);
-    return JSON.parse(plaintext.toString('utf8')).servers;
+    const servers = JSON.parse(plaintext.toString('utf8')).servers;
+    if (!servers || typeof servers !== 'object' || Array.isArray(servers)
+      || Object.values(servers).some(config => !config || typeof config !== 'object' || Array.isArray(config))) {
+      throw new Error('Invalid recovery server data');
+    }
+    return servers;
   } catch {
     // GCM cannot tell a wrong passphrase from a corrupted file, and guessing
     // which would only mislead.

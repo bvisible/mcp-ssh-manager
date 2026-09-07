@@ -6,6 +6,7 @@ import os from 'os';
 import { logger } from './logger.js';
 import { VALID_MODES } from './policy.js';
 import { SecretStore, defaultVaultPath } from './secret-store.js';
+import { resolveConfigOptions } from './config-paths.js';
 
 /**
  * A resolved SSH server configuration, as produced by this loader and consumed
@@ -97,14 +98,17 @@ export class ConfigLoader {
    * @returns {Promise<Map<string, ServerConfig>>}
    */
   async load(options = {}) {
+    const defaults = resolveConfigOptions(options.envPath);
     const {
-      envPath = path.join(process.cwd(), '.env'),
-      tomlPath = process.env.SSH_CONFIG_PATH || path.join(os.homedir(), '.codex', 'ssh-config.toml'),
-      preferToml = false
+      envPath = defaults.envPath,
+      tomlPath = defaults.tomlPath,
+      preferToml = defaults.preferToml
     } = options;
 
     // Clear existing servers
     this.servers.clear();
+    this.envPath = null;
+    this.configSource = null;
 
     // Load in reverse priority order (lowest to highest)
     let loadedFromToml = false;
@@ -141,9 +145,9 @@ export class ConfigLoader {
     // things from the environment for one run must still win over both.
     // Absent vault → this is a no-op, and behaviour is exactly as before.
     let loadedFromVault = false;
-    const vaultPath = options.vaultPath || defaultVaultPath();
-    const store = new SecretStore(vaultPath);
-    if (store.exists()) {
+    const vaultPath = options.vaultPath === null ? null : options.vaultPath || defaultVaultPath();
+    const store = new SecretStore(vaultPath || defaultVaultPath());
+    if (vaultPath && store.exists()) {
       try {
         const vaultServers = store.getAllDecrypted();
         for (const [name, config] of Object.entries(vaultServers)) {
@@ -155,9 +159,17 @@ export class ConfigLoader {
           logger.info(`Loaded ${Object.keys(vaultServers).length} server(s) from the encrypted vault`);
         }
       } catch (error) {
-        // A broken vault must never make the server unusable: the .env and TOML
-        // definitions already loaded above still stand.
+        // Once adopted, the vault owns security settings as well as secrets.
+        // Falling back to files could silently remove approval or policy rules.
+        // The control plane can still start independently to restore the vault.
         logger.error(`Failed to read the vault at ${vaultPath}`, { error: error.message });
+        this.servers.clear();
+        throw Object.assign(new Error(
+          `The encrypted vault at ${vaultPath} cannot be read. SSH operations are blocked to preserve its security settings. `
+          + 'Run ssh-manager control and restore a recovery file in Options > Vault, '
+          + 'or run ssh-manager vault restore <file>. '
+          + `Cause: ${error.message}`
+        ), { code: 'VAULT_UNREADABLE' });
       }
     }
 
@@ -342,6 +354,11 @@ export class ConfigLoader {
           auditLog: env[`SSH_SERVER_${match[1]}_AUDIT_LOG`],
           source: 'env'
         };
+
+        // The environment keeps its published precedence for connection fields,
+        // but it cannot switch off a gate that is controlled only by the vault.
+        const approval = this.servers.get(serverName)?.approval;
+        if (approval !== undefined) server.approval = approval;
 
         this.servers.set(serverName, server);
         processedServers.add(serverName);

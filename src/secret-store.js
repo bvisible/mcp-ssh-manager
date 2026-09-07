@@ -40,6 +40,40 @@ const KEYCHAIN_ACCOUNT = 'vault-master-key';
 /** Fields whose values are encrypted rather than stored as-is. */
 export const SECRET_FIELDS = ['password', 'passphrase', 'sudoPassword'];
 
+/** Apply a transform to credentials, including those in additional accounts.
+ * @param {any} value
+ * @param {(secret: any) => any} transform
+ * @returns {any}
+ */
+function mapSecrets(value, transform) {
+  if (Array.isArray(value)) return value.map(item => mapSecrets(item, transform));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([field, item]) => [field,
+    SECRET_FIELDS.includes(field) ? transform(item) : mapSecrets(item, transform)]));
+}
+
+/** @param {Record<string, any>} servers @returns {any[]} */
+function secretValues(servers) {
+  const values = [];
+  for (const config of Object.values(servers)) {
+    mapSecrets(config, value => { values.push(value); return value; });
+  }
+  return values;
+}
+
+/** A browser receives presence flags, never secrets, including nested accounts.
+ * @param {any} value
+ * @returns {any}
+ */
+export function publicServerConfig(value) {
+  if (Array.isArray(value)) return value.map(publicServerConfig);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([field, item]) =>
+    SECRET_FIELDS.includes(field)
+      ? [`has${field[0].toUpperCase()}${field.slice(1)}`, true]
+      : [field, publicServerConfig(item)]));
+}
+
 /**
  * Default vault location. Kept next to the other per-user state
  * (~/.ssh-manager/) rather than in the project directory, so it is not caught
@@ -146,9 +180,10 @@ function fallbackKeyPath() {
  * unreadable, and generating one silently is how an operator finds out weeks
  * later, from a failed deploy, that their credentials are gone.
  *
+ * @param {{ create?: boolean }} [options]
  * @returns {{ key: Buffer, source: 'keychain'|'file', minted: boolean }}
  */
-export function resolveMasterKey() {
+function resolveMasterKey({ create = true } = {}) {
   // SSH_MANAGER_KEY_SOURCE=file skips the OS keychain entirely. Needed wherever
   // there is no desktop session to prompt — CI, containers, a plain SSH login —
   // and it is what makes the vault testable without touching the developer's
@@ -166,6 +201,12 @@ export function resolveMasterKey() {
     if (key.length === KEY_BYTES) return { key, source: 'file', minted: false };
   }
 
+  if (!create) {
+    throw Object.assign(new Error('The vault is encrypted with a key this machine no longer has. '
+      + 'Restore a recovery file or re-import the original configuration. No new key was created.'),
+    { code: 'VAULT_KEY_MISMATCH' });
+  }
+
   // First use: mint a key and try to put it somewhere safe.
   const key = crypto.randomBytes(KEY_BYTES);
   if (!forceFile && writeKeyToKeychain(key)) {
@@ -173,7 +214,14 @@ export function resolveMasterKey() {
   }
 
   fs.mkdirSync(path.dirname(keyFile), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(keyFile, key.toString('base64'), { mode: 0o600 });
+  try {
+    fs.writeFileSync(keyFile, key.toString('base64'), { mode: 0o600, flag: 'wx' });
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const existing = Buffer.from(fs.readFileSync(keyFile, 'utf8').trim(), 'base64');
+    if (existing.length !== KEY_BYTES) throw new Error(`Invalid vault key file: ${keyFile}`);
+    return { key: existing, source: 'file', minted: false };
+  }
   logger.warn('Vault key stored in a file: no OS keychain available', { keyFile });
   return { key, source: 'file', minted: true };
 }
@@ -244,9 +292,7 @@ export class SecretStore {
     if (!fs.existsSync(this.vaultPath)) return false;
     try {
       const raw = JSON.parse(fs.readFileSync(this.vaultPath, 'utf8'));
-      return Object.values(raw.servers || {}).some(server =>
-        SECRET_FIELDS.some(field => typeof (/** @type {any} */ (server))[field] === 'string'
-          && (/** @type {any} */ (server))[field].startsWith('v1:')));
+      return secretValues(raw.servers || {}).length > 0;
     } catch {
       // An unreadable vault is a different problem, reported where it is read.
       return false;
@@ -271,39 +317,24 @@ export class SecretStore {
     /** @type {any} */
     let raw;
     try {
-      raw = JSON.parse(fs.readFileSync(this.vaultPath, 'utf8'));
+      raw = this.read();
     } catch (error) {
       return { ok: false, reason: `The vault file is unreadable: ${error.message}`, checked: 0 };
     }
 
-    /** @type {string[]} */
-    const encrypted = [];
-    for (const server of Object.values(raw.servers || {})) {
-      for (const field of SECRET_FIELDS) {
-        const value = (/** @type {any} */ (server))[field];
-        if (typeof value === 'string' && value.startsWith('v1:')) encrypted.push(value);
-      }
-    }
+    const encrypted = secretValues(raw.servers || {});
     if (encrypted.length === 0) return { ok: true, checked: 0 };
 
+    // GCM authenticates each value separately. One good value says nothing
+    // about damage to a later value, or a vault assembled under different keys.
     try {
-      this.unlock();
-    } catch (error) {
-      return { ok: false, reason: error.message, checked: 0 };
-    }
-
-    // One value is enough: they share a key, so either all of them open or
-    // none do.
-    try {
-      decryptValue(encrypted[0], /** @type {Buffer} */ (this.key));
+      this.getAllDecrypted();
       return { ok: true, checked: encrypted.length };
-    } catch {
+    } catch (error) {
       return {
         ok: false,
         checked: encrypted.length,
-        reason: `The key on this machine does not decrypt ${this.vaultPath}.\n`
-          + 'Restore from a recovery file (ssh-manager vault restore <file>), '
-          + 're-import from a .env, or move the vault aside and start again.',
+        reason: error.message,
       };
     }
   }
@@ -316,23 +347,23 @@ export class SecretStore {
   /**
    * Load (or create) the master key. Idempotent.
    *
-   * Refuses one specific pairing: a key that was just minted against a vault
-   * that already holds encrypted values. That combination has exactly one
-   * cause — the real key is gone (a new machine, a wiped keychain, a deleted
-   * key file) — and exactly one honest response, which is to say so. Carrying
-   * on would re-encrypt new secrets under the new key while the old ones stay
-   * unreadable, and nothing would look wrong until a connection failed.
+   * Existing ciphertext requires an existing key that decrypts every value.
+   * A missing key never creates a replacement as a side effect of reading:
+   * repeated failures must not quietly produce a vault encrypted by two keys.
+   * Explicit recovery is the separate operation that can replace lost data.
    *
    * @throws {Error} when the key cannot open the vault that is there
    */
   unlock() {
     if (this.key) return;
-    const { key, source, minted } = resolveMasterKey();
-    if (minted && this.#vaultHoldsSecrets()) {
+    const { key, source } = resolveMasterKey({ create: !this.#vaultHoldsSecrets() });
+    try {
+      for (const value of secretValues(this.read().servers)) decryptValue(value, key);
+    } catch {
       throw Object.assign(
         new Error(
-          `The vault at ${this.vaultPath} is encrypted with a key this machine no longer has.\n`
-          + 'A new key was generated, which cannot read it. Nothing has been overwritten.\n\n'
+          `The key cannot decrypt every secret in ${this.vaultPath}.\n`
+          + 'The key is wrong or a stored secret is damaged. Nothing has been overwritten.\n\n'
           + 'If you have a recovery file: ssh-manager vault restore <file>\n'
           + 'If the servers are still in a .env: delete the vault and run ssh-manager vault import\n'
           + `Otherwise the secrets in it are unrecoverable — move ${this.vaultPath} aside and start again.`
@@ -354,6 +385,10 @@ export class SecretStore {
       if (parsed.version !== VAULT_VERSION) {
         throw new Error(`Unsupported vault version ${parsed.version}`);
       }
+      if (!parsed.servers || typeof parsed.servers !== 'object' || Array.isArray(parsed.servers)
+        || Object.values(parsed.servers).some(server => !server || typeof server !== 'object' || Array.isArray(server))) {
+        throw new Error('Invalid vault server data');
+      }
       return parsed;
     } catch (error) {
       if (error.code === 'ENOENT') return { version: VAULT_VERSION, servers: {} };
@@ -367,7 +402,48 @@ export class SecretStore {
    */
   write(data) {
     fs.mkdirSync(path.dirname(this.vaultPath), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(this.vaultPath, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+    const temporary = `${this.vaultPath}.${crypto.randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+      fs.renameSync(temporary, this.vaultPath);
+    } finally {
+      fs.rmSync(temporary, { force: true });
+    }
+  }
+
+  /** Serialise CLI/desktop writers without exposing partial JSON to readers.
+   * @template T
+   * @param {() => T} update
+   * @returns {T}
+   */
+  #withWriteLock(update) {
+    fs.mkdirSync(path.dirname(this.vaultPath), { recursive: true, mode: 0o700 });
+    const lock = `${this.vaultPath}.lock`;
+    let descriptor;
+    try {
+      descriptor = fs.openSync(lock, 'wx', 0o600);
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      // An interrupted writer may leave its lock. Reclaim only when the OS
+      // confirms that recorded process is gone, never on an arbitrary timeout.
+      try {
+        const owner = Number(fs.readFileSync(lock, 'utf8'));
+        if (!Number.isSafeInteger(owner) || owner <= 0) throw new Error('Unknown lock owner');
+        try { process.kill(owner, 0); } catch (probe) {
+          if (probe.code !== 'ESRCH') throw probe;
+          fs.rmSync(lock);
+          descriptor = fs.openSync(lock, 'wx', 0o600);
+        }
+      } catch { /* Another writer owns it, or ownership cannot be proved. */ }
+      if (descriptor === undefined) throw Object.assign(new Error('The vault is being updated. Try again.'), { code: 'VAULT_BUSY' });
+    }
+    try {
+      fs.writeFileSync(descriptor, String(process.pid));
+      return update();
+    } finally {
+      fs.closeSync(descriptor);
+      fs.rmSync(lock, { force: true });
+    }
   }
 
   /**
@@ -378,18 +454,29 @@ export class SecretStore {
    * @param {Record<string, any>} config - Server config in loader (camelCase) shape
    */
   setServer(name, config) {
-    this.unlock();
-    const data = this.read();
-    /** @type {Record<string, any>} */
-    const stored = {};
-    for (const [field, value] of Object.entries(config)) {
-      if (value === undefined || value === null) continue;
-      stored[field] = SECRET_FIELDS.includes(field)
-        ? encryptValue(value, /** @type {Buffer} */ (this.key))
-        : value;
-    }
-    data.servers[name.toLowerCase()] = stored;
-    this.write(data);
+    return this.#withWriteLock(() => {
+      // A cached key must not permit an edit to conceal damage that happened
+      // since unlocking. Backups and edits are all-or-nothing reads.
+      this.getAllDecrypted();
+      const data = this.read();
+      // A metadata-only vault gives us no ciphertext against which to test a
+      // cached key. Resolve it afresh before introducing a credential.
+      if (secretValues(data.servers).length === 0) this.key = null;
+      if (this.keySource === 'file' && this.key && !fs.existsSync(fallbackKeyPath())) {
+        throw Object.assign(new Error('The vault key file is missing. Back up the unlocked vault before restoring it.'),
+          { code: 'VAULT_KEY_MISMATCH' });
+      }
+      this.unlock();
+      /** @type {Record<string, any>} */
+      const stored = {};
+      for (const [field, value] of Object.entries(config)) {
+        if (value === undefined || value === null) continue;
+        stored[field] = value;
+      }
+      Object.defineProperty(data.servers, name.toLowerCase(), { value: mapSecrets(stored,
+        value => encryptValue(value, /** @type {Buffer} */ (this.key))), enumerable: true, configurable: true, writable: true });
+      this.write(data);
+    });
   }
 
   /**
@@ -398,12 +485,14 @@ export class SecretStore {
    * @returns {boolean} True when a server was actually removed
    */
   removeServer(name) {
-    const data = this.read();
-    const key = name.toLowerCase();
-    if (!(key in data.servers)) return false;
-    delete data.servers[key];
-    this.write(data);
-    return true;
+    return this.#withWriteLock(() => {
+      const data = this.read();
+      const key = name.toLowerCase();
+      if (!(key in data.servers)) return false;
+      delete data.servers[key];
+      this.write(data);
+      return true;
+    });
   }
 
   /**
@@ -422,28 +511,52 @@ export class SecretStore {
   getAllDecrypted() {
     const data = this.read();
     if (Object.keys(data.servers).length === 0) return {};
+    const decrypt = () => Object.fromEntries(Object.entries(data.servers).map(([name, stored]) => [name,
+      mapSecrets(stored, value => decryptValue(value, /** @type {Buffer} */ (this.key)))]));
+    if (secretValues(data.servers).length === 0) return decrypt();
+    const hadCachedKey = this.key !== null;
     this.unlock();
-
-    /** @type {Record<string, any>} */
-    const out = {};
-    for (const [name, stored] of Object.entries(data.servers)) {
-      /** @type {Record<string, any>} */
-      const config = {};
-      for (const [field, value] of Object.entries(stored)) {
-        if (SECRET_FIELDS.includes(field)) {
-          try {
-            config[field] = decryptValue(value, /** @type {Buffer} */ (this.key));
-          } catch (error) {
-            // One unreadable secret must not take the whole vault down: report
-            // it and leave the field unset, so the other servers still work.
-            logger.error(`Cannot decrypt ${field} for server "${name}"`, { error: error.message });
-          }
-        } else {
-          config[field] = value;
-        }
-      }
-      out[name] = config;
+    try {
+      return decrypt();
+    } catch (error) {
+      if (!hadCachedKey) throw error;
+      // Another process can restore the same vault under a new key. Retry a
+      // stale cached key once, without ever minting a replacement for lost data.
+      this.key = null;
+      this.unlock();
+      return decrypt();
     }
-    return out;
+  }
+
+  /** Restore an already decrypted recovery file in one atomic replacement.
+   * Unreadable existing data is replaced only after an explicit CLI confirmation.
+   * @param {Record<string, any>} servers
+   * @param {{ replaceUnreadable?: boolean, expectedRevision?: string }} [options]
+   */
+  restoreServers(servers, { replaceUnreadable = false, expectedRevision } = {}) {
+    if (!servers || typeof servers !== 'object' || Array.isArray(servers)
+      || Object.values(servers).some(config => !config || typeof config !== 'object' || Array.isArray(config))) {
+      throw new Error('Invalid recovery server data');
+    }
+    return this.#withWriteLock(() => {
+      if (expectedRevision !== undefined) {
+        let revision = 'missing';
+        try { revision = crypto.createHash('sha256').update(fs.readFileSync(this.vaultPath)).digest('hex'); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if (expectedRevision !== revision) throw Object.assign(
+          new Error('The vault changed. Preview the recovery file again before restoring.'), { code: 'VAULT_CHANGED' });
+      }
+      let existing = {};
+      try { existing = this.getAllDecrypted(); } catch (error) {
+        if (!replaceUnreadable) throw error;
+      }
+      const { key, source } = resolveMasterKey();
+      const all = { ...existing, ...servers };
+      const encrypted = Object.fromEntries(Object.entries(all).map(([name, config]) => [name.toLowerCase(),
+        mapSecrets(config, value => encryptValue(value, key))]));
+      this.write({ version: VAULT_VERSION, servers: encrypted });
+      this.key = key;
+      this.keySource = source;
+    });
   }
 }

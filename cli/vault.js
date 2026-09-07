@@ -16,9 +16,10 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { writeRecoveryFile, readRecoveryFile, describeRecoveryFile } from '../src/vault-recovery.js';
-import { SecretStore, defaultVaultPath, resolveMasterKey, SECRET_FIELDS } from '../src/secret-store.js';
+import { SecretStore, defaultVaultPath, SECRET_FIELDS } from '../src/secret-store.js';
 import { defaultSocketPath, isControlPlaneListening, VALID_APPROVAL_MODES } from '../src/approval.js';
 import { ConfigLoader } from '../src/config-loader.js';
+import { resolveEnvFilePath } from '../src/config-paths.js';
 
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
@@ -85,7 +86,7 @@ ${GREEN}ssh-manager vault${RESET} — encrypted credential store
   ${GREEN}list${RESET}                      Servers held in the vault
   ${GREEN}add${RESET} <name>                Add or replace a server
   ${GREEN}remove${RESET} <name>             Delete a server
-  ${GREEN}import${RESET} [--from <path>]    Copy servers from a .env into the vault
+  ${GREEN}import${RESET} [--from <path>]    Copy servers from .env / TOML into the vault
   ${GREEN}backup${RESET} <file>             Write a recovery file, encrypted with a passphrase
   ${GREEN}restore${RESET} <file>            Read one back into the vault
   ${GREEN}status${RESET}                    Where the vault and its key live
@@ -179,9 +180,17 @@ ${DIM}written ${new Date(described.createdAt).toLocaleString()} · ${described.s
     process.exit(1);
   }
 
-  const existing = store.exists() ? store.listServers() : [];
+  const readability = store.checkKey();
+  let existing = [];
+  try { existing = store.exists() ? store.listServers() : []; } catch { /* unreadable vault */ }
   const clashes = Object.keys(servers).filter(name => existing.includes(name));
-  if (clashes.length > 0) {
+  if (!readability.ok) {
+    console.log(`${YELLOW}The existing vault cannot be read. Recovery will replace it completely.${RESET}`);
+    const absent = existing.filter(name => !(name in servers));
+    if (absent.length) console.log(`${YELLOW}Not in this recovery file and not retained:${RESET} ${absent.join(', ')}`);
+    const answer = await ask('Replace the unreadable vault with this recovery file? [y/N] ');
+    if (answer.toLowerCase() !== 'y') { console.log('Cancelled.'); return; }
+  } else if (clashes.length > 0) {
     console.log(`${YELLOW}Already in the vault and about to be replaced:${RESET} ${clashes.join(', ')}`);
     const answer = await ask('Continue? [y/N] ');
     if (answer.toLowerCase() !== 'y') {
@@ -190,7 +199,7 @@ ${DIM}written ${new Date(described.createdAt).toLocaleString()} · ${described.s
     }
   }
 
-  for (const [name, config] of Object.entries(servers)) store.setServer(name, config);
+  store.restoreServers(servers, { replaceUnreadable: !readability.ok });
   console.log(`\n${GREEN}✓${RESET} ${Object.keys(servers).length} server(s) restored into ${store.vaultPath}\n`);
 }
 
@@ -278,24 +287,28 @@ async function cmdRemove(store, name) {
 }
 
 async function cmdImport(store, fromPath) {
-  const envPath = fromPath || path.join(process.cwd(), '.env');
-  if (!fs.existsSync(envPath)) {
-    console.error(`${RED}No .env found at ${envPath}${RESET}`);
-    console.error(`${DIM}Point at one with: ssh-manager vault import --from /path/to/.env${RESET}`);
+  const envPath = fromPath || resolveEnvFilePath();
+  if (fromPath && !fs.existsSync(fromPath)) {
+    console.error(`${RED}No configuration found at ${fromPath}${RESET}`);
     process.exit(1);
   }
 
   // Load through the real ConfigLoader rather than parsing here, so an imported
   // server is byte-for-byte what the MCP server would have used.
   const loader = new ConfigLoader();
-  const servers = await loader.load({ envPath, tomlPath: '/nonexistent', vaultPath: '/nonexistent' });
+  const fromToml = fromPath && path.extname(fromPath).toLowerCase() === '.toml';
+  const servers = await loader.load(fromToml
+    ? { tomlPath: fromPath, preferToml: true, vaultPath: null }
+    : { envPath, vaultPath: null });
 
   if (servers.size === 0) {
-    console.log(`${YELLOW}No servers found in ${envPath}.${RESET}`);
+    console.log(`${YELLOW}No servers found in the configuration.${RESET}`);
+    console.log(`${DIM}Point at a file with: ssh-manager vault import --from /path/to/.env (or .toml)${RESET}`);
     return;
   }
 
-  console.log(`\n${GREEN}${servers.size} server(s) found in ${envPath}${RESET}\n`);
+  const source = fromToml ? fromPath : loader.envPath || 'TOML / environment';
+  console.log(`\n${GREEN}${servers.size} server(s) found in ${source}${RESET}\n`);
   for (const [name, config] of servers) {
     const secrets = SECRET_FIELDS.filter(f => config[f]);
     console.log(`  ${name.padEnd(16)} ${config.user || '?'}@${config.host}  ${DIM}${secrets.length ? `${secrets.length} secret(s) to encrypt` : 'no secret'}${RESET}`);
@@ -346,24 +359,24 @@ function describeReadability(check) {
 }
 
 function cmdStatus(store) {
-  const { source } = resolveMasterKey();
   const exists = store.exists();
   // Asked here because "status" is exactly the question this answers, and
   // because the answer used to be reassuring regardless of the truth.
   const check = store.checkKey();
+  const source = store.keySource;
   const socketPath = defaultSocketPath();
   const listening = isControlPlaneListening(socketPath);
   console.log(`
 ${GREEN}Vault${RESET}      ${store.vaultPath} ${exists ? `${DIM}(${store.listServers().length} server(s))${RESET}` : `${YELLOW}— not created yet${RESET}`}
-${GREEN}Key${RESET}        ${source === 'keychain' ? `OS keychain ${DIM}(service: mcp-ssh-manager)${RESET}` : `${YELLOW}file${RESET} ${DIM}${path.join(path.dirname(store.vaultPath), 'vault.key')}${RESET}`}
+${GREEN}Key${RESET}        ${source === 'keychain' ? `OS keychain ${DIM}(service: mcp-ssh-manager)${RESET}` : source === 'file' ? `${YELLOW}file${RESET} ${DIM}${path.join(path.dirname(defaultVaultPath()), 'vault.key')}${RESET}` : `${DIM}not unlocked${RESET}`}
 ${GREEN}Cipher${RESET}     AES-256-GCM ${DIM}(authenticated: tampering is detected, not silently accepted)${RESET}
 ${GREEN}Encrypted${RESET}  ${SECRET_FIELDS.join(', ')}
 ${GREEN}Readable${RESET}   ${describeReadability(check)}
 ${GREEN}Recovery${RESET}   ${DIM}ssh-manager vault backup <file> — the copy that survives a new machine${RESET}
 
-${GREEN}Approval${RESET}   ${listening ? `${GREEN}a control plane is listening${RESET}` : `${DIM}nothing listening — actions run without asking${RESET}`}
+${GREEN}Approval${RESET}   ${listening ? `${GREEN}a control plane is listening${RESET}` : `${DIM}control plane unavailable${RESET}`}
 ${GREEN}Socket${RESET}     ${socketPath}
-${GREEN}Modes${RESET}      ${[...VALID_APPROVAL_MODES].join(' / ')} ${DIM}(per server: SSH_SERVER_<NAME>_APPROVAL, default never)${RESET}
+${GREEN}Modes${RESET}      ${[...VALID_APPROVAL_MODES].join(' / ')} ${DIM}(set per server in the control plane, default never)${RESET}
 `);
   if (source === 'file') {
     console.log(`${YELLOW}Note:${RESET} no OS keychain was reachable, so the key sits next to the vault.`);

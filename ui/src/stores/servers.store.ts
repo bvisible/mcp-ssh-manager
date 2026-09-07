@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand';
 import { servers as api, type ServerConfig } from '@/lib/api';
+import { useSettingsStore } from './settings.store';
 
 interface ServersState {
   servers: ServerConfig[];
@@ -46,7 +47,10 @@ export const useServersStore = create<ServersState>((set, get) => ({
   sortDirection: 'asc',
 
   setSearchQuery: searchQuery => set({ searchQuery }),
-  setViewMode: viewMode => set({ viewMode }),
+  setViewMode: viewMode => {
+    useSettingsStore.getState().updateSetting('serverViewMode', viewMode);
+    set({ viewMode });
+  },
   setEditMode: editMode => set({ editMode }),
   setSortBy: sortBy => set({ sortBy }),
   setSortDirection: sortDirection => set({ sortDirection }),

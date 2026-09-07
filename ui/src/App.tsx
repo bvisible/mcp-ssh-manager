@@ -12,7 +12,8 @@ import { OptionsPage } from '@/pages/OptionsPage';
 import { TerminalPage } from '@/pages/TerminalPage';
 import { useWorkspace } from '@/stores/workspace';
 import { useServersStore } from '@/stores/servers.store';
-import { state, QUEUE_EVENTS } from '@/lib/api';
+import { state, migration, QUEUE_EVENTS } from '@/lib/api';
+import { ConnectionStatus } from '@/components/layout/ConnectionStatus';
 import { ensurePermission, notifyApproval, clearApproval, clearAll } from '@/lib/notify';
 import { needsTitleBarRoom } from '@/lib/desktop';
 import { DroppedFilesDialog } from '@/components/DroppedFilesDialog';
@@ -23,6 +24,8 @@ export function App() {
   const { view, tabs, activeTabId, setPendingCount } = useWorkspace();
   const servers = useServersStore(s => s.servers);
   const loadServers = useServersStore(s => s.load);
+  const loadingServers = useServersStore(s => s.loading);
+  const serversError = useServersStore(s => s.error);
 
   // Loaded once here rather than by the Servers screen: the rail and every
   // session pane need to resolve a serverId to a name, whichever screen the
@@ -65,10 +68,12 @@ export function App() {
 
     void refresh();
     const stop = state.subscribe(event => {
-      if ((QUEUE_EVENTS as readonly string[]).includes(event.type)) void refresh();
+      if ((QUEUE_EVENTS as readonly string[]).includes(event.type)
+        || (event.type === 'connection' && event.status === 'connected')) void refresh();
+      if (event.type === 'servers') void loadServers();
     });
     return () => { cancelled = true; stop(); clearAll(); };
-  }, [setPendingCount, setView]);
+  }, [setPendingCount, setView, loadServers]);
 
   // Files dropped on the Dock icon. The desktop shell announces them over the
   // same stream everything else arrives on; a browser tab simply never sees
@@ -78,14 +83,15 @@ export function App() {
   // way around.
   const [showWizard, setShowWizard] = useState(false);
   useEffect(() => {
-    if (wizardSeen()) return;
+    if (wizardSeen() || loadingServers || serversError || servers.length > 0) return;
     let cancelled = false;
-    void servers.length; // read below once the list has loaded
-    const check = setTimeout(() => {
-      if (!cancelled && useServersStore.getState().servers.length === 0) setShowWizard(true);
-    }, 900);
-    return () => { cancelled = true; clearTimeout(check); };
-  }, []);
+    // An existing file configuration gets a migration offer, not a first-run
+    // modal claiming that nothing is configured. Wait for data, never a timer.
+    void migration.state().then(result => {
+      if (!cancelled && result.pending.length === 0 && !wizardSeen()) setShowWizard(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [servers.length, loadingServers, serversError]);
 
   const [droppedFiles, setDroppedFiles] = useState<string[] | null>(null);
   useEffect(() => state.subscribe(event => {
@@ -117,6 +123,7 @@ export function App() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <ConnectionStatus />
         <SessionTabs />
         <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Sessions stay mounted and are hidden rather than unmounted. Two

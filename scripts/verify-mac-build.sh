@@ -67,20 +67,25 @@ fi
 if xcrun stapler validate "$APP" >/dev/null 2>&1; then
   pass "the notarization ticket is stapled to the app"
 else
-  warn "no stapled ticket on the app (expected while unnotarized)"
+  fail "no stapled ticket on the app"
 fi
 
 # And on the DMG, which is the file people actually download. electron-builder
 # notarizes the .app *before* packaging it, so Apple has no ticket for the disk
 # image and `stapler staple` on it fails with "could not find base64 encoded
 # ticket". The DMG has to be submitted on its own — see docs/DISTRIBUTION.md.
-DMG=$(ls -t "$(dirname "$APP")/../"*.dmg 2>/dev/null | head -1)
+APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
+APP_ARCH=$(lipo -archs "$APP/Contents/MacOS/SSH Manager" 2>/dev/null)
+[ "$APP_ARCH" != x86_64 ] || APP_ARCH=x64
+DMG=$(find "$(dirname "$APP")/.." -maxdepth 1 -name "*-${APP_VERSION}-${APP_ARCH}.dmg" -type f -print -quit)
 if [ -n "$DMG" ]; then
   if xcrun stapler validate "$DMG" >/dev/null 2>&1; then
     pass "and to the DMG, so it opens offline too"
   else
-    warn "the DMG has no stapled ticket — it works, but Gatekeeper phones home"
+    fail "the matching DMG has no stapled ticket"
   fi
+else
+  fail "no matching ${APP_ARCH} DMG for version ${APP_VERSION}"
 fi
 
 # --- it carries all of itself ------------------------------------------------
@@ -107,7 +112,7 @@ done
 # checkout usually has a chmod'd copy from somewhere.
 HELPER=$(find "$APP/Contents/Resources" -name spawn-helper -type f 2>/dev/null | head -1)
 if [ -z "$HELPER" ]; then
-  warn "no local shell in this build (node-pty is not packaged)"
+  fail "no local shell in this build (node-pty is not packaged)"
 elif [ -x "$HELPER" ]; then
   pass "the local shell's spawn helper is executable"
 else
@@ -127,7 +132,7 @@ ASAR_LIST=$(
 )
 case "$ASAR_LIST" in
   *trayTemplate.png*) pass "the menu-bar icon is in the asar" ;;
-  '')                 warn "could not read the asar (is @electron/asar installed?)" ;;
+  '')                 fail "could not read the asar (is @electron/asar installed?)" ;;
   *)                  fail "trayTemplate.png is not packaged — there would be no menu bar item" ;;
 esac
 

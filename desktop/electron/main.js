@@ -28,7 +28,7 @@ import path from 'path';
 import { createRequire } from 'module';
 // electron-updater is CommonJS: named imports do not resolve through the bridge.
 import electronUpdater from 'electron-updater';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +42,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // signature — `codesign --verify` then reports a sealed resource as invalid and
 // Gatekeeper refuses the app — and it happened: a single launch was enough.
 // Set before the engine is imported, because the logger reads these once.
+// Release smoke tests must not touch the machine's real Electron profile.
+const smokeTest = process.argv.includes('--release-smoke-test');
+if (smokeTest) {
+  if (!process.env.SSH_MANAGER_HOME || !process.env.SSH_RELEASE_SMOKE_RESULT) {
+    throw new Error('Release smoke tests require an isolated SSH_MANAGER_HOME and result path');
+  }
+  app.setPath('userData', path.join(process.env.SSH_MANAGER_HOME, 'electron'));
+}
 const userData = app.getPath('userData');
 // Electron does not create this until something asks it to, and the logger
 // appends without making directories.
@@ -133,8 +141,8 @@ let update = { status: 'idle', version: null, percent: 0 };
 
 async function startControlPlane() {
   const root = engineRoot();
-  const { ControlPlane } = await import(`file://${path.join(root, 'src', 'control-plane.js')}`);
-  const { defaultSocketPath } = await import(`file://${path.join(root, 'src', 'approval.js')}`);
+  const { ControlPlane } = await import(pathToFileURL(path.join(root, 'src', 'control-plane.js')).href);
+  const { defaultSocketPath } = await import(pathToFileURL(path.join(root, 'src', 'approval.js')).href);
 
   plane = new ControlPlane({
     socketPath: defaultSocketPath(),
@@ -472,7 +480,7 @@ function updateMenuItems() {
   case 'ready':
     return [{
       label: `Restart to update to ${update.version}`,
-      click: () => { app.relaunch(); autoUpdater.quitAndInstall(); },
+      click: () => autoUpdater.quitAndInstall(),
     }, { type: 'separator' }];
   default:
     return [];
@@ -554,6 +562,12 @@ app.on('open-file', (event, filePath) => {
 app.whenReady().then(async () => {
   try {
     const { url } = await startControlPlane();
+    if (smokeTest) {
+      const { runSmokeTest } = await import('./smoke-test.mjs');
+      await runSmokeTest({ app, BrowserWindow, url, root: engineRoot(), localShellProvider });
+      app.quit();
+      return;
+    }
     buildMenu(url);
     createWindow(url);
     createTray();
@@ -561,6 +575,11 @@ app.whenReady().then(async () => {
     // Anything dropped before the window existed.
     setTimeout(flushDroppedFiles, 500);
   } catch (error) {
+    if (smokeTest) {
+      fs.writeFileSync(process.env.SSH_RELEASE_SMOKE_RESULT, JSON.stringify({ ok: false, error: error.message }));
+      app.exit(1);
+      return;
+    }
     // A failure here means no interface at all, so it is a dialog rather than a
     // line in a log nobody is reading — most often an over-long socket path or
     // another copy already running.

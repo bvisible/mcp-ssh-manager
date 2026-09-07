@@ -11,6 +11,7 @@ directories:
 # bindings at runtime and those cannot be read from inside an archive.
 files:
   - main.js
+  - smoke-test.mjs
   - package.json
   # The menu-bar glyph is loaded at runtime from __dirname/resources, so it has
   # to be inside the asar with main.js. `resources` is also buildResources,
@@ -26,6 +27,7 @@ files:
   - node_modules/node-pty/lib/**/*
   - node_modules/node-pty/package.json
   - node_modules/node-pty/prebuilds/**/*
+  - node_modules/node-pty/build/Release/**/*
   # Sources, headers and the winpty tree: needed to *build* node-pty, never to
   # run it.
   - '!node_modules/node-pty/{src,deps,scripts,third_party,typings}/**'
@@ -34,6 +36,7 @@ files:
 # inside an asar — it is an archive, not a filesystem.
 asarUnpack:
   - node_modules/node-pty/prebuilds/**
+  - node_modules/node-pty/build/Release/**
 
 # node-pty's tarball ships spawn-helper without its executable bit, and without
 # it every local shell dies on `posix_spawnp failed`. Restored before signing,
@@ -120,6 +123,8 @@ nsis:
   deleteAppDataOnUninstall: false
 
 linux:
+  files:
+    - '!node_modules/node-pty/prebuilds/{darwin,win32}-*/**'
   target:
     - AppImage
     - deb

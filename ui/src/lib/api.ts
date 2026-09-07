@@ -76,6 +76,14 @@ export interface ServerConfig {
   /** SSH Manager additions, absent from TransHub's model. */
   mode?: 'unrestricted' | 'readonly' | 'restricted';
   approval?: 'never' | 'destructive' | 'always';
+  description?: string;
+  proxyJump?: string;
+  proxyCommand?: string;
+  platform?: string;
+  forwardAgent?: boolean;
+  allowPatterns?: string[];
+  denyPatterns?: string[];
+  auditLog?: string;
 }
 
 export interface RemoteFileInfo {
@@ -104,6 +112,14 @@ interface VaultServer {
   mode?: ServerConfig['mode'];
   approval?: ServerConfig['approval'];
   accounts?: ServerAccount[];
+  description?: string;
+  proxyJump?: string;
+  proxyCommand?: string;
+  platform?: string;
+  forwardAgent?: boolean;
+  allowPatterns?: string[];
+  denyPatterns?: string[];
+  auditLog?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +145,14 @@ function toServerConfig(server: VaultServer): ServerConfig {
     mode: server.mode,
     approval: server.approval,
     accounts: server.accounts,
+    description: server.description,
+    proxyJump: server.proxyJump,
+    proxyCommand: server.proxyCommand,
+    platform: server.platform,
+    forwardAgent: server.forwardAgent,
+    allowPatterns: server.allowPatterns,
+    denyPatterns: server.denyPatterns,
+    auditLog: server.auditLog,
   };
 }
 
@@ -178,7 +202,14 @@ export const servers = {
       group: config.category,
       mode: config.mode,
       approval: config.approval,
-      accounts: config.accounts,
+      description: config.description,
+      proxyJump: config.proxyJump,
+      proxyCommand: config.proxyCommand,
+      platform: config.platform,
+      forwardAgent: config.forwardAgent,
+      allowPatterns: config.allowPatterns,
+      denyPatterns: config.denyPatterns,
+      auditLog: config.auditLog,
     });
   },
 
@@ -602,6 +633,12 @@ export const QUEUE_EVENTS = ['pending', 'resolved', 'expired'] as const;
 /** Subscribers to the single event stream, and the stream itself. */
 const handlers = new Set<(event: { type: string; [key: string]: unknown }) => void>();
 let shared: EventSource | null = null;
+let connectionStatus: 'connecting' | 'connected' | 'disconnected' = 'connecting';
+
+function broadcastConnection(status: typeof connectionStatus) {
+  connectionStatus = status;
+  for (const listener of [...handlers]) listener({ type: 'connection', status });
+}
 
 export const state = {
   get: () => get<{ pending: PendingRequest[]; timeline: TimelineEntry[] }>('/api/state'),
@@ -626,6 +663,9 @@ export const state = {
     handlers.add(handler);
     if (!shared) {
       shared = new EventSource(url('/api/events'));
+      connectionStatus = 'connecting';
+      shared.addEventListener('open', () => broadcastConnection('connected'));
+      shared.addEventListener('error', () => broadcastConnection('disconnected'));
       shared.addEventListener('message', (event: MessageEvent) => {
         let parsed;
         try { parsed = JSON.parse(event.data); } catch { return; } // a malformed frame is not worth a crash
@@ -634,6 +674,7 @@ export const state = {
         for (const listener of [...handlers]) listener(parsed);
       });
     }
+    handler({ type: 'connection', status: connectionStatus });
     return () => {
       handlers.delete(handler);
       if (handlers.size === 0) { shared?.close(); shared = null; }
@@ -643,3 +684,25 @@ export const state = {
 
 export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
 export type Api = typeof api;
+
+export interface VaultStatus {
+  exists: boolean;
+  readable: boolean;
+  reason?: string;
+  servers: number;
+  secrets: number;
+  keySource: string;
+}
+export interface RestorePreview {
+  servers: string[];
+  conflicts: string[];
+  removed: string[];
+  replacesUnreadable: boolean;
+  revision: string;
+}
+export const vault = {
+  status: () => get<VaultStatus>('/api/vault/status'),
+  backup: (passphrase: string) => post<{ filename: string; content: string }>('/api/vault/backup', { passphrase }),
+  preview: (content: string, passphrase: string) => post<RestorePreview>('/api/vault/restore', { content, passphrase }),
+  restore: (content: string, passphrase: string, revision: string) => post<RestorePreview & { ok: true }>('/api/vault/restore', { content, passphrase, revision, confirm: true }),
+};

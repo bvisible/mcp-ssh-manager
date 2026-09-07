@@ -20,7 +20,7 @@
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-4.0.0-brightgreen?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0)
+[![Version](https://img.shields.io/badge/V4-in_development-c04500?style=flat-square)](docs/MIGRATION.md)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -50,7 +50,22 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ---
 
-## Up and running in a minute
+## Choose your workspace
+
+**Desktop application (V4, preparing release):** one installation with its own
+runtime, terminal, file browser and server settings. No separate Node.js or npm
+installation. [Release downloads](https://github.com/bvisible/mcp-ssh-manager/releases)
+will carry the validated builds; see [distribution status](docs/DISTRIBUTION.md).
+
+**Already using npm / the CLI?** Keep your current setup. The V4 engine runs
+without an interface, using your existing `.env`, TOML or process variables.
+No automatic import, no forced wizard, no approval prompts unless you enable
+them per server. [Upgrade and rollback guide](docs/MIGRATION.md).
+
+To try the interface from an npm installation of V4, run `ssh-manager control`.
+It prints a local browser URL. The CLI and npm distribution remain maintained.
+
+## Up and running with npm
 
 ```bash
 npm install -g mcp-ssh-manager     # or: brew tap bvisible/mcp-ssh-manager https://github.com/bvisible/mcp-ssh-manager && brew install ssh-manager
@@ -131,7 +146,7 @@ No syntax to learn. Your assistant already knows how to use the 37 tools; you ta
 
 ## Watch over its shoulder — the control plane
 
-> **On the `v4` branch, not released yet.** All of it is opt-in: with no vault, no `APPROVAL` setting and nothing running, the engine behaves exactly as it does today.
+> **On the `v4` branch, not released yet.** The application is opt-in: with no vault and no approval enabled, the engine keeps working headlessly. See the migration guide for host-key verification and recovery behavior.
 
 ```bash
 ssh-manager control          # prints a local URL — or open the desktop app
@@ -162,11 +177,11 @@ Approval is switched on **from the interface, per server** — not from a file:
 Servers → the server → Approval → never (default) | destructive | always
 ```
 
-It is deliberately the one setting you cannot put in a `.env`. It exists to make
-an agent stop and wait for you, and a switch sitting in a plain-text file next to
-the code is a switch the agent can flip on its own: one `sed -i` and the gate is
-gone. It lives in the encrypted vault, and the control plane is the only thing
-that writes it. If you had `SSH_SERVER_*_APPROVAL` set in a file, the engine says
+Approval is stored in the vault and cannot be overridden by `.env` or process
+variables. Editing connection details preserves it. This prevents accidental
+configuration overrides from disabling the gate; it is not a security boundary
+against a process that already controls your local user account or vault files.
+If you had `SSH_SERVER_*_APPROVAL` set in a file, the engine says
 so on every start rather than quietly leaving you unprotected.
 
 The `destructive` list is deliberately short. A prompt that cries wolf gets clicked through without being read, which is worse than no prompt at all: `systemctl restart` does not interrupt you, `systemctl stop` does.
@@ -626,3 +641,8 @@ Made with ❤️ for the Claude Code community
 [![MCP Toplist](https://mcptoplist.com/badge/glama%2Fbvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/glama%2Fbvisible%2Fmcp-ssh-manager)
 
 </div>
+
+## Validation before a release
+
+The [V4 testing guide](docs/TESTING-V4.md) describes the offline suites, real npm
+3.8.5 → V4 → rollback checks, browser flows, and platform release gates.
