@@ -96,7 +96,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^16.4.5",
     "ssh2": "^1.17.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.2"
   },
   "devDependencies": {
     "eslint": "^8.56.0",
