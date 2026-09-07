@@ -186,7 +186,7 @@ so on every start rather than quietly leaving you unprotected.
 
 The `destructive` list is deliberately short. A prompt that cries wolf gets clicked through without being read, which is worse than no prompt at all: `systemctl restart` does not interrupt you, `systemctl stop` does.
 
-Every failure denies — timeout, unreachable socket, a control plane that hangs up mid-review. The one exception is *approval configured but nothing listening*: that allows and says so loudly in the audit log, because failing shut would break every agent the moment you close the window.
+When a request requires approval, a timeout, unreachable socket or disconnected control plane denies it. If nothing is listening, start `ssh-manager control` or the desktop app before retrying. Servers with approval disabled keep working headlessly.
 
 ### See what it's doing, while it does it
 
@@ -576,9 +576,10 @@ git clone https://github.com/bvisible/mcp-ssh-manager.git
 cd mcp-ssh-manager && npm ci
 ./scripts/setup-hooks.sh      # pre-commit checks, including secret detection
 
-npm test                      # 33 suites
+npm test                      # 43 suites
 npm run typecheck             # JSDoc through tsc, no build step
 npm run test:all              # both, plus ./scripts/validate.sh
+npm run test:preview          # isolated candidate fixture, restart and cleanup
 ```
 
 The layout:
@@ -646,3 +647,5 @@ Made with ❤️ for the Claude Code community
 
 The [V4 testing guide](docs/TESTING-V4.md) describes the offline suites, real npm
 3.8.5 → V4 → rollback checks, browser flows, and platform release gates.
+Use the [final V4 test guide](docs/FINAL-TEST-V4.md) to review the actual npm
+package or desktop candidate with a disposable profile before publication.

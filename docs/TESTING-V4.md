@@ -12,7 +12,7 @@ fixtures, not your SSH hosts, credentials or keychain.
 
 ```sh
 npm ci
-npm test                        # 42 engine, migration, security and release suites
+npm test                        # 43 engine, migration, security, release and preview suites
 npm run lint
 npm run typecheck
 npx knip
@@ -33,9 +33,14 @@ exercise that compiled interface against the real local ControlPlane HTTP/SSE
 server. Playwright reports, traces and failure screenshots are retained in CI.
 
 For focused work, run `npm run test:migration`, `test:security`, `test:hostkeys`,
-`test:proxy`, `test:working-directory`, `test:groups-persistence`, `test:release`
-or `test:cli-experience`. Existing `test:upgrade`, `test:vault`, `test:recovery`,
+`test:proxy`, `test:working-directory`, `test:groups-persistence`, `test:release`,
+`test:preview` or `test:cli-experience`. Existing `test:upgrade`, `test:vault`, `test:recovery`,
 `test:controlplane`, `test:terminal` and `test:files` cover adjacent behavior.
+
+`npm run test:preview` checks the disposable candidate profile, real local
+SSH/SFTP fixture, simulated remote commands, restart persistence and cleanup
+without opening a GUI. For an interactive review of the npm tarball or packaged
+application, follow [the final V4 test](FINAL-TEST-V4.md).
 
 The old `scripts/test-first-run.mjs`, `scripts/test-import-ui.mjs` and
 `scripts/test-preferences-persist.mjs` entry points now delegate to isolated
@@ -47,12 +52,13 @@ manually supplied URL or a user's running application.
 | Area | Executable proof |
 | --- | --- |
 | Headless upgrade and rollback | Actual registry 3.8.5, current packed V4, then 3.8.5 again; `.env`, TOML and process env; 37 unchanged tool schemas and server listings, all configured fields, unchanged source files, no UI listener/vault/prompt |
-| Vault and live configuration | Vault creation/edit/deletion reloads; env precedence preserves approval; partial edits preserve secrets, accounts, proxies and restrictions; lost-key and external recovery cases; unreadable vault refuses MCP after restart while graphical recovery remains available; strict decryption; stale preview/concurrent restore refusal |
+| Vault and live configuration | Vault creation/edit/deletion reloads; env precedence preserves approval; partial edits preserve secrets, accounts, proxies and restrictions; lost-key and external recovery cases; unreadable vault blocks remote operations while local inspection, cleanup and graphical recovery remain available; strict decryption; stale preview/concurrent restore refusal; confirmed recovery repairs a corrupt key file |
 | Approval boundary | Previously bypassed remote tools, aliases/partial names, exactly one prompt, opt-in fail-closed behavior, in-flight identity snapshot and pooled-connection invalidation |
 | SSH transport | Real local ssh2 host-key handshake and changed-key refusal before authentication; revoked and hashed known hosts; multi-hop ProxyJump and ProxyCommand; working-directory injection canaries |
 | CLI adoption | One optional terminal invitation; no hint on commands, help, version, pipes, CI or MCP stdout |
 | Interface | First-server creation, direct import, legacy import/edit preservation, keyboard focus/Escape, axe accessibility, narrow viewport, reduced motion, connection loss, preferences across a new port, encrypted backup/preview/restore including files above 1 MB |
 | Groups and distribution | Legacy groups migrated into shared user state, write failures preserved; signed application unchanged by edits; version/channel/commit/hash checks, tampered artifacts rejected, RC isolation |
+| Candidate preview | Disposable home and file-backed key; encrypted fixture credentials; real SFTP confined to scratch files; simulated remote commands; same-profile control-plane restart; older desktop artifacts refused; orderly cleanup |
 
 Accessibility automation covers the welcome dialog and the vault panel. It is
 not a claim of a complete screen-reader or WCAG audit of every application view.
@@ -78,15 +84,18 @@ file that its own restore screen cannot accept.
 
 ## Verified locally on 2026-09-07
 
-The 42-suite engine run, lint, JSDoc typecheck and knip passed on macOS with Node 25.8.2. The
+The engine suites, lint, JSDoc typecheck and knip passed on macOS with Node 25.8.2.
+The new preview suite also passed; `npm test` now contains 43 suites. Latest
+focused results include seven security checks and nine recovery checks. The
 actual registry upgrade/rollback passed all eight checks. Nine Chromium flows
 cover the UI paths above. An isolated macOS arm64 packaged application passed
 Electron startup, UI rendering, native terminal, group persistence and strict
 ad hoc signature verification before and after use during implementation. The
 final release artifacts must repeat these checks after the branch is integrated.
 
-Targeted upgrade (10 checks), migration (13) and security (6) suites also passed
-on Node 18.20.8 and Node 24.20.0, using isolated homes.
+Targeted upgrade (10 checks), migration (13) and the earlier six-check security
+suite also passed on Node 18.20.8 and Node 24.20.0, using isolated homes. The added
+seventh security check covers local cleanup with an unreadable vault.
 
 No Windows/Linux runner or production signing/notarization run was executed
 locally. Those are release gates, not inferred successes. The V4 production

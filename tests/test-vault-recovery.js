@@ -132,6 +132,30 @@ function testTheFileSurvivesLosingTheKey() {
   ok('restoring produces a vault that decrypts again');
 }
 
+function testRecoveryRepairsAnInvalidKeyFile() {
+  const vaultPath = path.join(scratch, 'invalid-key-vault.json');
+  const keyPath = path.join(scratch, 'vault.key');
+  const store = new SecretStore(vaultPath);
+  store.restoreServers(SERVERS);
+  const encryptedBefore = fs.readFileSync(vaultPath, 'utf8');
+  fs.writeFileSync(keyPath, 'truncated-key');
+  const damaged = new SecretStore(vaultPath);
+  assert.equal(damaged.checkKey().ok, false);
+  assert.throws(() => damaged.setServer('extra', SERVERS.prod), /no longer has/);
+  assert.throws(() => damaged.restoreServers(SERVERS), /no longer has/);
+  assert.equal(fs.readFileSync(keyPath, 'utf8'), 'truncated-key');
+  assert.equal(fs.readFileSync(vaultPath, 'utf8'), encryptedBefore);
+  const restored = readRecoveryFile(path.join(scratch, 'recovery.json'), PASSPHRASE);
+  damaged.restoreServers(restored, { replaceUnreadable: true });
+  const reopened = new SecretStore(vaultPath);
+  assert.deepEqual(reopened.getAllDecrypted(), SERVERS);
+  assert.equal(reopened.checkKey().ok, true);
+  assert.equal(Buffer.from(fs.readFileSync(keyPath, 'utf8'), 'base64').length, 32);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(keyPath).mode & 0o777, 0o600);
+  assert.equal(fs.existsSync(`${keyPath}.lock`), false);
+  ok('only confirmed recovery replaces a corrupted key file, and a fresh instance decrypts every restored secret');
+}
+
 function main() {
   try {
     testRoundTrip();
@@ -140,6 +164,7 @@ function main() {
     testItSaysWhatItHoldsWithoutOpening();
     testWeakPassphrasesAreRefused();
     testTheFileSurvivesLosingTheKey();
+    testRecoveryRepairsAnInvalidKeyFile();
     console.log(`\n✅ vault recovery tests passed (${passed} checks)`);
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });

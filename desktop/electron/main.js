@@ -44,6 +44,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Set before the engine is imported, because the logger reads these once.
 // Release smoke tests must not touch the machine's real Electron profile.
 const smokeTest = process.argv.includes('--release-smoke-test');
+const previewHome = process.env.SSH_MANAGER_PREVIEW_HOME;
+if (previewHome) {
+  if (!path.isAbsolute(previewHome) || previewHome !== process.env.SSH_MANAGER_HOME) {
+    throw new Error('Candidate previews require matching absolute SSH_MANAGER_PREVIEW_HOME and SSH_MANAGER_HOME');
+  }
+  // A temporary vault alone does not isolate Chromium or native file dialogs.
+  // Set every profile path before ready; the launcher also supplies a fake OS
+  // home to the engine and local shell without changing the parent shell.
+  const paths = {
+    appData: 'app-data', userData: 'electron', sessionData: 'electron/session',
+    logs: 'logs', crashDumps: 'crashes', home: 'home', desktop: 'home/Desktop',
+    documents: 'home/Documents', downloads: 'home/Downloads',
+  };
+  for (const [name, relative] of Object.entries(paths)) {
+    const target = path.join(previewHome, relative);
+    fs.mkdirSync(target, { recursive: true });
+    app.setPath(name, target);
+  }
+}
 if (smokeTest) {
   if (!process.env.SSH_MANAGER_HOME || !process.env.SSH_RELEASE_SMOKE_RESULT) {
     throw new Error('Release smoke tests require an isolated SSH_MANAGER_HOME and result path');
@@ -436,6 +455,8 @@ function refreshTray() {
  * middle of something.
  */
 function setupUpdater() {
+  // A candidate preview must keep the artifact the operator chose to test.
+  if (previewHome) return;
   const { autoUpdater } = electronUpdater;
   if (!app.isPackaged) return;          // no feed, and no version to compare
 

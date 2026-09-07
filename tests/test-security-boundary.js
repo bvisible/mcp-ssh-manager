@@ -39,13 +39,31 @@ let broker;
 
 async function fakeServer(label) {
   const seen = [];
+  const active = new Set();
+  let accepted = 0;
   const server = new ssh2.Server({ hostKeys: [privateKey] }, connection => {
+    accepted++;
+    active.add(connection);
     connections.add(connection);
-    connection.on('close', () => connections.delete(connection));
+    connection.on('close', () => { connections.delete(connection); active.delete(connection); });
     connection.on('error', () => {});
     connection.on('authentication', ctx => ctx.accept());
     connection.on('ready', () => connection.on('session', accept => {
-      accept().on('exec', (acceptExec, reject, info) => {
+      const session = accept();
+      session.on('pty', acceptPty => acceptPty());
+      session.on('shell', acceptShell => {
+        const stream = acceptShell();
+        stream.on('data', data => {
+          const input = data.toString();
+          // Reply to the session protocol markers without executing its text.
+          const ready = input.match(/ready_[a-f0-9]+/);
+          const command = input.match(/cmd_[a-f0-9]+/);
+          if (ready) stream.write(`${ready[0]}\n`);
+          if (command) stream.write(`/fixture\n${command[0]}:0\n`);
+          if (input === 'exit\n') stream.end();
+        });
+      });
+      session.on('exec', (acceptExec, reject, info) => {
         const stream = acceptExec();
         seen.push(info.command);
         stream.write(info.command.includes('ping') ? 'ping\n' : `${label}\n`);
@@ -56,7 +74,7 @@ async function fakeServer(label) {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   resources.push(server);
-  return { port: server.address().port, seen };
+  return { port: server.address().port, seen, active, accepted: () => accepted };
 }
 const text = result => result.content.map(item => item.text || '').join('\n');
 const call = (name, args) => client.callTool({ name, arguments: args });
@@ -155,6 +173,56 @@ try {
   assert.match(text(result), /fixture-two/);
   assert.equal(second.seen.length, 1);
   ok('an in-flight approval retains its host; the next invocation reloads config and replaces the pooled connection');
+
+  result = await call('ssh_session_start', { server: 'prod' });
+  const sessionId = text(result).match(/Session ID: (\S+)/)?.[1];
+  assert.ok(sessionId, text(result));
+  const reservation = net.createServer();
+  await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
+  const localPort = reservation.address().port;
+  await new Promise(resolve => reservation.close(resolve));
+  result = await call('ssh_tunnel_create', { server: 'prod', type: 'dynamic', localPort });
+  assert.match(text(result), /SSH tunnel created/);
+  const requestsBeforeFailure = requests.length;
+  const remoteCommandsBeforeFailure = second.seen.length;
+  const connectionsBeforeFailure = second.accepted();
+  fs.writeFileSync(vaultFile, '{ broken JSON');
+  for (const [name, args] of [
+    ['ssh_execute', { server: 'prod', command }],
+    ['ssh_connection_status', { action: 'reconnect', server: 'prod' }],
+    ['ssh_session_send', { session: sessionId, command }],
+    ['ssh_tunnel_create', { server: 'prod', type: 'dynamic', localPort }],
+  ]) {
+    result = await call(name, args);
+    assert.equal(result.isError, true, name);
+    assert.match(text(result), /SSH operations are blocked/, name);
+  }
+  for (const [name, args] of [
+    ['ssh_history', {}], ['ssh_session_list', {}], ['ssh_tunnel_list', { server: 'prod' }],
+    ['ssh_key_manage', { action: 'list' }],
+    ['ssh_connection_status', { action: 'status' }],
+    ['ssh_connection_status', { action: 'cleanup' }],
+  ]) {
+    result = await call(name, args);
+    assert.notEqual(result.isError, true, name);
+    assert.doesNotMatch(text(result), /SSH operations are blocked|❌/, name);
+  }
+  assert.match(text(await call('ssh_session_close', { session: sessionId })), /Session closed/);
+  assert.match(text(await call('ssh_session_list', {})), /No active sessions/);
+  assert.match(text(await call('ssh_tunnel_close', { server: '127.0.0.1' })), /Closed 1 tunnel/);
+  assert.match(text(await call('ssh_tunnel_list', {})), /No active tunnels/);
+  assert.match(text(await call('ssh_connection_status', { action: 'disconnect', server: 'prod' })), /Disconnected/);
+  assert.match(text(await call('ssh_connection_status', { action: 'status' })), /No active connections/);
+  await new Promise(resolve => reservation.listen(localPort, '127.0.0.1', resolve));
+  await new Promise(resolve => reservation.close(resolve));
+  for (let attempt = 0; second.active.size && attempt < 50; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal(second.active.size, 0, 'cleanup releases both pooled and independent tunnel SSH transports');
+  assert.equal(second.accepted(), connectionsBeforeFailure, 'local cleanup never opens another SSH connection');
+  assert.equal(second.seen.length, remoteCommandsBeforeFailure, 'local inspection never sends remote ping commands');
+  assert.equal(requests.length, requestsBeforeFailure, 'cleanup never waits for approval');
+  ok('an unreadable vault blocks remote operations while local inspection and resource cleanup remain available');
   console.log(`\nSecurity boundary: ${passed} checks passed`);
 } finally {
   if (client) await client.close();

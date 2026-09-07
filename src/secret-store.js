@@ -180,10 +180,10 @@ function fallbackKeyPath() {
  * unreadable, and generating one silently is how an operator finds out weeks
  * later, from a failed deploy, that their credentials are gone.
  *
- * @param {{ create?: boolean }} [options]
+ * @param {{ create?: boolean, replaceInvalidFile?: boolean }} [options]
  * @returns {{ key: Buffer, source: 'keychain'|'file', minted: boolean }}
  */
-function resolveMasterKey({ create = true } = {}) {
+function resolveMasterKey({ create = true, replaceInvalidFile = false } = {}) {
   // SSH_MANAGER_KEY_SOURCE=file skips the OS keychain entirely. Needed wherever
   // there is no desktop session to prompt — CI, containers, a plain SSH login —
   // and it is what makes the vault testable without touching the developer's
@@ -219,8 +219,17 @@ function resolveMasterKey({ create = true } = {}) {
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
     const existing = Buffer.from(fs.readFileSync(keyFile, 'utf8').trim(), 'base64');
-    if (existing.length !== KEY_BYTES) throw new Error(`Invalid vault key file: ${keyFile}`);
-    return { key: existing, source: 'file', minted: false };
+    if (existing.length === KEY_BYTES) return { key: existing, source: 'file', minted: false };
+    if (!replaceInvalidFile) throw new Error(`Invalid vault key file: ${keyFile}`);
+    // Only explicit recovery may repair invalid key bytes. Its caller holds
+    // the shared key-file lock, and a failed write leaves the old file intact.
+    const temporary = `${keyFile}.${crypto.randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, key.toString('base64'), { mode: 0o600, flag: 'wx' });
+      fs.renameSync(temporary, keyFile);
+    } finally {
+      fs.rmSync(temporary, { force: true });
+    }
   }
   logger.warn('Vault key stored in a file: no OS keychain available', { keyFile });
   return { key, source: 'file', minted: true };
@@ -414,11 +423,12 @@ export class SecretStore {
   /** Serialise CLI/desktop writers without exposing partial JSON to readers.
    * @template T
    * @param {() => T} update
+   * @param {string} [targetPath]
    * @returns {T}
    */
-  #withWriteLock(update) {
-    fs.mkdirSync(path.dirname(this.vaultPath), { recursive: true, mode: 0o700 });
-    const lock = `${this.vaultPath}.lock`;
+  #withWriteLock(update, targetPath = this.vaultPath) {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true, mode: 0o700 });
+    const lock = `${targetPath}.lock`;
     let descriptor;
     try {
       descriptor = fs.openSync(lock, 'wx', 0o600);
@@ -550,7 +560,8 @@ export class SecretStore {
       try { existing = this.getAllDecrypted(); } catch (error) {
         if (!replaceUnreadable) throw error;
       }
-      const { key, source } = resolveMasterKey();
+      const { key, source } = this.#withWriteLock(
+        () => resolveMasterKey({ replaceInvalidFile: true }), fallbackKeyPath());
       const all = { ...existing, ...servers };
       const encrypted = Object.fromEntries(Object.entries(all).map(([name, config]) => [name.toLowerCase(),
         mapSecrets(config, value => encryptValue(value, key))]));

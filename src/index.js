@@ -231,6 +231,10 @@ const WRAPPED_COMMAND_TIMEOUT_GRACE_MS = 5000;
 // Map to track proxy jump dependencies (target -> jump server)
 const jumpDependencies = new Map();
 
+// Tunnels own independent transports. Retain their original configuration for
+// local lookup and disposal even if the vault is removed or becomes unreadable.
+const tunnelConnections = new Map();
+
 // One immutable configuration snapshot per tool invocation: a vault edit while
 // a decision is pending must not redirect the approved action to another host.
 const toolContext = new AsyncLocalStorage();
@@ -468,6 +472,17 @@ function closeConnection(serverName) {
   logger.logConnection(serverName, 'closed');
 }
 
+function openTunnelServers() {
+  return Object.fromEntries(listTunnels().map(tunnel =>
+    [tunnel.server, tunnelConnections.get(tunnel.id)?.config || {}]));
+}
+
+function disposeTunnelConnection(tunnelId) {
+  const ssh = tunnelConnections.get(tunnelId);
+  tunnelConnections.delete(tunnelId);
+  ssh?.dispose();
+}
+
 // Clean up old connections
 function cleanupOldConnections() {
   const now = Date.now();
@@ -602,9 +617,13 @@ logger.info('MCP Server initialized', { version: serverVersion });
 function registerToolConditional(toolName, schema, handler) {
   if (isToolEnabled(toolName)) {
     const guarded = async (args, extra) => {
+      // These handlers inspect local state or release existing resources. They
+      // must remain usable during vault recovery; handlers that actually read
+      // configuration (such as server listing) still load it explicitly.
+      if (isApprovalExempt(toolName, args)) return handler(args, extra);
       const servers = await serverConfigManager.getServers();
       return toolContext.run({ servers }, async () => {
-        if (isApprovalExempt(toolName, args) || HANDLER_GATED_TOOLS.has(toolName)) {
+        if (HANDLER_GATED_TOOLS.has(toolName)) {
           return handler(args, extra);
         }
         // Fail closed for newly added remote tools with an unresolved target.
@@ -2749,7 +2768,8 @@ registerToolConditional(
           throw new Error('Server name is required for disconnect action');
         }
 
-        closeConnection(resolveServerName(server, await loadServerConfig()) || server.toLowerCase());
+        const openServers = Object.fromEntries([...connections].map(([name, ssh]) => [name, ssh.config]));
+        closeConnection(resolveServerName(server, openServers) || server.toLowerCase());
         return {
           content: [
             {
@@ -2766,7 +2786,7 @@ registerToolConditional(
 
         // Also check and remove dead connections
         for (const [serverName, ssh] of connections.entries()) {
-          const isValid = await isConnectionValid(ssh);
+          const isValid = ssh.connected;
           if (!isValid) {
             closeConnection(serverName);
           }
@@ -2829,7 +2849,14 @@ registerToolConditional(
         remotePort
       };
 
-      const tunnel = await createTunnel(resolvedName, ssh, config);
+      let tunnel;
+      try {
+        tunnel = await createTunnel(resolvedName, ssh, config);
+      } catch (error) {
+        ssh.dispose();
+        throw error;
+      }
+      tunnelConnections.set(tunnel.id, ssh);
 
       let output = '✅ SSH tunnel created\n';
       output += `ID: ${tunnel.id}\n`;
@@ -2888,11 +2915,10 @@ registerToolConditional(
   },
   async ({ server }) => {
     try {
-      const servers = await loadServerConfig();
       let resolvedName = null;
 
       if (server) {
-        resolvedName = resolveServerName(server, servers);
+        resolvedName = resolveServerName(server, openTunnelServers());
         if (!resolvedName) {
           throw new Error(`Server "${server}" not found`);
         }
@@ -2980,19 +3006,21 @@ registerToolConditional(
       if (tunnelId) {
         // Close specific tunnel
         closeTunnel(tunnelId);
+        disposeTunnelConnection(tunnelId);
         output = `✅ Tunnel ${tunnelId} closed`;
 
         logger.info('SSH tunnel closed', { id: tunnelId });
       } else if (server) {
         // Close all tunnels for server
-        const servers = await loadServerConfig();
-        const resolvedName = resolveServerName(server, servers);
+        const resolvedName = resolveServerName(server, openTunnelServers());
 
         if (!resolvedName) {
           throw new Error(`Server "${server}" not found`);
         }
 
+        const open = listTunnels(resolvedName);
         const count = closeServerTunnels(resolvedName);
+        for (const tunnel of open) disposeTunnelConnection(tunnel.id);
         output = `✅ Closed ${count} tunnel(s) for server ${resolvedName}`;
 
         logger.info('Server tunnels closed', {
@@ -3036,11 +3064,11 @@ registerToolConditional(
   },
   async ({ action, server }) => {
     try {
-      const servers = await loadServerConfig();
       let resolvedName, serverConfig, host, port;
 
       // Resolve server details for actions that need them
       if (server && action !== 'list') {
+        const servers = await loadServerConfig();
         resolvedName = resolveServerName(server, servers);
         if (!resolvedName) {
           throw new Error(`Server "${server}" not found`);
@@ -3217,9 +3245,10 @@ registerToolConditional(
         if (knownHosts.length === 0) {
           output += 'No hosts in known_hosts file\n';
         } else {
-          // Map server names to known hosts
+          // Names are optional labels from the last loaded snapshot. Reading
+          // known_hosts must not require unlocking or repairing the vault.
           const serverMap = new Map();
-          for (const [name, config] of Object.entries(servers)) {
+          for (const [name, config] of Object.entries(serverConfigManager.servers)) {
             const key = `${config.host}:${config.port || 22}`;
             serverMap.set(key, name);
           }
