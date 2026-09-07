@@ -6,6 +6,15 @@ The desktop release workflow builds macOS arm64/x64, Windows x64/arm64 (one NSIS
 installer), and Linux x64 (AppImage and deb). Linux desktop support must pass its
 first complete CI rehearsal before it is announced as available.
 
+Linux CI installs the generated `.deb` and smoke-tests the installed application
+as an unprivileged user under Xvfb. Its post-install configures the application’s
+AppArmor profile and Chromium sandbox permissions. AppImage startup is a
+separate check: on systems with restricted user namespaces, including Ubuntu
+24.04+, use the `.deb` candidate first. See the [AppImage sandboxing
+requirements](https://docs.appimage.org/user-guide/troubleshooting/electron-sandboxing.html).
+A launch with `--no-sandbox` or weakened global kernel policy is not a passing
+release check.
+
 ## Release gates
 
 1. Merge the release changes through a pull request. Keep the existing required

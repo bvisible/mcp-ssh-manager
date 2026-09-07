@@ -126,7 +126,7 @@ node --input-type=module -e "import fs from 'node:fs'; import {execFileSync} fro
 | --- | --- | --- |
 | macOS Apple silicon / Intel | Matching `*-arm64.dmg` / `*-x64.dmg`; copy the app into the test account's Applications directory | Download/open through the normal browser/Finder path; no Gatekeeper bypass. Check the app signature before and after the persistence test. |
 | Windows x64 / arm64 | `*-setup.exe`; choose a separate per-user test installation | Check installer and installed app Authenticode status. An unsigned test build is not a signed-release success. |
-| Linux x64 | `*.AppImage`; make that test file executable. Test the `.deb` separately in a VM. | Start the actual packaged app and local terminal. Record the distribution/version and any sandbox or FUSE failure. |
+| Linux x64 | Install the `.deb` in a disposable VM; test the executable `*.AppImage` separately. | Start the installed app and local terminal as an ordinary user. Record distribution/version and any AppImage sandbox or FUSE failure; do not disable the sandbox to obtain a pass. |
 
 For the isolated functional review of an extracted/installed macOS app:
 

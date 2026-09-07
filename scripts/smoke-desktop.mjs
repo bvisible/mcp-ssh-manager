@@ -24,7 +24,13 @@ try {
     const child = spawn(path.resolve(executable), ['--release-smoke-test'], { env, cwd: scratch, stdio: 'inherit' });
     const timeout = setTimeout(() => { child.kill(); reject(new Error('Packaged application smoke test timed out')); }, 45000);
     child.on('error', error => { clearTimeout(timeout); reject(error); });
-    child.on('exit', code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error(`Packaged application exited ${code}`)); });
+    child.on('exit', code => {
+      clearTimeout(timeout);
+      if (code === 0) return resolve();
+      let reason = '';
+      try { reason = JSON.parse(fs.readFileSync(resultFile, 'utf8')).error || ''; } catch { /* exited before reporting */ }
+      reject(new Error(`Packaged application exited ${code}${reason ? `: ${reason}` : ''}`));
+    });
   });
   const result = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
   assert.equal(result.ok, true, result.error);

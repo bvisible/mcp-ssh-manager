@@ -123,9 +123,14 @@ jobs:
         run: |
           $required = '${{ inputs.publish }}' -eq 'true' -and '${{ steps.version.outputs.prerelease }}' -eq 'false'
           ./scripts/verify-windows-build.ps1 -RequireSigned:$required
-      - name: Smoke test packaged Linux app
+      # The installer configures Chromium's sandbox and Ubuntu's AppArmor
+      # profile. Starting the unpacked directory skips those required steps.
+      - name: Install and smoke test packaged Linux app
         if: matrix.platform == 'linux'
-        run: xvfb-run -a node scripts/smoke-desktop.mjs "desktop/electron/dist/linux-unpacked/ssh-manager-desktop"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ./desktop/electron/dist/*.deb
+          xvfb-run -a node scripts/smoke-desktop.mjs "$(command -v ssh-manager-desktop)"
       - name: Finalize hashes and blockmaps after signing and stapling
         working-directory: desktop/electron
         run: node finalize-artifacts.mjs dist

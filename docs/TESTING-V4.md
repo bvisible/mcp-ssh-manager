@@ -12,7 +12,7 @@ fixtures, not your SSH hosts, credentials or keychain.
 
 ```sh
 npm ci
-npm test                        # 43 engine, migration, security, release and preview suites
+npm test                        # 44 engine, migration, security, release and preview suites
 npm run lint
 npm run typecheck
 npx knip
@@ -34,7 +34,7 @@ server. Playwright reports, traces and failure screenshots are retained in CI.
 
 For focused work, run `npm run test:migration`, `test:security`, `test:hostkeys`,
 `test:proxy`, `test:working-directory`, `test:groups-persistence`, `test:release`,
-`test:preview` or `test:cli-experience`. Existing `test:upgrade`, `test:vault`, `test:recovery`,
+`test:preview`, `test:desktop-smoke` or `test:cli-experience`. Existing `test:upgrade`, `test:vault`, `test:recovery`,
 `test:controlplane`, `test:terminal` and `test:files` cover adjacent behavior.
 
 `npm run test:preview` checks the disposable candidate profile, real local
@@ -74,6 +74,9 @@ file that its own restore screen cannot accept.
 - Interface and actual published-package upgrade: macOS, Windows and Linux.
 - Desktop: packaged smoke tests, real Electron/terminal startup, user-state
   persistence and platform signature checks before publishing final metadata.
+- Linux: install the generated `.deb`, then run its packaged UI and terminal as
+  an unprivileged user under Xvfb. The installer configures its AppArmor profile
+  and Chromium sandbox; AppImage startup remains a separate platform test.
 - macOS: Developer ID + notarization/stapling on the final application and
   distribution image; hashes/blockmaps regenerated afterward.
 - Windows stable: valid Authenticode required. Unsigned dry runs/RCs do not count
@@ -85,7 +88,7 @@ file that its own restore screen cannot accept.
 ## Verified locally on 2026-09-07
 
 The engine suites, lint, JSDoc typecheck and knip passed on macOS with Node 25.8.2.
-The new preview suite also passed; `npm test` now contains 43 suites. Latest
+The new preview suite also passed; `npm test` now contains 44 suites, including a desktop terminal smoke regression that accepts VT output but rejects input echo alone. Latest
 focused results include seven security checks and nine recovery checks. The
 actual registry upgrade/rollback passed all eight checks. Eleven Chromium flows
 cover the UI paths above. An isolated macOS arm64 packaged application passed
