@@ -108,6 +108,11 @@ The maintainer supplies `RUN_ID` for the successful candidate run. Replace that
 placeholder below. Download all three artifact sets from that same run into an
 empty directory; do not mix retries or an older build with the same version.
 
+Older rehearsals may include `builder-*.yml` diagnostic files with identical
+names on every platform. For those runs, download into separate directories and
+copy only files named in each release manifest into the verification directory.
+The workflow now excludes these diagnostics; they are never release assets.
+
 ```sh
 gh run view RUN_ID --json headSha,conclusion,url
 gh run download RUN_ID --name validated-darwin --dir ../v4-final-test/artifacts

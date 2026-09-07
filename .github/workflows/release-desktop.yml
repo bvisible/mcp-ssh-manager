@@ -140,6 +140,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: validated-${{ matrix.platform }}
+          # Diagnostics share names across platforms and are outside the
+          # release manifest, so they must not enter the merged download.
           path: |
             desktop/electron/dist/*.dmg
             desktop/electron/dist/*.zip
@@ -148,6 +150,7 @@ jobs:
             desktop/electron/dist/*.deb
             desktop/electron/dist/*.blockmap
             desktop/electron/dist/*.yml
+            !desktop/electron/dist/builder-*.yml
             desktop/electron/dist/release-manifest-*.json
           if-no-files-found: error
       - name: Remove temporary signing material
