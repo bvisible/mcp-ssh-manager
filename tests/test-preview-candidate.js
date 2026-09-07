@@ -19,6 +19,13 @@ try {
   assert.equal(preview.env.NODE_OPTIONS, undefined);
   assert.equal(preview.env.SSH_MANAGER_HOME, preview.scratch);
   assert.equal(preview.env.SSH_MANAGER_PREVIEW_HOME, preview.scratch);
+  assert.equal(preview.env.SSH_MANAGER_APPROVAL_SOCKET, process.platform === 'win32'
+    ? `\\\\.\\pipe\\mcp-ssh-${path.basename(preview.scratch)}` : path.join(preview.scratch, 'approval.sock'));
+  const parallel = await createCandidatePreview(root);
+  try {
+    assert.notEqual(parallel.env.SSH_MANAGER_APPROVAL_SOCKET, preview.env.SSH_MANAGER_APPROVAL_SOCKET,
+      'concurrent fixtures must never share an approval pipe (or its derived stream pipe)');
+  } finally { await parallel.close(); }
   assert.ok(preview.env.SSH_MANAGER_KNOWN_HOSTS.startsWith(preview.home));
   assert.ok(!fs.readFileSync(preview.env.SSH_MANAGER_VAULT, 'utf8').includes(preview.password));
   await new Promise((resolve, reject) => {

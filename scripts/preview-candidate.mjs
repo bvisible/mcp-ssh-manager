@@ -142,6 +142,8 @@ export async function createCandidatePreview(engine = repo) {
       XDG_DATA_HOME: path.join(home, '.local/share'), TMPDIR: path.join(scratch, 'tmp'),
       TEMP: path.join(scratch, 'tmp'), TMP: path.join(scratch, 'tmp'),
       SSH_MANAGER_HOME: scratch, SSH_MANAGER_PREVIEW_HOME: scratch, SSH_MANAGER_KEY_SOURCE: 'file',
+      SSH_MANAGER_APPROVAL_SOCKET: process.platform === 'win32'
+        ? `\\\\.\\pipe\\mcp-ssh-${path.basename(scratch)}` : path.join(scratch, 'approval.sock'),
       SSH_MANAGER_VAULT: path.join(scratch, 'vault.json'),
       SSH_MANAGER_KNOWN_HOSTS: path.join(home, '.ssh/known_hosts'),
       SSH_ENV_PATH: path.join(scratch, 'empty.env'), SSH_CONFIG_PATH: path.join(scratch, 'empty.toml'),

@@ -67,7 +67,12 @@ export function FilesPage({ server }: { server: string }) {
       if (event.type !== 'transfer') return;
       const progress = event as unknown as TransferEvent;
       setTransfer(progress.state === 'done' || progress.state === 'failed' ? null : progress);
-      if (progress.state === 'done') void load(progress.direction === 'upload' ? 'remote' : 'local');
+      if (progress.state === 'done') {
+        const side = progress.direction === 'upload' ? 'remote' : 'local';
+        // Completion refreshes the directory now on screen, including when
+        // the operator navigated elsewhere while the transfer was running.
+        void load(side, pathsRef.current[side]);
+      }
       if (progress.state === 'failed') setError(progress.error ?? 'The transfer failed');
     });
     return stop;

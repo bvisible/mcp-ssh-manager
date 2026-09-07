@@ -35,5 +35,5 @@ exports.default = async function afterPack(context) {
     fs.chmodSync(file, 0o755);
     console.log(`  • made executable  ${path.relative(unpacked, file)}`);
   }
-  if (found.length === 0) console.log('  • no spawn-helper found — no local shell in this build');
+  if (found.length === 0) console.log('  • no macOS spawn-helper present; packaged smoke tests verify the native shell');
 };

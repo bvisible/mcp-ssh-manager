@@ -87,7 +87,7 @@ file that its own restore screen cannot accept.
 The engine suites, lint, JSDoc typecheck and knip passed on macOS with Node 25.8.2.
 The new preview suite also passed; `npm test` now contains 43 suites. Latest
 focused results include seven security checks and nine recovery checks. The
-actual registry upgrade/rollback passed all eight checks. Nine Chromium flows
+actual registry upgrade/rollback passed all eight checks. Eleven Chromium flows
 cover the UI paths above. An isolated macOS arm64 packaged application passed
 Electron startup, UI rendering, native terminal, group persistence and strict
 ad hoc signature verification before and after use during implementation. The

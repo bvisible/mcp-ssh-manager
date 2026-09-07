@@ -13,6 +13,10 @@ export const test = base.extend<{ app: App; legacy: boolean }>({
   legacy: [false, { option: true }],
   app: async ({ legacy }, use) => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-v4-'));
+    // Windows's default named pipe is global, even when HOME is isolated.
+    // Give concurrent workers their own approval pipe and derived stream pipe.
+    const approvalSocket = process.platform === 'win32'
+      ? `\\\\.\\pipe\\mcp-ssh-${path.basename(home)}` : path.join(home, 'approval.sock');
     if (legacy) await fs.writeFile(path.join(home, '.env'), legacyConfig);
     let child: ChildProcess;
     let output = '';
@@ -31,6 +35,7 @@ export const test = base.extend<{ app: App; legacy: boolean }>({
           PATH: process.env.PATH,
           ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot, USERPROFILE: home, TEMP: home, TMP: home } : {}),
           HOME: home, SSH_MANAGER_HOME: home, SSH_MANAGER_KEY_SOURCE: 'file',
+          SSH_MANAGER_APPROVAL_SOCKET: approvalSocket,
           SSH_ENV_PATH: path.join(home, '.env'), SSH_CONFIG_PATH: path.join(home, 'absent.toml'),
           SSH_LOG_FILE: path.join(home, 'test.log'), SSH_GROUPS_FILE: path.join(home, 'groups.json'),
         },
