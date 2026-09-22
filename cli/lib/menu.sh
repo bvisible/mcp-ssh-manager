@@ -273,7 +273,7 @@ wizard_edit_server() {
         return 1
     fi
 
-    local server_name="$SELECTED_SERVER"
+    local server_name="$selected_server"
 
     # Load existing configuration
     local current_host=$(get_server_config "$server_name" "HOST")
