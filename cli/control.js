@@ -4,9 +4,6 @@
 // Starts the approval socket the engine talks to and a local page to watch and
 // decide on. Runs in the foreground until Ctrl-C.
 
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import { ControlPlane } from '../src/control-plane.js';
 import { defaultSocketPath } from '../src/approval.js';
 import { ConfigLoader } from '../src/config-loader.js';

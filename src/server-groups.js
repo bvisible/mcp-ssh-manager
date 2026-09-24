@@ -85,6 +85,26 @@ export class ServerGroups {
    * Load groups from file
    */
   loadGroups() {
+    return this.#withoutPrototype(this.#readGroups());
+  }
+
+  /**
+   * Group names are user and agent input — `ssh_group_manage` takes them from
+   * a model, and a model reads whatever a server prints. Held in an ordinary
+   * object, `this.groups['__proto__']`, `['constructor']` or `['toString']`
+   * resolve to Object.prototype and its members: those names were reported as
+   * already existing, `constructor` "resolved" to a function, and an overwrite
+   * of `__proto__` would have replaced the map's prototype. With no prototype
+   * they are plain keys like any other. Names stay free-form, as 3.x allowed.
+   *
+   * @param {Record<string, any>} groups - Loaded or default groups
+   * @returns {Record<string, any>}
+   */
+  #withoutPrototype(groups) {
+    return Object.assign(Object.create(null), groups);
+  }
+
+  #readGroups() {
     this.loadError = null;
     try {
       const source = fs.existsSync(this.groupsFile) ? this.groupsFile : this.legacyGroupsFile;
@@ -137,7 +157,9 @@ export class ServerGroups {
     try {
       if (this.loadError) throw this.loadError;
       // Don't save dynamic groups
-      const groupsToSave = {};
+      // No prototype here either: `groupsToSave['__proto__'] = group` on an
+      // ordinary object sets its prototype, and the group vanishes from the file.
+      const groupsToSave = Object.create(null);
       for (const [name, group] of Object.entries(this.groups)) {
         if (!group.dynamic) {
           groupsToSave[name] = group;

@@ -54,7 +54,10 @@ async function freshModule() {
   raised.length = 0;
   // A unique query string is the standard way to defeat the ESM module cache.
   const source = pathToFileURL(path.join(__dirname, '..', 'ui', 'src', 'lib', 'notify.ts'));
-  const compiled = path.join(os.tmpdir(), `notify-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`);
+  // A private directory rather than a guessable name in the shared temp dir,
+  // which another local user could pre-create (CodeQL js/insecure-temporary-file).
+  const compiledDir = fs.mkdtempSync(path.join(os.tmpdir(), 'notify-'));
+  const compiled = path.join(compiledDir, 'notify.mjs');
   // Strip the types: this is TypeScript for the bundler's benefit, and the
   // logic under test is plain JavaScript.
   const stripped = fs.readFileSync(source, 'utf8')
@@ -68,7 +71,7 @@ async function freshModule() {
     .replace(/new Map<[^>]+>\(\)/g, 'new Map()');
   fs.writeFileSync(compiled, stripped);
   const module = await import(pathToFileURL(compiled).href);
-  fs.rmSync(compiled, { force: true });
+  fs.rmSync(compiledDir, { recursive: true, force: true });
   return module;
 }
 

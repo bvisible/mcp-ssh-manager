@@ -19,8 +19,11 @@ export function verifyArtifacts(directory, version, expectedCommit = null) {
     for (const item of manifest.files) {
       assert.equal(path.basename(item.name), item.name);
       const file = path.join(directory, item.name);
-      assert.equal(fs.statSync(file).size, item.size);
-      assert.equal(crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'), item.sha256, `Artifact changed after validation: ${item.name}`);
+      // One read, and both checks on those bytes: sizing the path and then
+      // hashing a second read could vouch for two different files.
+      const bytes = fs.readFileSync(file);
+      assert.equal(bytes.length, item.size);
+      assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), item.sha256, `Artifact changed after validation: ${item.name}`);
       files.push(file);
     }
     files.push(manifestPath);

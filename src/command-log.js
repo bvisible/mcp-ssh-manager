@@ -128,13 +128,25 @@ export function readCommandLog(limit = 500) {
  */
 export function trimCommandLog() {
   const file = commandLogPath();
-  if (!fs.existsSync(file)) return;
+  let lines;
   try {
-    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
-    if (lines.length <= MAX_ENTRIES) return;
-    fs.writeFileSync(file, `${lines.slice(-MAX_ENTRIES).join('\n')}\n`, { mode: 0o600 });
+    lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+  } catch (error) {
+    // Absent is the ordinary first run, not a failure; no separate existence
+    // check, which only opened a window between checking and reading.
+    if (error.code !== 'ENOENT') logger.warn('Cannot read the command log', { error: error.message });
+    return;
+  }
+  if (lines.length <= MAX_ENTRIES) return;
+  // Written beside it and renamed over it: a crash mid-write used to leave a
+  // truncated record, which is the one outcome a log must not have.
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${lines.slice(-MAX_ENTRIES).join('\n')}\n`, { mode: 0o600 });
+    fs.renameSync(temporary, file);
     logger.info('Command log trimmed', { kept: MAX_ENTRIES, dropped: lines.length - MAX_ENTRIES });
   } catch (error) {
+    try { fs.rmSync(temporary, { force: true }); } catch { /* nothing to clean */ }
     logger.warn('Cannot trim the command log', { error: error.message });
   }
 }

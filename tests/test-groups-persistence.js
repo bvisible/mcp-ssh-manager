@@ -53,7 +53,25 @@ try {
   const corrupt = new ServerGroups({ groupsFile, legacyGroupsFile });
   assert.throws(() => corrupt.createGroup('replacement', []), /Could not save server groups/);
   assert.equal(fs.readFileSync(groupsFile, 'utf8'), '{broken', 'corruption is never silently overwritten');
-  console.log('Groups persistence: migration, shared storage, rollback, permissions and write failures passed.');
+  // Group names come from users and from agents (ssh_group_manage), and an
+  // agent reads whatever a server prints. In an ordinary object, '__proto__',
+  // 'constructor' and 'toString' resolved to Object.prototype and its members:
+  // reported as already existing, and an overwrite of '__proto__' replaced the
+  // map's prototype. Found by CodeQL (js/remote-property-injection). They must
+  // be plain names, survive a save and a reload, and pollute nothing.
+  const trapFile = path.join(scratch, 'trap-groups.json');
+  const trap = new ServerGroups({ groupsFile: trapFile });
+  for (const [name, member] of [['__proto__', 'a'], ['constructor', 'b'], ['Web Servers', 'c']]) {
+    trap.createGroup(name, [member]);
+  }
+  const reloaded = new ServerGroups({ groupsFile: trapFile });
+  assert.deepEqual(reloaded.getGroup('__proto__').servers, ['a'], "'__proto__' is a group like any other, and survives a reload");
+  assert.deepEqual(reloaded.getGroup('constructor').servers, ['b']);
+  assert.deepEqual(reloaded.getGroup('web servers').servers, ['c'], 'free-form names, as 3.x allowed');
+  assert.throws(() => reloaded.getGroup('toString'), /not found/, "Object.prototype members are not groups");
+  assert.equal(Object.getPrototypeOf(reloaded.groups), null);
+  assert.equal(({}).servers, undefined, 'nothing reached Object.prototype');
+  console.log('Groups persistence: migration, shared storage, rollback, permissions, write failures and prototype-shaped names passed.');
 } finally {
   fs.rmSync(scratch, { recursive: true, force: true });
 }

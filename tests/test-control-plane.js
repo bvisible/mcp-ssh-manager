@@ -12,7 +12,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import http from 'http';
-import { ControlPlane } from '../src/control-plane.js';
+import { ControlPlane, contentDisposition } from '../src/control-plane.js';
 import { requestDecision, buildRequest } from '../src/approval.js';
 import { tunnelStatePath } from '../src/tunnel-manager.js';
 import { streamSocketPath } from '../src/live-stream.js';
@@ -309,6 +309,37 @@ async function testAuditTailFeedsTheTimeline() {
   assert.ok(state.timeline.some(e => e.server === 'web1' && e.tool === 'ssh_execute'),
     'an audited action must appear in the timeline without any approval');
   ok('the timeline follows the audit log, and survives a malformed line');
+
+  // An entry the engine is still writing. The offset used to move past the
+  // half already on disk, so neither half ever parsed and the entry was lost.
+  const entry = JSON.stringify({
+    ts: new Date().toISOString(), server: 'db2', tool: 'ssh_db_dump', args: {}, allowed: true,
+  });
+  const half = Math.floor(entry.length / 2);
+  fs.appendFileSync(auditPath, entry.slice(0, half));
+  await new Promise(resolve => setTimeout(resolve, 1400));
+  fs.appendFileSync(auditPath, `${entry.slice(half)}\n`);
+  await new Promise(resolve => setTimeout(resolve, 1400));
+  const later = await (await call(base, `/api/state?token=${plane.token}`)).json();
+  assert.strictEqual(later.timeline.filter(e => e.server === 'db2').length, 1,
+    'a line read while half-written must be read once it is complete, exactly once');
+  ok('an audit line caught half-written is read once complete, not lost');
+}
+
+/** A remote filename becomes a header; it must never break or reject one. */
+async function testContentDispositionForRemoteNames() {
+  const cases = ['report.pdf', 'q"uote\\back.txt', 'crlf\r\nSet-Cookie: x=1', 'naïve 📄.log', '\u0000\u001f'];
+  for (const name of cases) {
+    const header = contentDisposition(name);
+    assert.doesNotThrow(() => http.validateHeaderValue('content-disposition', header), `header rejected for ${JSON.stringify(name)}`);
+    assert.ok(!/[\r\n]/.test(header), 'no line break may survive into a header');
+    const quoted = header.match(/filename="([^"]*)"/)[1];
+    assert.ok(/^[\x20-\x7e]*$/.test(quoted) && !/["\\]/.test(quoted), `fallback name must be plain ASCII: ${quoted}`);
+    const exact = decodeURIComponent(header.match(/filename\*=UTF-8''(.*)$/)[1]);
+    assert.strictEqual(exact, name, 'filename* must carry the exact name');
+  }
+  assert.strictEqual(contentDisposition('report.pdf'), `attachment; filename="report.pdf"; filename*=UTF-8''report.pdf`);
+  ok('remote filenames make valid Content-Disposition headers, exact name kept in filename*');
 }
 
 async function testUiIsServedWithoutExternalResources() {
@@ -627,6 +658,7 @@ async function main() {
     await testShutdownDoesNotStrandTheEngine();
     await testStopDoesNotWaitOnOpenConnections();
     await testAuditTailFeedsTheTimeline();
+    await testContentDispositionForRemoteNames();
     await testUiIsServedWithoutExternalResources();
     await testServerManagement();
     await testHealthProbe();

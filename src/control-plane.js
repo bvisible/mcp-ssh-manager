@@ -226,6 +226,17 @@ function describe(dir, item) {
  * }>} LocalShellFactory
  */
 
+/**
+ * `attachment` with an ASCII fallback name and the exact UTF-8 name.
+ * @param {string} name - Remote filename
+ * @returns {string}
+ */
+export function contentDisposition(name) {
+  const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, '_') || 'download';
+  const exact = encodeURIComponent(name).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${exact}`;
+}
+
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_RECOVERY_BYTES = 16 * 1024 * 1024;
 
@@ -2047,9 +2058,13 @@ export class ControlPlane {
       const stream = sftp.createReadStream(file);
       res.writeHead(200, {
         'content-type': 'application/octet-stream',
-        // The name is quoted and stripped of quotes and control characters: a
-        // filename is remote input, and this header is parsed by the browser.
-        'content-disposition': `attachment; filename="${String(file.split('/').pop()).replace(/[""\r\n]/g, '_')}"`,
+        // A filename is remote input, and this header is parsed by the browser.
+        // The quoted form gets an ASCII stand-in — no quote or backslash to end
+        // or escape the string, no control character, nothing Node refuses to
+        // put in a header (an emoji in a name threw ERR_INVALID_CHAR here) —
+        // and filename* carries the real name, UTF-8 and percent-encoded, which
+        // every current browser prefers (RFC 6266).
+        'content-disposition': contentDisposition(String(file.split('/').pop())),
       });
       stream.on('error', (/** @type {Error} */ error) => {
         logger.warn('File read failed', { server: name, error: error.message });
@@ -2264,8 +2279,13 @@ export class ControlPlane {
 
     const readNew = () => {
       for (const auditPath of this.auditPaths) {
+        let fd = null;
         try {
-          const { size } = fs.statSync(auditPath);
+          // Open first and size the open file, rather than stat a path and then
+          // open whatever is at it: a rotation between the two read the new
+          // file at the old file's offset (CodeQL js/file-system-race).
+          fd = fs.openSync(auditPath, 'r');
+          const { size } = fs.fstatSync(fd);
           // First sight of this file: start at its end, so opening the control
           // plane does not replay months of history. Record the offset even when
           // there is nothing to read — otherwise an empty log is treated as
@@ -2280,19 +2300,27 @@ export class ControlPlane {
             if (size < from) this.auditOffsets.set(auditPath, 0);
             continue;
           }
-          const fd = fs.openSync(auditPath, 'r');
           const buffer = Buffer.alloc(size - from);
-          fs.readSync(fd, buffer, 0, buffer.length, from);
-          fs.closeSync(fd);
-          this.auditOffsets.set(auditPath, size);
+          // Only what was actually read: a short read left zero bytes on the
+          // end of the buffer, which then reached JSON.parse as a line.
+          const read = fs.readSync(fd, buffer, 0, buffer.length, from);
+          // And only up to the last complete line. The offset used to move past
+          // a line the engine was still writing, so its first half failed to
+          // parse now and its second half later — the entry was lost, whatever
+          // the comment below had promised.
+          const complete = buffer.subarray(0, read).lastIndexOf(0x0a) + 1;
+          this.auditOffsets.set(auditPath, from + complete);
 
-          for (const line of buffer.toString('utf8').split('\n')) {
+          for (const line of buffer.subarray(0, complete).toString('utf8').split('\n')) {
             if (!line.trim()) continue;
             try {
               this.#record({ ...JSON.parse(line), source: 'audit' });
-            } catch { /* partial line, it will come round again */ }
+            } catch { /* a malformed line is skipped, not retried */ }
           }
         } catch { /* file not created yet */ }
+        finally {
+          if (fd !== null) fs.closeSync(fd);
+        }
       }
     };
 
