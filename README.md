@@ -746,6 +746,7 @@ SSH_SERVER_[NAME]_PLATFORM=windows  # Optional: "linux" (default) or "windows"
 SSH_SERVER_[NAME]_PROXYJUMP=bastion  # Optional: name of another server to use as jump host
 SSH_SERVER_[NAME]_PROXYCOMMAND=command  # Optional: custom proxy command (ncat, ssh -W, etc.)
 SSH_SERVER_[NAME]_FORWARD_AGENT=true  # Optional: forward local ssh-agent to remote (needs SSH_AUTH_SOCK; security risk — see SSH Agent section)
+SSH_SERVER_[NAME]_ANNOUNCE_AGENT=false # Optional: stop sending AI_AGENT=mcp-ssh-manager to this host (default: true)
 
 # Example: Linux server
 SSH_SERVER_PRODUCTION_HOST=prod.example.com
@@ -894,6 +895,37 @@ forward_agent = true
 ```
 
 > ⚠️ **Security warning:** agent forwarding lets any process that can read the forwarded agent socket on the remote host — including anyone with **root** there — use your loaded keys to impersonate you against other hosts *for the life of the connection*. Only enable it for servers you trust, mirroring the same caution `ssh_config(5)` advises for `ForwardAgent`.
+
+### 🏷️ Announcing the agent to the host
+
+Every command channel this tool opens sends `AI_AGENT=mcp-ssh-manager`, following the [AI_AGENT over SSH convention](https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md). An operator reading their own server logs can then tell a session driven by an AI assistant from one driven by a person — including when both use the same key, which is the case the SSH protocol itself cannot distinguish.
+
+`ssh_sync` is the exception: it runs rsync over the system `ssh` binary rather than the ssh2 library, so it does not announce.
+
+The variable only appears in the session on a host whose `sshd_config` accepts it:
+
+```
+AcceptEnv AI_AGENT
+```
+
+Without that line the server discards the value and the session is unchanged. The request is sent without asking for a reply, so an unconfigured host cannot fail a command because of it.
+
+It is **on by default** and opts out per server:
+
+`.env` format:
+```env
+SSH_SERVER_MYSERVER_ANNOUNCE_AGENT=false
+```
+
+TOML format:
+```toml
+[ssh_servers.myserver]
+announce_agent = false
+```
+
+> ⚠️ `AcceptEnv` governs what the server *stores*, not what the client *sends* — the request reaches every host either way. Announcing is therefore inert with respect to breakage and not with respect to disclosure: a host you do not control learns that an agent rather than a person is driving. Because this tool feeds command output back into a model, that is a fact a hostile host can act on, so use `announce_agent = false` for hosts you do not trust.
+>
+> SFTP transfers deliberately do not announce. ssh2 requests a reply on that channel, so a server refusing the variable would fail the whole transfer rather than ignore it.
 
 ## 📚 Advanced Usage
 

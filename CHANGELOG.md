@@ -5,6 +5,20 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`AI_AGENT=mcp-ssh-manager` on every ssh2 command channel**, following the AI_AGENT over SSH convention (see the README). `execCommand`, `execCommandStream` and `requestShell` each send it, so `ssh_execute` and every tool routed through it, `ssh_tail --follow`, and `ssh_session_*` are all covered. `ssh_sync` is not: it runs rsync over the system `ssh` binary rather than ssh2, so it would need `-o SetEnv`, not a channel option. An operator reading their own server logs can now tell a session this tool drives from one a person drives — the case SSH itself cannot distinguish, because both present the same key.
+
+  The variable reaches the session only on a host with `AcceptEnv AI_AGENT` in `sshd_config`; elsewhere the server discards it and the session is unchanged. The request is sent without asking for a reply, so an unconfigured host cannot fail a command because of it.
+
+  **The request is still sent to every host.** `AcceptEnv` governs what the server stores, not what the client transmits, so a host you do not control learns that an agent is driving. Since this tool returns command output into a model's context, that is an actionable fact for a hostile host — hence the opt-out below rather than a silent always-on.
+
+- **`announce_agent` / `SSH_SERVER_[NAME]_ANNOUNCE_AGENT` per-server option**, default `true`. Set it to `false` for hosts you do not control. Unlike the other booleans it defaults on, so it is parsed by its own `parseBoolDefaultTrue` helper and only the opt-out is written back by `exportToToml` / `exportToEnv` — a round trip must not silently re-enable it.
+
+  SFTP deliberately does not announce: ssh2 requests a reply on that channel, so a server refusing the variable would fail the whole transfer instead of ignoring it. `forwardOut` cannot, as `direct-tcpip` channels have no env request.
+
 ## [3.8.5] - 2026-08-28
 
 ### Security

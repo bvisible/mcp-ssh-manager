@@ -20,6 +20,12 @@ export function isPingAlive(stdout) {
   return normalized.includes('ping');
 }
 
+// The name this tool announces to hosts it drives, following the AI_AGENT
+// over SSH convention: https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md
+// Deliberately unprefixed, unlike the SSH_SERVER_* / MCP_SSH_* settings: a
+// server-side consumer should not have to know which client sent it.
+const AGENT_NAME = 'mcp-ssh-manager';
+
 class SSHManager {
   constructor(config) {
     this.config = config;
@@ -183,6 +189,25 @@ class SSHManager {
     });
   }
 
+  /**
+   * Channel options announcing this tool to the host, or an empty object when
+   * the server opts out with `announceAgent = false`.
+   *
+   * Every channel needs its own copy: `env` is a per-channel request in
+   * RFC 4254 §6.4, not a connection-level setting, so a site that forgets to
+   * call this announces nothing while its siblings do.
+   *
+   * Returns `{}` rather than undefined when opted out, because ssh2's
+   * `exec(cmd, opts, cb)` reads `opts.allowHalfOpen` without guarding
+   * (lib/client.js), so an undefined options object throws at the call.
+   *
+   * @returns {{env?: {AI_AGENT: string}}}
+   */
+  channelEnv() {
+    if (this.config.announceAgent === false) return {};
+    return { env: { AI_AGENT: AGENT_NAME } };
+  }
+
   async execCommand(command, options = {}) {
     if (!this.connected) {
       throw new Error('Not connected to SSH server');
@@ -228,7 +253,7 @@ class SSHManager {
         }, timeout);
       }
 
-      this.client.exec(fullCommand, (err, streamObj) => {
+      this.client.exec(fullCommand, this.channelEnv(), (err, streamObj) => {
         if (err) {
           completed = true;
           if (timeoutId) clearTimeout(timeoutId);
@@ -300,7 +325,7 @@ class SSHManager {
     const fullCommand = cwd ? `cd ${cwd} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
-      this.client.exec(fullCommand, (err, stream) => {
+      this.client.exec(fullCommand, this.channelEnv(), (err, stream) => {
         if (err) {
           reject(err);
           return;
@@ -336,13 +361,28 @@ class SSHManager {
     });
   }
 
+  /**
+   * Open an interactive shell.
+   *
+   * `options` stays the pty/window options and is passed as ssh2's first
+   * argument; the agent announcement goes in the *second*. This is not
+   * cosmetic: ssh2's `shell(wndopts, opts, cb)` reassigns `opts = wndopts`
+   * and drops `wndopts` when the first object carries `env`, so folding the
+   * announcement into `options` would silently discard `term`, `cols`, `rows`
+   * and `modes` and fall back to ssh2's pty defaults. `modes: { ECHO: 0 }`
+   * is load-bearing for the session marker protocol, and losing it would not
+   * fail any test — it would just make interactive sessions misbehave.
+   *
+   * @param {object} [options] pty/window options (term, cols, rows, modes)
+   * @returns {Promise<import('ssh2').ClientChannel>}
+   */
   async requestShell(options = {}) {
     if (!this.connected) {
       throw new Error('Not connected to SSH server');
     }
 
     return new Promise((resolve, reject) => {
-      this.client.shell(options, (err, stream) => {
+      this.client.shell(options, this.channelEnv(), (err, stream) => {
         if (err) {
           reject(err);
           return;
@@ -352,6 +392,15 @@ class SSHManager {
     });
   }
 
+  /**
+   * SFTP deliberately does not announce the agent. ssh2 supports
+   * `sftp(env, cb)`, but unlike exec and shell — which call `reqEnv` with no
+   * callback, so `want_reply` is 0 and an unaccepted name cannot fail — the
+   * sftp path passes a callback and fails the whole session when the server
+   * refuses the request. Most sshd configs ship `AcceptEnv LANG LC_*` only,
+   * so announcing here would break uploads and downloads on the majority of
+   * hosts to gain a label on one channel type. Not worth it.
+   */
   async getSFTP() {
     if (this.sftp) return this.sftp;
 

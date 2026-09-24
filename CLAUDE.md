@@ -190,6 +190,7 @@ SSH_SERVER_[NAME]_PLATFORM=windows         # Optional: "linux" (default) or "win
 SSH_SERVER_[NAME]_PROXYJUMP=bastion        # Optional: name of another server to use as jump host
 SSH_SERVER_[NAME]_PROXYCOMMAND=command      # Optional: custom proxy command (ncat, ssh -W, etc.)
 SSH_SERVER_[NAME]_FORWARD_AGENT=true       # Optional: forward local ssh-agent to remote (needs SSH_AUTH_SOCK; security risk)
+SSH_SERVER_[NAME]_ANNOUNCE_AGENT=false     # Optional: stop sending AI_AGENT=mcp-ssh-manager to this host (default: true)
 ```
 
 ### TOML Format
@@ -208,6 +209,7 @@ platform = "windows"                       # Optional: "linux" (default) or "win
 proxy_jump = "bastion"                     # Optional: name of another server to use as jump host
 proxy_command = "command"                   # Optional: custom proxy command (ncat, ssh -W, etc.)
 forward_agent = true                       # Optional: forward local ssh-agent to remote (needs SSH_AUTH_SOCK; security risk)
+announce_agent = false                     # Optional: stop sending AI_AGENT=mcp-ssh-manager to this host (default: true)
 ```
 
 ## Key Implementation Details
