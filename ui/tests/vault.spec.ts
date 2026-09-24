@@ -1,0 +1,98 @@
+import AxeBuilder from '@axe-core/playwright';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { test, expect, apiUrl } from './fixtures';
+
+test('encrypted recovery can be downloaded, previewed and restored without the CLI', async ({ page, app }) => {
+  await page.goto(app.url);
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  const saved = await page.request.post(apiUrl(app, '/api/servers'), { data: { name: 'recovery_fixture', host: '127.0.0.1', user: 'fixture', password: 'recovery-fixture-only-secret' } });
+  expect(saved.ok()).toBe(true);
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByRole('tab', { name: 'Vault', exact: true }).click();
+  await expect(page.getByText('1 saved server · 1 encrypted secret')).toBeVisible();
+  await page.getByLabel('Backup passphrase', { exact: true }).fill('a long fixture recovery passphrase');
+  await page.getByLabel('Confirm backup passphrase', { exact: true }).fill('not the same passphrase');
+  await expect(page.getByRole('button', { name: 'Download recovery backup' })).toBeDisabled();
+  await page.getByLabel('Confirm backup passphrase', { exact: true }).fill('a long fixture recovery passphrase');
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download recovery backup' }).click();
+  const download = await downloadPromise;
+  const backupPath = path.join(app.home, 'test-recovery.json');
+  await download.saveAs(backupPath);
+  const encrypted = await fs.readFile(backupPath, 'utf8');
+  expect(encrypted).not.toContain('recovery-fixture-only-secret');
+  expect(encrypted).not.toContain('recovery_fixture');
+  await expect(page.getByLabel('Backup passphrase', { exact: true })).toHaveValue('');
+  await page.request.post(apiUrl(app, '/api/servers'), { data: { name: 'recovery_fixture', host: 'modified.invalid' } });
+  await page.getByLabel('Recovery file', { exact: true }).setInputFiles(backupPath);
+  await page.getByLabel('Recovery passphrase', { exact: true }).fill('wrong passphrase');
+  await page.getByRole('button', { name: 'Preview recovery' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm restore' })).toHaveCount(0);
+  await page.getByLabel('Recovery passphrase', { exact: true }).fill('a long fixture recovery passphrase');
+  await page.getByRole('button', { name: 'Preview recovery' }).click();
+  await expect(page.getByText('recovery_fixture — replaces saved server')).toBeVisible();
+  const previewState = await (await page.request.get(apiUrl(app, '/api/servers'))).json();
+  expect(previewState.servers[0].host).toBe('modified.invalid');
+  const accessibility = await new AxeBuilder({ page }).include('[role="tabpanel"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+  expect(accessibility.violations).toEqual([]);
+  await page.getByRole('button', { name: 'Confirm restore' }).click();
+  await expect(page.getByText('Recovery complete. Your restored servers are available in Servers.')).toBeVisible();
+  const restoredState = await (await page.request.get(apiUrl(app, '/api/servers'))).json();
+  expect(restoredState.servers[0]).toMatchObject({ host: '127.0.0.1', hasPassword: true });
+  expect(JSON.stringify(restoredState)).not.toContain('recovery-fixture-only-secret');
+  await expect(page.getByLabel('Recovery passphrase', { exact: true })).toHaveValue('');
+});
+
+test('a large recovery download remains restorable and vault status updates live', async ({ page, app }) => {
+  await page.goto(app.url);
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByRole('tab', { name: 'Vault', exact: true }).click();
+  await expect(page.getByText('0 saved servers · 0 encrypted secrets')).toBeVisible();
+  for (let i = 0; i < 3; i++) {
+    const response = await page.request.post(apiUrl(app, '/api/servers'), { data: { name: `large_${i}`, host: '127.0.0.1', user: 'fixture', password: 'fixture'.repeat(60_000) } });
+    expect(response.ok()).toBe(true);
+  }
+  await expect(page.getByText('3 saved servers · 3 encrypted secrets')).toBeVisible();
+  await page.getByLabel('Backup passphrase', { exact: true }).fill('large fixture passphrase');
+  await page.getByLabel('Confirm backup passphrase', { exact: true }).fill('large fixture passphrase');
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download recovery backup' }).click();
+  const backupPath = path.join(app.home, 'large-recovery.json');
+  await (await downloadPromise).saveAs(backupPath);
+  expect((await fs.stat(backupPath)).size).toBeGreaterThan(1024 * 1024);
+  await page.getByLabel('Recovery file', { exact: true }).setInputFiles(backupPath);
+  await page.getByLabel('Recovery passphrase', { exact: true }).fill('large fixture passphrase');
+  await page.getByRole('button', { name: 'Preview recovery' }).click();
+  await expect(page.getByText('Ready to restore 3 servers')).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm restore' }).click();
+  await expect(page.getByText('Recovery complete. Your restored servers are available in Servers.')).toBeVisible();
+});
+
+test('a corrupted vault after restart still has a complete graphical recovery path', async ({ page, app }) => {
+  await page.goto(app.url);
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  await page.request.post(apiUrl(app, '/api/servers'), { data: { name: 'protected', host: '127.0.0.1', user: 'fixture', password: 'fixture-secret', approval: 'always' } });
+  const backup = await (await page.request.post(apiUrl(app, '/api/vault/backup'), { data: { passphrase: 'fixture recovery phrase' } })).json();
+  const backupPath = path.join(app.home, 'recovery.json');
+  await fs.writeFile(backupPath, backup.content);
+  await fs.writeFile(path.join(app.home, 'vault.json'), '{broken fixture');
+  await app.restart();
+  await page.goto(app.url);
+  await expect(page.getByText(/Cannot read the vault/)).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByRole('tab', { name: 'Vault', exact: true }).click();
+  await expect(page.getByText('The vault cannot be unlocked. Restore a recovery backup to recover access.')).toBeVisible();
+  await page.getByLabel('Recovery file', { exact: true }).setInputFiles(backupPath);
+  await page.getByLabel('Recovery passphrase', { exact: true }).fill('fixture recovery phrase');
+  await page.getByRole('button', { name: 'Preview recovery' }).click();
+  await expect(page.getByText('The unreadable vault will be replaced by this backup.')).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm restore' }).click();
+  await expect(page.getByText('Recovery complete. Your restored servers are available in Servers.')).toBeVisible();
+  await page.getByRole('button', { name: 'Servers', exact: true }).click();
+  await expect(page.getByText('protected', { exact: true })).toBeVisible();
+  await expect(page.getByText('Approval: every request', { exact: true })).toBeVisible();
+});

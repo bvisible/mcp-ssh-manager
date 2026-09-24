@@ -1,8 +1,9 @@
 import { Client } from 'ssh2';
 import fs from 'fs';
 import os from 'os';
-import { isHostKnown, addHostKey } from './ssh-key-manager.js';
+import { trustedHostKeyAlgorithms, verifyHostKey } from './ssh-key-manager.js';
 import { logger } from './logger.js';
+import { shellPath } from './shell-quote.js';
 
 // Validate liveness-probe output across shells (bash, cmd.exe, PowerShell).
 // Normalize CRLF, stray quotes/backslashes and case before matching so quoted
@@ -18,6 +19,50 @@ export function isPingAlive(stdout) {
     .trim()
     .toLowerCase();
   return normalized.includes('ping');
+}
+
+// The name this tool announces to hosts it drives, following the AI_AGENT
+// over SSH convention: https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md
+// Deliberately unprefixed, unlike the SSH_SERVER_* / MCP_SSH_* settings: a
+// server-side consumer should not have to know which client sent it.
+const AGENT_NAME = 'mcp-ssh-manager';
+
+/**
+ * Whether connections to this server announce that an AI agent is driving.
+ *
+ * Off unless asked for. Upgrading must not change what reaches a server, and
+ * the request goes to every host whatever its `AcceptEnv` — sshd only declines
+ * to *store* it — so a host the operator does not control would learn that an
+ * agent is on the other end and could shape its output for one. The operators
+ * who benefit are those who configured their servers to record it, and they
+ * are also the ones in a position to flip one switch.
+ *
+ * A per-server value wins in both directions, so one untrusted host can stay
+ * silent under a global switch. Otherwise `SSH_MANAGER_ANNOUNCE_AGENT` decides.
+ *
+ * @param {{announceAgent?: boolean}} [config] - Server configuration
+ * @returns {boolean}
+ */
+function announcesAgent(config) {
+  if (config?.announceAgent === true) return true;
+  if (config?.announceAgent === false) return false;
+  const global = process.env.SSH_MANAGER_ANNOUNCE_AGENT;
+  return typeof global === 'string' && ['true', '1', 'yes', 'on'].includes(global.trim().toLowerCase());
+}
+
+/**
+ * The same announcement for `ssh_sync`, which drives rsync through the system
+ * `ssh` rather than ssh2. `SendEnv` rather than `SetEnv`: it has been in
+ * OpenSSH since 3.9, where `SetEnv` needs 7.8, and a user who opted in on an
+ * older client should get a missing label, not a broken sync.
+ *
+ * @param {{announceAgent?: boolean}} [config] - Server configuration
+ * @returns {{sshOptions: string[], env: Record<string, string>}}
+ */
+export function rsyncAgentAnnouncement(config) {
+  return announcesAgent(config)
+    ? { sshOptions: ['-o SendEnv=AI_AGENT'], env: { AI_AGENT: AGENT_NAME } }
+    : { sshOptions: [], env: {} };
 }
 
 class SSHManager {
@@ -54,7 +99,10 @@ class SSHManager {
         host: this.config.host,
         port: this.config.port || 22,
         username: this.config.user,
-        readyTimeout: 60000, // Increased from 20000 to 60000 for slow connections
+        // 60s suits an agent's command, which is worth waiting for. A health
+        // dashboard is not: it must answer in seconds, so callers can shorten
+        // this per connection.
+        readyTimeout: options.readyTimeout ?? 60000,
         keepaliveInterval: 10000,
         algorithms: {
           kex: [
@@ -107,46 +155,19 @@ class SSHManager {
         }
       };
 
-      // Add host key verification callback if enabled
+      // Verify the key ssh2 received on this connection, never a second
+      // ssh-keyscan connection. First contact remains noninteractive TOFU;
+      // a changed known key is refused before credentials are sent.
       if (this.hostKeyVerification) {
-        connConfig.hostVerifier = () => {
-          const port = this.config.port || 22;
-          const host = this.config.host;
-
-          // Check if host is already known
-          if (isHostKnown(host, port)) {
-            // For now, accept all known hosts
-            // TODO: Implement proper fingerprint comparison once we understand SSH2's hash format
-            logger.info('Host key verified', { host, port });
-            return true;
+        const trusted = trustedHostKeyAlgorithms(this.config.host, this.config.port || 22);
+        if (trusted.length) connConfig.algorithms.serverHostKey = trusted;
+        connConfig.hostVerifier = key => {
+          try {
+            return verifyHostKey(this.config.host, this.config.port || 22, key);
+          } catch (error) {
+            reject(error);
+            return false;
           }
-
-          // Host is not known
-          logger.info('New host detected', { host, port });
-
-          // If autoAcceptHostKey is enabled, accept and add the key
-          if (this.autoAcceptHostKey) {
-            logger.info('Auto-accept host key', { host, port });
-            // Schedule key addition after connection
-            setImmediate(async () => {
-              try {
-                await addHostKey(host, port);
-                logger.info('Host key added', { host, port });
-              } catch (err) {
-                logger.warn('Failed to add host key', {
-                  host,
-                  port,
-                  error: err.message
-                });
-              }
-            });
-            return true;
-          }
-
-          // For backward compatibility, accept new hosts by default
-          // In production, you might want to prompt the user or check a whitelist
-          logger.warn('Auto-accepting new host', { host, port });
-          return true;
         };
       }
 
@@ -183,13 +204,31 @@ class SSHManager {
     });
   }
 
+  /**
+   * Channel options announcing this tool to the host, or an empty object when
+   * this server does not announce — see `announcesAgent()`.
+   *
+   * Every channel needs its own copy: `env` is a per-channel request in
+   * RFC 4254 §6.4, not a connection-level setting, so a site that forgets to
+   * call this announces nothing while its siblings do.
+   *
+   * Returns `{}` rather than undefined when opted out, because ssh2's
+   * `exec(cmd, opts, cb)` reads `opts.allowHalfOpen` without guarding
+   * (lib/client.js), so an undefined options object throws at the call.
+   *
+   * @returns {{env?: {AI_AGENT: string}}}
+   */
+  channelEnv() {
+    return announcesAgent(this.config) ? { env: { AI_AGENT: AGENT_NAME } } : {};
+  }
+
   async execCommand(command, options = {}) {
     if (!this.connected) {
       throw new Error('Not connected to SSH server');
     }
 
-    const { timeout = 30000, cwd, rawCommand = false, stdin = null } = options;
-    const fullCommand = (cwd && !rawCommand) ? `cd ${cwd} && ${command}` : command;
+    const { timeout = 30000, cwd, rawCommand = false, stdin = null, onStdout, onStderr } = options;
+    const fullCommand = (cwd && !rawCommand) ? `cd -- ${shellPath(cwd)} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
       let stdout = '';
@@ -228,7 +267,7 @@ class SSHManager {
         }, timeout);
       }
 
-      this.client.exec(fullCommand, (err, streamObj) => {
+      this.client.exec(fullCommand, this.channelEnv(), (err, streamObj) => {
         if (err) {
           completed = true;
           if (timeoutId) clearTimeout(timeoutId);
@@ -273,11 +312,21 @@ class SSHManager {
         });
 
         stream.on('data', (data) => {
-          stdout += data.toString();
+          const text = data.toString();
+          stdout += text;
+          // Emitted as it arrives, so a watcher sees output during a long
+          // command rather than all at once when it finishes.
+          if (onStdout) {
+            try { onStdout(text); } catch { /* a watcher must never break a command */ }
+          }
         });
 
         stream.stderr.on('data', (data) => {
-          stderr += data.toString();
+          const text = data.toString();
+          stderr += text;
+          if (onStderr) {
+            try { onStderr(text); } catch { /* same */ }
+          }
         });
 
         stream.on('error', (err) => {
@@ -297,10 +346,10 @@ class SSHManager {
     }
 
     const { cwd, onStdout, onStderr } = options;
-    const fullCommand = cwd ? `cd ${cwd} && ${command}` : command;
+    const fullCommand = cwd ? `cd -- ${shellPath(cwd)} && ${command}` : command;
 
     return new Promise((resolve, reject) => {
-      this.client.exec(fullCommand, (err, stream) => {
+      this.client.exec(fullCommand, this.channelEnv(), (err, stream) => {
         if (err) {
           reject(err);
           return;
@@ -336,13 +385,28 @@ class SSHManager {
     });
   }
 
+  /**
+   * Open an interactive shell.
+   *
+   * `options` stays the pty/window options and is passed as ssh2's first
+   * argument; the agent announcement goes in the *second*. This is not
+   * cosmetic: ssh2's `shell(wndopts, opts, cb)` reassigns `opts = wndopts`
+   * and drops `wndopts` when the first object carries `env`, so folding the
+   * announcement into `options` would silently discard `term`, `cols`, `rows`
+   * and `modes` and fall back to ssh2's pty defaults. `modes: { ECHO: 0 }`
+   * is load-bearing for the session marker protocol, and losing it would not
+   * fail any test — it would just make interactive sessions misbehave.
+   *
+   * @param {object} [options] pty/window options (term, cols, rows, modes)
+   * @returns {Promise<import('ssh2').ClientChannel>}
+   */
   async requestShell(options = {}) {
     if (!this.connected) {
       throw new Error('Not connected to SSH server');
     }
 
     return new Promise((resolve, reject) => {
-      this.client.shell(options, (err, stream) => {
+      this.client.shell(options, this.channelEnv(), (err, stream) => {
         if (err) {
           reject(err);
           return;
@@ -352,6 +416,15 @@ class SSHManager {
     });
   }
 
+  /**
+   * SFTP deliberately does not announce the agent. ssh2 supports
+   * `sftp(env, cb)`, but unlike exec and shell — which call `reqEnv` with no
+   * callback, so `want_reply` is 0 and an unaccepted name cannot fail — the
+   * sftp path passes a callback and fails the whole session when the server
+   * refuses the request. Most sshd configs ship `AcceptEnv LANG LC_*` only,
+   * so announcing here would break uploads and downloads on the majority of
+   * hosts to gain a label on one channel type. Not worth it.
+   */
   async getSFTP() {
     if (this.sftp) return this.sftp;
 

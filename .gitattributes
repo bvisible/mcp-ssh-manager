@@ -1,0 +1,5 @@
+# The committed browser build must reproduce on Windows as well as Unix.
+# Mixed CRLF input and LF Vite injections otherwise change index.html.
+ui/** text=auto eol=lf
+dist/ui/** text=auto eol=lf
+*.woff2 -text

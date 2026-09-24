@@ -1,0 +1,82 @@
+/**
+ * Assemble what the packaged app actually needs from the engine.
+ *
+ * Pointing electron-builder straight at the repository's `node_modules` looked
+ * simpler and put 55 MB of eslint, acorn, ajv and a Rust resolver binary inside
+ * the application — devDependencies have no business shipping to a user.
+ * `npm install --omit=dev` against a copied package.json is the only reliable
+ * way to get the production tree, since the two are intertwined on disk.
+ *
+ * Run by `npm run build:*` before electron-builder.
+ */
+import { execFileSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repo = path.join(here, '..', '..');
+const out = path.join(here, 'engine');
+
+fs.rmSync(out, { recursive: true, force: true });
+fs.mkdirSync(out, { recursive: true });
+
+// The interface has to exist: without it the app starts and shows the
+// "not built" fallback, which would be a strange thing to ship.
+const ui = path.join(repo, 'dist', 'ui', 'index.html');
+if (!fs.existsSync(ui)) {
+  console.error('dist/ui is missing — run `npm run build:ui` from the repository root first.');
+  process.exit(1);
+}
+
+for (const entry of ['src', 'cli', 'skills']) {
+  const from = path.join(repo, entry);
+  if (fs.existsSync(from)) fs.cpSync(from, path.join(out, entry), { recursive: true });
+}
+fs.cpSync(path.join(repo, 'dist', 'ui'), path.join(out, 'dist', 'ui'), { recursive: true });
+
+// package.json without the dev half, so `npm install` below resolves only what
+// the engine needs at runtime. The lockfile comes along so the versions match
+// what was tested rather than whatever is newest today.
+const manifest = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
+delete manifest.devDependencies;
+delete manifest.scripts;
+fs.writeFileSync(path.join(out, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+fs.copyFileSync(path.join(repo, 'package-lock.json'), path.join(out, 'package-lock.json'));
+
+console.log('Installing the engine’s production dependencies…');
+
+// Windows has no `npm` — it has `npm.cmd`, and reaching it from here is
+// genuinely awkward. `execFileSync('npm', …)` does not consult PATHEXT and
+// throws ENOENT; naming `npm.cmd` outright then throws EINVAL, because Node
+// has refused to spawn a .bat or .cmd without a shell since the fix for
+// CVE-2024-27980. Both of those failed a real build here.
+//
+// The way out is not to spawn npm at all: `npm_execpath` is npm's own CLI
+// script, set by the `npm run build:*` that got us here, and running it with
+// the Node we are already inside needs no shell and no file extension. The
+// fallback covers someone calling this file directly with `node`.
+const npmCli = process.env.npm_execpath;
+const viaNpmCli = Boolean(npmCli && npmCli.endsWith('.js'));
+const bin = viaNpmCli ? process.execPath : 'npm';
+execFileSync(bin, [...(viaNpmCli ? [npmCli] : []), 'install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'], {
+  cwd: out,
+  stdio: 'inherit',
+  // Only on the fallback path, and only where `npm` means `npm.cmd`. Every
+  // argument above is a literal, so there is nothing for a shell to expand.
+  shell: !viaNpmCli && process.platform === 'win32',
+});
+
+// --ignore-scripts above skips ssh2's optional native build. That is deliberate:
+// those bindings are accelerators, ssh2 falls back to pure JavaScript without
+// them, and building them here would produce a binary for this machine's
+// architecture inside an app that may be cross-built for another.
+// Counted here rather than shelled out to `du`, which does not exist on Windows
+// — the same class of bug as the `npm.cmd` line above, one line further down.
+const bytes = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce(
+  (total, e) => total + (e.isDirectory()
+    ? bytes(path.join(dir, e.name))
+    : fs.statSync(path.join(dir, e.name)).size),
+  0,
+);
+console.log(`Engine ready: ${Math.round(bytes(out) / 1e6)} MB in ${path.relative(repo, out)}`);

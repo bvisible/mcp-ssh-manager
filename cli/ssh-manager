@@ -102,6 +102,28 @@ ${BOLD}COMMANDS:${NC}
         reset       Reset to default (all tools enabled)
         export      Export Claude Code auto-approval config
 
+    ${CYAN}vault${NC}       Encrypted credential store
+        import      Take the servers already in .env / TOML, encrypted
+        list        Show what is stored, without printing a secret
+        add         Add one server interactively
+        remove      Drop one from the vault
+        status      Where the vault and its key live
+        backup      Write a copy encrypted under a passphrase
+        restore     Read one back
+
+    ${CYAN}control${NC}     Run the control plane — watch what your agents do,
+                and decide on commands before they run
+
+    ${CYAN}import${NC}      Bring servers in from somewhere else
+        <file>      A spreadsheet, CSV, ~/.ssh/config, FileZilla, PuTTY,
+                    Termius or MobaXterm export — the format is detected
+        --from      Read where a tool keeps its own list:
+                    ssh-config · filezilla · transmit
+        --template  Write a spreadsheet to fill in and import back
+
+    ${CYAN}export${NC}      Write your servers out as .xlsx, .csv, .env or .toml
+                (never with passwords)
+
 ${BOLD}OPTIONS:${NC}
     -h, --help      Show this help message
     -v, --version   Show version
@@ -126,6 +148,9 @@ ${BOLD}EXAMPLES:${NC}
     
     # Monitor server
     ssh-manager monitor prod1 cpu
+    
+    # Watch what your agents are doing
+    ssh-manager control
 
 ${BOLD}CONFIGURATION:${NC}
     Config directory: ${SSH_MANAGER_HOME:-~/.ssh-manager}
@@ -373,6 +398,22 @@ main() {
         tools)
             cmd_tools "$@"
             ;;
+        control)
+            # v4 control plane: approval socket + local page.
+            node "$SCRIPT_DIR/control.js" "$@"
+            ;;
+        import|export)
+            # Bringing servers in from other tools, and taking them out again.
+            # Node, because it writes through the same SecretStore the engine
+            # reads — one code path, so the two cannot disagree.
+            node "$SCRIPT_DIR/portability.js" "$command" "$@"
+            ;;
+        vault)
+            # v4 encrypted credential store. Implemented in Node because it uses
+            # the same SecretStore the MCP server reads from — one code path for
+            # writing and reading, so the CLI and the server can never disagree.
+            node "$SCRIPT_DIR/vault.js" "$@"
+            ;;
         config)
             case "$1" in
                 edit)
@@ -542,6 +583,23 @@ interactive_mode() {
             8)
                 # Help
                 show_help | less
+                ;;
+            9)
+                # The control plane runs in the foreground and holds the approval
+                # socket, so it takes over this terminal until Ctrl-C. Say so
+                # first: a menu entry that appears to hang is a menu entry people
+                # kill and never try again.
+                echo
+                print_info "The control plane runs here until you stop it with Ctrl-C."
+                echo "It opens a local page showing what your agents are doing on"
+                echo "your servers, and lets you approve or refuse a command before"
+                echo "it runs. Closing it puts everything back the way it was."
+                echo
+                read -p "Start it? [Y/n] " start_control
+                case "$start_control" in
+                    n|N) ;;
+                    *) node "$SCRIPT_DIR/control.js" ;;
+                esac
                 ;;
             0|q|Q)
                 print_info "Goodbye!"

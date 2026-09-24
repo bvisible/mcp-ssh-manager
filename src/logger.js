@@ -81,8 +81,12 @@ class Logger {
     // Log file path
     this.logFile = process.env.SSH_LOG_FILE || path.join(__dirname, '..', '.ssh-manager.log');
 
-    // Command history file
-    this.historyFile = path.join(__dirname, '..', '.ssh-command-history.json');
+    // Command history file. Overridable for the same reason the log is: a host
+    // that runs the engine from somewhere it must not write — inside a signed
+    // application bundle, where one added file breaks the seal and macOS then
+    // refuses to launch it — has to be able to say where these go.
+    this.historyFile = process.env.SSH_HISTORY_FILE
+      || path.join(__dirname, '..', '.ssh-command-history.json');
 
     // Initialize command history
     this.commandHistory = this.loadCommandHistory();

@@ -47,7 +47,9 @@ async function runExec(command, options) {
   let execCommand = null;
 
   manager.client = {
-    exec(cmd, cb) {
+    // ssh2's signature is exec(cmd, opts, cb); execCommand always passes the
+    // channel options, so the callback is the third argument.
+    exec(cmd, _opts, cb) {
       execCommand = cmd;
       setImmediate(() => {
         cb(null, stream);

@@ -30,10 +30,13 @@ show_main_menu() {
     echo -e "  ${CYAN}8)${NC} ${INFO} Help & Documentation"
     echo "     View help and examples"
     echo
+    echo -e "  ${CYAN}9)${NC} ${EYES} Control Plane"
+    echo "     Watch what your agents run, and decide before they do"
+    echo
     echo -e "  ${CYAN}0)${NC} Exit"
     echo
     echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -n "Choose an option [0-8]: "
+    echo -n "Choose an option [0-9]: "
 }
 
 # Server management submenu

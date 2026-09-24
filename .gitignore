@@ -38,7 +38,12 @@ coverage/
 .pytest_cache/
 
 # Build
-dist/
+# Note the trailing /* rather than /: git does not descend into an excluded
+# directory, so a plain `dist/` would make the negation below unreachable.
+dist/*
+# The built interface is committed on purpose: `npm install mcp-ssh-manager`
+# must never compile anything, the same bargain as vendor/.
+!dist/ui/
 build/
 *.egg-info/
 
@@ -64,3 +69,24 @@ id_ed25519*
 .ssh-command-history.json
 .server-groups.json
 archived/
+
+# Desktop app build output
+desktop/build/
+
+# The interface builds separately; its tree is not the package tree.
+ui/node_modules/
+
+# Desktop build artefacts: hundreds of MB, rebuilt by `npm run build:mac`.
+desktop/electron/dist/
+desktop/electron/engine/
+desktop/electron/node_modules/
+
+# Screenshot intermediates: regenerate with scripts/capture-screenshots.mjs
+docs/images/.raw/
+
+# Debris from extracting an asar to inspect it
+asar-up/
+
+# Browser verification output
+ui/playwright-report/
+ui/test-results/

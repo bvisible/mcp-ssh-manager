@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "cli/**/*.js",
+    "tests/*.js",
+    "debug/*.js"
+  ],
+  "project": [
+    "src/**/*.js"
+  ],
+  // Browser tooling is installed from ui/package.json, separately from the engine.
+  "ignoreBinaries": [
+    "pip",
+    "python",
+    "playwright"
+  ],
+  // Release fixture tests import desktop tooling, whose dev dependencies are
+  // declared and locked in desktop/electron/package.json, not the npm engine.
+  "ignoreDependencies": ["js-yaml", "app-builder-lib"]
+}

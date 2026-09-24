@@ -6,6 +6,9 @@
 import { randomUUID } from 'node:crypto';
 import net from 'net';
 import { logger } from './logger.js';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 // Map to store active tunnels
 const tunnels = new Map();
@@ -422,6 +425,7 @@ class SSHTunnel {
     }
 
     tunnels.delete(this.id);
+    publishTunnelState();
   }
 
   /**
@@ -488,6 +492,7 @@ export async function createTunnel(serverName, ssh, config) {
 
   try {
     await tunnel.start();
+    publishTunnelState();
 
     logger.info('SSH tunnel created', {
       id: tunnelId,
@@ -498,6 +503,7 @@ export async function createTunnel(serverName, ssh, config) {
     return tunnel;
   } catch (error) {
     tunnels.delete(tunnelId);
+    publishTunnelState();
     throw error;
   }
 }
@@ -505,6 +511,79 @@ export async function createTunnel(serverName, ssh, config) {
 /**
  * List all active tunnels
  */
+/**
+ * Where the open-tunnel state is published for other processes to read.
+ * @returns {string} Absolute path
+ */
+export function tunnelStatePath() {
+  const home = process.env.SSH_MANAGER_HOME || path.join(os.homedir(), '.ssh-manager');
+  return path.join(home, 'tunnels.json');
+}
+
+/**
+ * Publish the open tunnels to a file so another process — the control plane —
+ * can see them.
+ *
+ * Tunnels live in a Map inside whichever process opened them, which is fine
+ * until something else wants to display them. The file carries this process's
+ * pid, because a stale file left by a crashed engine would otherwise show
+ * tunnels that no longer exist: a reader checks the pid is alive before
+ * believing the contents.
+ *
+ * Failures are swallowed. Publishing state is a convenience; it must never take
+ * down a tunnel that is working.
+ */
+function publishTunnelState() {
+  const statePath = tunnelStatePath();
+  try {
+    const open = [];
+    for (const [, tunnel] of tunnels.entries()) {
+      if (tunnel.state !== TUNNEL_STATES.CLOSED) open.push(tunnel.getInfo());
+    }
+
+    if (open.length === 0) {
+      // No tunnels, no file: an empty file and a missing one mean the same
+      // thing, and removing it stops a dead pid lingering on disk.
+      try { fs.unlinkSync(statePath); } catch { /* already gone */ }
+      return;
+    }
+
+    fs.mkdirSync(path.dirname(statePath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(
+      statePath,
+      `${JSON.stringify({ pid: process.pid, updatedAt: new Date().toISOString(), tunnels: open }, null, 2)}\n`,
+      { mode: 0o600 }
+    );
+  } catch (error) {
+    logger.debug('Could not publish tunnel state', { error: error.message });
+  }
+}
+
+/**
+ * Read tunnels published by the engine process.
+ *
+ * Returns an empty list when the file is missing, unreadable, or written by a
+ * process that is no longer running — a stale list is worse than none, because
+ * it would show tunnels an operator believes are open.
+ *
+ * @param {string} [statePath] - File to read
+ * @returns {{tunnels: any[], pid: number|null, stale: boolean}}
+ */
+export function readPublishedTunnels(statePath = tunnelStatePath()) {
+  try {
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    // Signal 0 tests for existence without touching the process.
+    try {
+      process.kill(state.pid, 0);
+    } catch {
+      return { tunnels: [], pid: state.pid ?? null, stale: true };
+    }
+    return { tunnels: state.tunnels || [], pid: state.pid, stale: false };
+  } catch {
+    return { tunnels: [], pid: null, stale: false };
+  }
+}
+
 export function listTunnels(serverName = null) {
   const activeTunnels = [];
 

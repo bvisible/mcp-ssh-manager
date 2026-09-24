@@ -1,0 +1,143 @@
+appId: com.bvisible.ssh-manager
+productName: SSH Manager
+copyright: Copyright © 2026 bvisible
+
+directories:
+  output: dist
+  buildResources: resources
+
+# Only this directory's own files go in the asar. The engine is carried as a
+# resource instead — see extraResources — because ssh2 loads optional native
+# bindings at runtime and those cannot be read from inside an archive.
+files:
+  - main.js
+  - smoke-test.mjs
+  - package.json
+  # The menu-bar glyph is loaded at runtime from __dirname/resources, so it has
+  # to be inside the asar with main.js. `resources` is also buildResources,
+  # which electron-builder excludes by default — leaving the packaged app with
+  # a Tray it cannot give an icon to, and therefore no menu bar item at all.
+  - resources/trayTemplate.png
+  - resources/trayTemplate@2x.png
+  # A shell on *this* machine needs a pseudo-terminal, and allocating one needs
+  # a native module. It lives here rather than in the engine on purpose: the
+  # engine is published on npm and installs on machines with no compiler, while
+  # this is built with a toolchain. node-pty ships N-API prebuilds, so Electron
+  # loads them as they are — nothing is rebuilt.
+  - node_modules/node-pty/lib/**/*
+  - node_modules/node-pty/package.json
+  - node_modules/node-pty/prebuilds/**/*
+  - node_modules/node-pty/build/Release/**/*
+  # Sources, headers and the winpty tree: needed to *build* node-pty, never to
+  # run it.
+  - '!node_modules/node-pty/{src,deps,scripts,third_party,typings}/**'
+
+# The pty binary and its spawn helper are executed, and nothing executes from
+# inside an asar — it is an archive, not a filesystem.
+asarUnpack:
+  - node_modules/node-pty/prebuilds/**
+  - node_modules/node-pty/build/Release/**
+
+# node-pty's tarball ships spawn-helper without its executable bit, and without
+# it every local shell dies on `posix_spawnp failed`. Restored before signing,
+# because a nested Mach-O executable has to be signed as one.
+afterPack: ./after-pack.cjs
+
+extraResources:
+  # Assembled by prepare-engine.mjs, which installs only the production
+  # dependencies — pointing at the repository's node_modules put 55 MB of
+  # eslint and friends inside the application.
+  - from: engine
+    to: engine
+    filter:
+      - '**/*'
+      # node_modules has to be named explicitly. electron-builder's matcher
+      # treats it specially — `**/*` does not reach into it — so without this
+      # line the engine ships as bare source with no dependencies, and the app
+      # dies on launch with "Cannot find package 'dotenv'". 30 MB became 2.2 MB
+      # and nothing said so.
+      - 'node_modules/**/*'
+      - '!**/{test,tests,__tests__,example,examples,docs,doc}/**'
+      - '!**/*.{md,map,ts}'
+      - '!**/.bin/**'
+
+  # node_modules needs its own entry. electron-builder never descends into a
+  # directory called node_modules while copying an extraResource — with or
+  # without a filter — so the engine shipped as bare source and the app died on
+  # launch with "Cannot find package 'dotenv'". Naming the directory as the
+  # *root* of a copy sidesteps the rule, because there is then nothing to
+  # descend into.
+  - from: engine/node_modules
+    to: engine/node_modules
+    filter:
+      - '**/*'
+      - '!**/{test,tests,__tests__,example,examples,docs,doc}/**'
+      - '!**/*.{md,map,ts}'
+      - '!**/.bin/**'
+
+mac:
+  files:
+    - '!node_modules/node-pty/prebuilds/win32-*/**'
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Keychain access is what the vault uses on macOS; without the entitlement the
+  # `security` call fails and the vault silently falls back to a key file.
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # Without a document type, the Dock icon refuses every drop and `open-file`
+  # never fires. `public.item` is "any file or folder": this application does
+  # not open documents, it sends them somewhere, so narrowing by extension
+  # would only make it refuse the files people actually have.
+  fileAssociations:
+    - ext: '*'
+      name: File
+      role: Viewer
+      rank: Alternate
+  extendInfo:
+    NSDownloadsFolderUsageDescription: SSH Manager reads and writes files here when you transfer them to or from a server.
+    NSDocumentsFolderUsageDescription: SSH Manager reads and writes files here when you transfer them to or from a server.
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  files:
+    - '!node_modules/node-pty/prebuilds/darwin-*/**'
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # Uninstalling must not take the vault with it: the servers and their
+  # encrypted credentials live in the user's home, not in the install directory,
+  # and someone reinstalling expects to find them again.
+  deleteAppDataOnUninstall: false
+
+linux:
+  files:
+    - '!node_modules/node-pty/prebuilds/{darwin,win32}-*/**'
+  target:
+    - AppImage
+    - deb
+  category: Development
+  maintainer: bvisible
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# Where the application looks for updates, and where the release workflow puts
+# them. GitHub Releases rather than a server of our own: the repository is
+# already public, the releases already live there, and there is nothing to run
+# or pay for. electron-updater reads latest-mac.yml / latest.yml from the
+# release assets, which electron-builder writes beside the installers.
+publish:
+  provider: github
+  owner: bvisible
+  repo: mcp-ssh-manager

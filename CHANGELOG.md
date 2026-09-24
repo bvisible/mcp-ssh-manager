@@ -5,6 +5,123 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-beta.1] - 2026-09-24
+
+**A preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1). npm keeps serving
+3.8.5 until the stable 4.0.0, so no existing installation receives this.
+
+The control plane: a local application that shows what your agents are doing on
+your servers, and lets you stop them before they do it.
+
+**Upgrading changes nothing on its own** — with one deliberate exception, host
+keys, described first below. With no vault, no approval set and
+nothing running, the engine behaves exactly as 3.8.5 did — verified end to end
+by `scripts/test-upgrade-from-published.mjs`, which installs 3.8.5 from the
+registry, asks it what it sees over MCP, installs this version over the top and
+asks again, then rolls back. Same 37 tool schemas, server fields and unchanged
+`.env` / TOML fixtures; no automatic vault or control plane.
+
+### Behaviour change: host keys are verified
+
+3.8.5 never compared the key a server presented with the one in `known_hosts`;
+it accepted any connection to a known host, and any unknown one. V4 compares it
+on every connection. An unknown host is trusted on first use and its key is
+recorded in `known_hosts`; a **changed** or revoked key is refused before any
+credential is sent. A server rebuilt since its key was recorded is therefore
+refused until the old entry is removed — see
+[the migration guide](docs/MIGRATION.md#the-one-thing-that-behaves-differently-host-keys).
+`SSH_MANAGER_KNOWN_HOSTS` points V4 at a separate file.
+
+### Added
+
+- **Announcing the agent to your servers**, off by default. With
+  `SSH_MANAGER_ANNOUNCE_AGENT=true` (or `ANNOUNCE_AGENT=true` per server),
+  commands, `ssh_tail --follow`, interactive sessions and `ssh_sync` carry
+  `AI_AGENT=mcp-ssh-manager`, following the
+  [AI_AGENT over SSH convention](https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md),
+  so a server that keeps it (`AcceptEnv AI_AGENT`) can tell an agent's sessions
+  from a person's. Actions taken from the control plane are a person's and are
+  never announced. Contributed by @mthamil107 (#84).
+- **The control plane** (`ssh-manager control`, or the desktop app): what an
+  agent is running right now with its output through a terminal emulator, a
+  queue of commands waiting on your decision, a dual-pane file browser, health
+  on demand with thresholds, an interactive shell on any server, saved commands,
+  groups, and the audit trail.
+- **Desktop builds** for macOS, Windows and Linux. The app *is* the control
+  plane rather than a window pointed at one, so it needs neither Node nor the
+  npm package.
+  - A **menu-bar item** carrying a count when something is waiting, listing what
+    is blocked on you, which shells and commands are open, and your servers.
+  - **Native notifications** posted by the application itself, so macOS and
+    Windows show and route them correctly. Destructive requests stay on screen.
+- **An encrypted vault** (AES-256-GCM, key in the OS keychain) for credentials,
+  sitting above your config files and below the process environment. Your `.env`
+  is never modified.
+- **Human approval**, per server: the engine pauses, shows you the machine and
+  the command in full, and waits. Every failure denies.
+- `ssh-manager vault` and `ssh-manager control` in the CLI, and the control
+  plane in the interactive menu.
+
+### Changed
+
+- **Approval can no longer be set from a file or the environment.** It is the
+  switch whose accidental override would disable a requested protection.
+  It lives in the vault and is preserved by connection-setting overrides. This
+  is not isolation from a process with control of the local user account. An existing
+  `SSH_SERVER_*_APPROVAL` is reported loudly on start rather than silently
+  ignored. Never released before this version, so no published behaviour changes.
+- Keychain lookups now time out after five seconds instead of blocking forever
+  on a host with no user session — a server over SSH, a container, a CI runner.
+
+### Fixed
+
+- Vault changes reload without restarting; editing a server keeps omitted
+  credentials, accounts, proxies, restrictions and approval. Process environment
+  overrides cannot erase an existing approval policy.
+- Recovery decrypts every credential before writing, previews replacements, and
+  refuses stale previews. Backup and restore are also available in Options → Vault.
+- SSH host keys are verified during the handshake. Remote MCP tools share one
+  approval/policy boundary; aliases resolve consistently, approvals are requested
+  once, and config changes invalidate old pooled connections. Working directories
+  with spaces or shell metacharacters are quoted.
+- Desktop groups persist in user state rather than inside the signed application.
+  Release metadata is regenerated after notarization/stapling; publishing waits
+  for platform checks. Release candidates use npm `next` without changing stable
+  Homebrew or MCP Registry entries.
+- First-run welcome now has local SVG illustrations, reduced-motion support and
+  keyboard-accessible dialogs. Add/import actions open their forms directly.
+  Server protection and lost control-plane connections are visible. Sidebar,
+  theme, server layout and collapsed groups survive a new local port.
+- `mkdirSync` under an unwritable path could hang indefinitely on Linux, which
+  cost this project's CI a six-hour job before anyone looked.
+- **Quitting the desktop application could hang indefinitely** while an MCP
+  engine was connected to it — which is the normal situation while an agent is
+  using it. Shutdown waited on connections that never end by themselves; it now
+  ends them, and an engine waiting on a decision is still answered `deny` first.
+  Found by the release smoke test, which hung on quit in two launches out of
+  four and now reports the time each stage takes.
+- **Editing a server from the CLI menu always failed** with `Server '' not
+  found`: the menu stored its choice in `selected_server` and the edit wizard
+  read `SELECTED_SERVER`. Also in 3.8.5. Fixed by @TheRealKamisama (#83).
+
+### Security
+
+- hono 4.13.9 (through the MCP SDK), clearing GHSA-gqvv-2mrq-wpjv,
+  GHSA-g6gw-c38x-mqfc and GHSA-crvj-82cr-hjcx. The stdio server never loads it;
+  the desktop build ships it. `npm audit --omit=dev` is clean for the engine,
+  the desktop application and the interface.
+
+### Distribution
+
+- **macOS** (Apple silicon, Intel): signed with a Developer ID and notarized.
+- **Windows** (x64, arm64): **not code-signed in this preview**; Windows warns
+  before running it. Signing is required before the stable release.
+- **Linux** (x64): `.deb` and `.AppImage`, unsigned as Linux packages usually are.
+- An installed preview updates itself: to the next preview, and to 4.0.0 when it
+  ships. Previews are named `beta` for that reason — electron-updater only moves
+  `alpha` and `beta` builds on to a stable release, and an `rc` would have left
+  its testers on it indefinitely.
+
 ## [3.8.5] - 2026-08-28
 
 ### Security
