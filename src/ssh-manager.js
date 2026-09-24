@@ -25,7 +25,7 @@ export function isPingAlive(stdout) {
 // over SSH convention: https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md
 // Deliberately unprefixed, unlike the SSH_SERVER_* / MCP_SSH_* settings: a
 // server-side consumer should not have to know which client sent it.
-export const AGENT_NAME = 'mcp-ssh-manager';
+const AGENT_NAME = 'mcp-ssh-manager';
 
 /**
  * Whether connections to this server announce that an AI agent is driving.
@@ -43,7 +43,7 @@ export const AGENT_NAME = 'mcp-ssh-manager';
  * @param {{announceAgent?: boolean}} [config] - Server configuration
  * @returns {boolean}
  */
-export function announcesAgent(config) {
+function announcesAgent(config) {
   if (config?.announceAgent === true) return true;
   if (config?.announceAgent === false) return false;
   const global = process.env.SSH_MANAGER_ANNOUNCE_AGENT;
