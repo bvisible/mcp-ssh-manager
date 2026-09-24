@@ -94,6 +94,12 @@ refused until the old entry is removed — see
   theme, server layout and collapsed groups survive a new local port.
 - `mkdirSync` under an unwritable path could hang indefinitely on Linux, which
   cost this project's CI a six-hour job before anyone looked.
+- **Quitting the desktop application could hang indefinitely** while an MCP
+  engine was connected to it — which is the normal situation while an agent is
+  using it. Shutdown waited on connections that never end by themselves; it now
+  ends them, and an engine waiting on a decision is still answered `deny` first.
+  Found by the release smoke test, which hung on quit in two launches out of
+  four and now reports the time each stage takes.
 - **Editing a server from the CLI menu always failed** with `Server '' not
   found`: the menu stored its choice in `selected_server` and the edit wizard
   read `SELECTED_SERVER`. Also in 3.8.5. Fixed by @TheRealKamisama (#83).

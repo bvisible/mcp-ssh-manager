@@ -340,6 +340,7 @@ export class ControlPlane {
 
   async #startStreamServer() {
     this.streamServer = await listenForStreams(this.streams);
+    this.#trackConnections(this.streamServer);
 
     // Every command an agent runs passes through here, which is why the log can
     // exist without anything being configured on the servers themselves.
@@ -363,6 +364,20 @@ export class ControlPlane {
   }
 
   /** Stop everything and release the socket. */
+  /** Every socket any of this plane's servers accepted, until it closes. */
+  #connections = new Set();
+
+  /**
+   * Remember each connection a server accepts, so stop() can end it.
+   * @param {import('net').Server | null} server - Any of the three servers
+   */
+  #trackConnections(server) {
+    server?.on('connection', socket => {
+      this.#connections.add(socket);
+      socket.once('close', () => this.#connections.delete(socket));
+    });
+  }
+
   async stop() {
     if (this.auditTimer) clearInterval(this.auditTimer);
     for (const response of this.subscribers) response.end();
@@ -380,11 +395,21 @@ export class ControlPlane {
     for (const id of [...this.terminals.keys()]) this.#disposeTerminal(id);
     for (const name of [...this.sftpPool.keys()]) this.#releaseSftp(name);
 
-    await Promise.all([
+    const closed = Promise.all([
       new Promise(resolve => (this.socketServer ? this.socketServer.close(() => resolve(undefined)) : resolve(undefined))),
       new Promise(resolve => (this.httpServer ? this.httpServer.close(() => resolve(undefined)) : resolve(undefined))),
       new Promise(resolve => (this.streamServer ? this.streamServer.close(() => resolve(undefined)) : resolve(undefined))),
     ]);
+    // close() only stops a server accepting; it then waits for every connection
+    // it already has to end, and some never do on their own. An MCP engine stays
+    // connected to the approval socket for as long as it runs, and a page's
+    // open requests can outlive the page. Either held the desktop application
+    // open indefinitely after Quit — its before-quit handler awaits this — which
+    // is the normal situation while an agent is using it. An engine waiting on
+    // a decision was already answered `deny` above; ending its socket is the
+    // fail-closed path it expects when the control plane goes away.
+    for (const socket of this.#connections) socket.destroy();
+    await closed;
     for (const socket of [this.socketPath, streamSocketPath()]) {
       try { fs.unlinkSync(socket); } catch { /* already gone */ }
     }
@@ -400,6 +425,7 @@ export class ControlPlane {
     fs.mkdirSync(path.dirname(this.socketPath), { recursive: true, mode: 0o700 });
 
     this.socketServer = net.createServer(socket => this.#handleEngineConnection(socket));
+    this.#trackConnections(this.socketServer);
     await new Promise((resolve, reject) => {
       this.socketServer?.once('error', reject);
       this.socketServer?.listen(this.socketPath, () => resolve(undefined));
@@ -478,6 +504,7 @@ export class ControlPlane {
         else if (!res.writableEnded) res.end();
       });
     });
+    this.#trackConnections(this.httpServer);
     await new Promise((resolve, reject) => {
       this.httpServer?.once('error', reject);
       // 127.0.0.1, never 0.0.0.0: this must not be reachable from the network.

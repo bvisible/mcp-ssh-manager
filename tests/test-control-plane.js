@@ -15,6 +15,8 @@ import http from 'http';
 import { ControlPlane } from '../src/control-plane.js';
 import { requestDecision, buildRequest } from '../src/approval.js';
 import { tunnelStatePath } from '../src/tunnel-manager.js';
+import { streamSocketPath } from '../src/live-stream.js';
+import net from 'net';
 
 let passed = 0;
 function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); passed++; }
@@ -253,6 +255,41 @@ async function testShutdownDoesNotStrandTheEngine() {
   const outcome = await enginePromise;
   assert.strictEqual(outcome.decision, 'deny', 'shutdown must refuse anything pending');
   ok('stopping the control plane refuses pending requests instead of stranding them');
+}
+
+/**
+ * Quitting the desktop application awaits stop(), and stop() awaited every
+ * connection its servers had accepted — including ones that never end on their
+ * own. An MCP engine connected to the approval or live-stream socket kept the
+ * application open indefinitely after Quit, which is exactly the situation
+ * while an agent is using it. The packaged app hung on quit in two launches
+ * out of four before this was fixed.
+ */
+async function testStopDoesNotWaitOnOpenConnections() {
+  const { plane, url } = await startPlane();
+  const port = Number(new URL(url).port);
+  const connect = target => new Promise((resolve, reject) => {
+    const socket = net.connect(target);
+    socket.once('connect', () => resolve(socket));
+    socket.once('error', reject);
+  });
+  const approval = await connect(plane.socketPath);   // an engine between requests
+  const stream = await connect(streamSocketPath());    // an engine publishing output
+  const events = await openEventStream(port, plane.token, 0, 50); // a page, stream still open
+
+  const started = Date.now();
+  const outcome = await Promise.race([
+    plane.stop().then(() => 'returned'),
+    new Promise(resolve => setTimeout(() => resolve('still waiting'), 3000)),
+  ]);
+  const elapsed = Date.now() - started;
+  // Disconnect before asserting: if stop() is stuck, this is what lets it
+  // finish, so a regression fails here in three seconds instead of hanging
+  // the whole suite on the cleanup's second stop().
+  for (const socket of [approval, stream]) socket.destroy();
+  events.close();
+  assert.strictEqual(outcome, 'returned', 'stop() must not wait on connections that never end by themselves');
+  ok(`stop() returns with engines connected to both sockets and a page listening (${elapsed} ms)`);
 }
 
 async function testAuditTailFeedsTheTimeline() {
@@ -588,6 +625,7 @@ async function main() {
     await testApproval();
     await testDecidingTwiceIsRefused();
     await testShutdownDoesNotStrandTheEngine();
+    await testStopDoesNotWaitOnOpenConnections();
     await testAuditTailFeedsTheTimeline();
     await testUiIsServedWithoutExternalResources();
     await testServerManagement();
