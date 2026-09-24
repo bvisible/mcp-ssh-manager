@@ -35,7 +35,7 @@ import { resolveConfigOptions } from './config-paths.js';
  * @property {string} [proxyJump] Name of another configured server to jump through.
  * @property {string} [proxyCommand] Custom proxy command (`%h` / `%p` placeholders).
  * @property {boolean} [forwardAgent] Forward the local ssh-agent to this server.
- * @property {boolean} [announceAgent] Send AI_AGENT=mcp-ssh-manager on each channel. Default true; set false for a host you do not control.
+ * @property {boolean} [announceAgent] Send AI_AGENT=mcp-ssh-manager on each command channel. Unset defers to SSH_MANAGER_ANNOUNCE_AGENT (off by default); false keeps a host silent even when that is on.
  * @property {string} [mode] Security mode: `unrestricted`, `readonly` or `restricted`.
  * @property {string} [approval] Human approval mode: `never`, `destructive` or `always`.
  * @property {string[]} [allowPatterns] Regex sources allowed in `restricted` mode.
@@ -80,14 +80,16 @@ function parseBool(raw) {
   return ['true', '1', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
-// The mirror of parseBool for a flag that is on unless it is turned off.
-// Only an explicit "false"/"0"/"no"/"off" (or a native false) disables it, so
-// an unset or malformed value keeps the documented default rather than
-// silently opting the server out.
-function parseBoolDefaultTrue(raw) {
-  if (raw === false) return false;
-  if (typeof raw !== 'string') return true;
-  return !['false', '0', 'no', 'off'].includes(raw.trim().toLowerCase());
+// Three states rather than two. An unset value has to stay unset, so that a
+// global switch can still decide; only an explicit value is a per-server
+// decision. A malformed value is treated as unset, never as a choice.
+function parseOptionalBool(raw) {
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const value = raw.trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(value)) return true;
+  if (['false', '0', 'no', 'off'].includes(value)) return false;
+  return undefined;
 }
 
 export class ConfigLoader {
@@ -272,7 +274,7 @@ export class ConfigLoader {
           proxyJump: serverConfig.proxy_jump,
           proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
           forwardAgent: parseBool(serverConfig.forward_agent),
-          announceAgent: parseBoolDefaultTrue(serverConfig.announce_agent),
+          announceAgent: parseOptionalBool(serverConfig.announce_agent),
           mode,
           // approval is deliberately NOT read here — see loadEnvConfig below.
 
@@ -348,7 +350,7 @@ export class ConfigLoader {
           proxyJump: env[`SSH_SERVER_${match[1]}_PROXYJUMP`],
           proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
           forwardAgent: parseBool(env[`SSH_SERVER_${match[1]}_FORWARD_AGENT`]),
-          announceAgent: parseBoolDefaultTrue(env[`SSH_SERVER_${match[1]}_ANNOUNCE_AGENT`]),
+          announceAgent: parseOptionalBool(env[`SSH_SERVER_${match[1]}_ANNOUNCE_AGENT`]),
           mode,
           // approval is deliberately NOT read from files. It is the switch
           // that makes an agent stop and wait for a human, and a switch that
@@ -432,8 +434,9 @@ export class ConfigLoader {
       if (server.proxyCommand) serverConfig.proxy_command = server.proxyCommand;
       // Only emit when opted in, so generated TOML stays clean by default.
       if (server.forwardAgent) serverConfig.forward_agent = true;
-      // Inverted: the default is true, so only the opt-out is worth writing.
-      if (server.announceAgent === false) serverConfig.announce_agent = false;
+      // Either explicit value is a decision worth keeping; unset is not written,
+      // so the global switch still applies after a round trip.
+      if (typeof server.announceAgent === 'boolean') serverConfig.announce_agent = server.announceAgent;
       // Only emit security fields if they diverge from defaults — keeps generated
       // TOML files clean for users who never opted in.
       if (server.mode && server.mode !== 'unrestricted') serverConfig.mode = server.mode;
@@ -475,10 +478,9 @@ export class ConfigLoader {
       // truncated at the first ` #` when the generated file is read back.
       if (server.group) lines.push(`SSH_SERVER_${upperName}_GROUP="${server.group}"`);
       if (server.platform) lines.push(`SSH_SERVER_${upperName}_PLATFORM=${server.platform}`);
-      // Written only when opted out. The default is true, so an absent line
-      // means "announce"; skipping the false would silently re-enable it on
-      // the next round trip.
-      if (server.announceAgent === false) lines.push(`SSH_SERVER_${upperName}_ANNOUNCE_AGENT=false`);
+      // Written whenever it was set, true or false: an explicit false has to
+      // survive a round trip, or a global switch would re-enable that host.
+      if (typeof server.announceAgent === 'boolean') lines.push(`SSH_SERVER_${upperName}_ANNOUNCE_AGENT=${server.announceAgent}`);
       if (server.proxyJump) lines.push(`SSH_SERVER_${upperName}_PROXYJUMP=${server.proxyJump}`);
       if (server.proxyCommand) lines.push(`SSH_SERVER_${upperName}_PROXYCOMMAND=${server.proxyCommand}`);
       // Security fields — only emit when non-default to avoid clutter in

@@ -3,7 +3,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import SSHManager from './ssh-manager.js';
+import SSHManager, { rsyncAgentAnnouncement } from './ssh-manager.js';
 import { connectSSH, connectServer } from './ssh-connection.js';
 import * as dotenv from 'dotenv';
 import fs from 'fs';
@@ -1019,6 +1019,11 @@ registerToolConditional(
 
       // port is a number (ConfigLoader parseInt's it), so comparing against the
       // string '22' never matched and every server got an explicit -p 22.
+      // Announce the agent to this host when asked to, as the ssh2 channels
+      // do; see rsyncAgentAnnouncement() for why this is SendEnv.
+      const agentAnnouncement = rsyncAgentAnnouncement(serverConfig);
+      sshOptions.push(...agentAnnouncement.sshOptions);
+
       if (serverConfig.port && serverConfig.port !== 22) {
         sshOptions.push(`-p ${serverConfig.port}`);
       }
@@ -1044,7 +1049,7 @@ registerToolConditional(
         // Build command based on authentication method
         let rsyncCommand;
         let rsyncArgs = [];
-        let processEnv = { ...process.env };
+        let processEnv = { ...process.env, ...agentAnnouncement.env };
 
         if (serverConfig.password) {
           // Use sshpass for password authentication

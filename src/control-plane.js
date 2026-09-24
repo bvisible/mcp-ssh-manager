@@ -1124,7 +1124,7 @@ export class ControlPlane {
         if (!config) throw new Error(`${serverName} is not in the vault`);
         let ssh;
         try {
-          ssh = await connectServer(serverName, vault, { readyTimeout: 15000 });
+          ssh = await connectServer(serverName, vault, { readyTimeout: 15000, actor: 'human' });
           const result = await ssh.execCommand(command, { timeout: 120000 });
           done++;
           this.#broadcast({
@@ -1530,7 +1530,7 @@ export class ControlPlane {
       let ssh;
 
       try {
-        ssh = await connectServer(name, servers, { readyTimeout: 15000 });
+        ssh = await connectServer(name, servers, { readyTimeout: 15000, actor: 'human' });
         const stream = await new Promise((resolve, reject) => {
           ssh.client.shell(
             { term: 'xterm-256color', cols, rows },
@@ -1906,7 +1906,7 @@ export class ControlPlane {
 
       let ssh;
       try {
-        ssh = await connectServer(name, servers, { readyTimeout: 15000 });
+        ssh = await connectServer(name, servers, { readyTimeout: 15000, actor: 'human' });
         const result = await ssh.execCommand(command, { timeout: 60000 });
         logger.info('Command run from the control plane', { server: name });
         return this.#json(res, 200, { stdout: result.stdout, stderr: result.stderr, code: result.code });
@@ -1941,7 +1941,7 @@ export class ControlPlane {
     const servers = this.store.getAllDecrypted();
     if (!servers[name]) throw Object.assign(new Error('No such server in the vault'), { status: 404 });
 
-    const ssh = await connectServer(name, servers, { readyTimeout: 15000 });
+    const ssh = await connectServer(name, servers, { readyTimeout: 15000, actor: 'human' });
     let sftp;
     try { sftp = await ssh.getSFTP(); } catch (error) { ssh.dispose(); throw error; }
     const entry = { ssh, sftp, revision, timer: setTimeout(() => this.#releaseSftp(name), SFTP_IDLE_MS) };
@@ -2198,7 +2198,7 @@ export class ControlPlane {
         // Short, because this is a dashboard: a machine that has not answered
         // in eight seconds is "unreachable" as far as the screen is concerned,
         // and the operator would rather see that than watch a spinner.
-        ssh = await connectServer(serverName, servers, { readyTimeout: 8000 });
+        ssh = await connectServer(serverName, servers, { readyTimeout: 8000, actor: 'human' });
         const result = await ssh.execCommand(buildComprehensiveHealthCheckCommand(), { timeout: 20000 });
         const health = parseComprehensiveHealthCheck(result.stdout);
         // Crossings are computed here rather than in the page: the same answer

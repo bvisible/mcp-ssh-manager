@@ -24,7 +24,10 @@ try {
   ssh.connected = true;
   let sent;
   ssh.client = new EventEmitter();
-  ssh.client.exec = (command, callback) => {
+  // Both of ssh2's signatures: execCommand passes channel options (the
+  // AI_AGENT announcement lives there) as the middle argument.
+  ssh.client.exec = (command, options, callback) => {
+    if (typeof options === 'function') callback = options;
     sent = command;
     const stream = new PassThrough(); stream.stderr = new PassThrough();
     callback(null, stream);

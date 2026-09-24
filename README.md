@@ -452,6 +452,7 @@ SSH_SERVER_[NAME]_PLATFORM=windows           # optional: linux (default) | windo
 SSH_SERVER_[NAME]_PROXYJUMP=bastion          # optional: another server, as jump host
 SSH_SERVER_[NAME]_PROXYCOMMAND=…             # optional: ncat, ssh -W, …
 SSH_SERVER_[NAME]_FORWARD_AGENT=true         # optional, and a real security trade-off
+SSH_SERVER_[NAME]_ANNOUNCE_AGENT=true        # optional: tell this host an AI agent is driving (off by default)
 SSH_SERVER_[NAME]_MODE=readonly              # optional: unrestricted | readonly | restricted
 # Approval is NOT a field here — it is set per server from the control plane and
 # stored in the vault, so that a shell on one of your machines cannot switch off
@@ -523,6 +524,13 @@ SSH_SERVER_WINPROXY_PROXYCOMMAND="C:\Windows\System32\OpenSSH\ssh.exe -W %h:%p u
 **Agent forwarding** (`FORWARD_AGENT=true`, off by default, per server) lets a process on the remote host authenticate to *other* hosts with your local keys — `git clone` over SSH on a server without copying a private key there.
 
 > ⚠️ Anyone who can read the forwarded socket on that host — **root included** — can impersonate you against other hosts for the life of the connection. Only for servers you trust, exactly as `ssh_config(5)` advises.
+
+**Telling your servers an agent is driving** (`ANNOUNCE_AGENT=true` per server, or `SSH_MANAGER_ANNOUNCE_AGENT=true` for all of them; off by default). Every command channel then carries `AI_AGENT=mcp-ssh-manager`, following the [AI_AGENT over SSH convention](https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md), so a host that records it can tell a session an agent drives from one a person drives — SSH cannot otherwise: same key, same user either way. Contributed by [@mthamil107](https://github.com/mthamil107) in [#84](https://github.com/bvisible/mcp-ssh-manager/pull/84).
+
+- **The server has to accept it.** Stock OpenSSH ships `AcceptEnv LANG LC_*` and drops anything else silently. Add `AcceptEnv AI_AGENT` to `sshd_config` and reload; `$AI_AGENT` is then set for every command and shell the agent runs, for a profile, a wrapper or an audit hook to record.
+- **Off by default, for two reasons.** Upgrading must not change what reaches your servers. And the request reaches *every* host whatever its `AcceptEnv` — sshd only declines to store it — so a host you do not control would learn an agent is on the other end, and could shape its output for one. `ANNOUNCE_AGENT=false` keeps one host silent under the global switch.
+- **Covered:** commands, `ssh_tail --follow`, interactive sessions, and `ssh_sync` (via `SendEnv`, supported since OpenSSH 3.9). **Not covered:** SFTP transfers — ssh2 would fail the whole SFTP session on a server that refuses the variable — and port forwards, which have no environment.
+- **A person is never announced.** Everything you do from the control plane — a shell, a file, a health probe, a command across a group — is yours, and reaches the server unlabelled.
 
 **Groups** — tag servers and they become a group, with no extra file to maintain:
 

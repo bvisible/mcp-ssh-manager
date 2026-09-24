@@ -25,7 +25,45 @@ export function isPingAlive(stdout) {
 // over SSH convention: https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md
 // Deliberately unprefixed, unlike the SSH_SERVER_* / MCP_SSH_* settings: a
 // server-side consumer should not have to know which client sent it.
-const AGENT_NAME = 'mcp-ssh-manager';
+export const AGENT_NAME = 'mcp-ssh-manager';
+
+/**
+ * Whether connections to this server announce that an AI agent is driving.
+ *
+ * Off unless asked for. Upgrading must not change what reaches a server, and
+ * the request goes to every host whatever its `AcceptEnv` — sshd only declines
+ * to *store* it — so a host the operator does not control would learn that an
+ * agent is on the other end and could shape its output for one. The operators
+ * who benefit are those who configured their servers to record it, and they
+ * are also the ones in a position to flip one switch.
+ *
+ * A per-server value wins in both directions, so one untrusted host can stay
+ * silent under a global switch. Otherwise `SSH_MANAGER_ANNOUNCE_AGENT` decides.
+ *
+ * @param {{announceAgent?: boolean}} [config] - Server configuration
+ * @returns {boolean}
+ */
+export function announcesAgent(config) {
+  if (config?.announceAgent === true) return true;
+  if (config?.announceAgent === false) return false;
+  const global = process.env.SSH_MANAGER_ANNOUNCE_AGENT;
+  return typeof global === 'string' && ['true', '1', 'yes', 'on'].includes(global.trim().toLowerCase());
+}
+
+/**
+ * The same announcement for `ssh_sync`, which drives rsync through the system
+ * `ssh` rather than ssh2. `SendEnv` rather than `SetEnv`: it has been in
+ * OpenSSH since 3.9, where `SetEnv` needs 7.8, and a user who opted in on an
+ * older client should get a missing label, not a broken sync.
+ *
+ * @param {{announceAgent?: boolean}} [config] - Server configuration
+ * @returns {{sshOptions: string[], env: Record<string, string>}}
+ */
+export function rsyncAgentAnnouncement(config) {
+  return announcesAgent(config)
+    ? { sshOptions: ['-o SendEnv=AI_AGENT'], env: { AI_AGENT: AGENT_NAME } }
+    : { sshOptions: [], env: {} };
+}
 
 class SSHManager {
   constructor(config) {
@@ -168,7 +206,7 @@ class SSHManager {
 
   /**
    * Channel options announcing this tool to the host, or an empty object when
-   * the server opts out with `announceAgent = false`.
+   * this server does not announce — see `announcesAgent()`.
    *
    * Every channel needs its own copy: `env` is a per-channel request in
    * RFC 4254 §6.4, not a connection-level setting, so a site that forgets to
@@ -181,8 +219,7 @@ class SSHManager {
    * @returns {{env?: {AI_AGENT: string}}}
    */
   channelEnv() {
-    if (this.config.announceAgent === false) return {};
-    return { env: { AI_AGENT: AGENT_NAME } };
+    return announcesAgent(this.config) ? { env: { AI_AGENT: AGENT_NAME } } : {};
   }
 
   async execCommand(command, options = {}) {

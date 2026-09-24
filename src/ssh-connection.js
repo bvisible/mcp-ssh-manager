@@ -101,18 +101,40 @@ export async function connectSSH(ssh, servers, { readyTimeout, resolveJump }) {
 }
 
 /**
+ * The configuration a connection is opened with, for the person or the agent
+ * opening it.
+ *
+ * A person is never announced as an agent. The AI_AGENT label exists so that
+ * a server's logs can tell the two apart, and a human click in the control
+ * plane tagged as an agent would be exactly the confusion it is meant to end.
+ * Everything else is the server's own configuration, untouched.
+ *
+ * @param {string} canonical - Resolved server name
+ * @param {Record<string, any>} servers - Loaded configuration
+ * @param {'agent'|'human'} [actor] - Who is driving this connection
+ * @returns {Record<string, any>}
+ */
+export function connectionConfig(canonical, servers, actor) {
+  const config = { ...servers[canonical], name: canonical };
+  if (actor === 'human') config.announceAgent = false;
+  return config;
+}
+
+/**
  * Open an independent connection and own its entire jump chain. Disposing the
  * returned client releases every transport, including partial setup on error.
  * @param {string} name
  * @param {Record<string, any>} servers
- * @param {{ readyTimeout?: number }} [options]
+ * @param {{ readyTimeout?: number, actor?: 'agent'|'human' }} [options] - `actor: 'human'` for
+ *   anything a person started from the control plane
  * @returns {Promise<SSHManager>}
  */
 export async function connectServer(name, servers, options = {}) {
+  const { actor, ...connectOptions } = options;
   const canonical = resolveServerName(name, servers);
   if (!canonical) throw new Error(`Server "${name}" not found`);
   validateProxyChain(canonical, servers);
-  const ssh = new SSHManager({ ...servers[canonical], name: canonical });
+  const ssh = new SSHManager(connectionConfig(canonical, servers, actor));
   const owned = [];
   const dispose = ssh.dispose.bind(ssh);
   ssh.dispose = () => {
@@ -120,7 +142,7 @@ export async function connectServer(name, servers, options = {}) {
     finally { for (const jump of owned.splice(0)) jump.dispose(); }
   };
   try {
-    await connectSSH(ssh, servers, { ...options, resolveJump: async jumpName => {
+    await connectSSH(ssh, servers, { ...connectOptions, resolveJump: async jumpName => {
       const jump = await connectServer(jumpName, servers, options);
       owned.push(jump);
       return jump;

@@ -177,12 +177,13 @@ async function testForwardAgentCoercion() {
   }
 }
 
-// announceAgent is the mirror of forwardAgent: it defaults to TRUE, so the
-// coercion must not follow parseBool's "anything unrecognised is false" rule —
-// that would opt every server out. And because the default is on, only the
-// opt-out is worth exporting: if exportToToml/exportToEnv drop the `false`,
-// a config round trip silently starts announcing again on a host the operator
-// deliberately kept quiet. Both exporters are covered below.
+// announceAgent has THREE states, unlike forwardAgent. Unset must stay unset,
+// because SSH_MANAGER_ANNOUNCE_AGENT decides for every server that did not;
+// only an explicit value is a per-server decision, and both explicit values
+// have to survive an export round trip. Dropping a `false` would let a global
+// switch start announcing to a host the operator deliberately kept quiet;
+// writing an unset value out would turn the global default into per-server
+// configuration nobody chose. Both exporters are covered below.
 async function testAnnounceAgentCoercion() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-mgr-announce-'));
   const envPath = path.join(dir, 'test.env');
@@ -213,25 +214,29 @@ async function testAnnounceAgentCoercion() {
     assert.strictEqual(envs.get('aa_on').announceAgent, true, 'env ANNOUNCE_AGENT=true → true');
     assert.strictEqual(envs.get('aa_off').announceAgent, false, 'env ANNOUNCE_AGENT=false → false');
     assert.strictEqual(envs.get('aa_zero').announceAgent, false, 'env ANNOUNCE_AGENT=0 → false');
-    assert.strictEqual(envs.get('aa_none').announceAgent, true, 'no ANNOUNCE_AGENT → true (default on)');
+    assert.strictEqual(envs.get('aa_none').announceAgent, undefined, 'no ANNOUNCE_AGENT → unset, so the global switch decides');
 
-    // TOML export round trip: the opt-out must survive, the default must not
-    // be written out as though it were a choice.
+    // TOML export round trip: both decisions survive, and an unset server is
+    // not written out as though it had made one.
     const exportedToml = envLoader.exportToToml();
     assert.ok(/announce_agent = false/.test(exportedToml), 'exportToToml emits announce_agent = false for the opted-out server');
-    assert.strictEqual((exportedToml.match(/announce_agent/g) || []).length, 2, 'only the two opted-out servers carry announce_agent');
+    assert.ok(/announce_agent = true/.test(exportedToml), 'exportToToml emits announce_agent = true for the opted-in server');
+    assert.strictEqual((exportedToml.match(/announce_agent/g) || []).length, 3, 'only the three servers that chose carry announce_agent');
     scrub();
     const tomlRound = path.join(dir, 'roundtrip.toml');
     fs.writeFileSync(tomlRound, exportedToml);
     const reloadedToml = await new ConfigLoader().load({ envPath: path.join(dir, 'absent.env'), tomlPath: tomlRound });
     assert.strictEqual(reloadedToml.get('aa_off').announceAgent, false, 'TOML export→reload keeps announceAgent=false');
     assert.strictEqual(reloadedToml.get('aa_on').announceAgent, true, 'TOML export→reload leaves the opted-in server announcing');
+    assert.strictEqual(reloadedToml.get('aa_none').announceAgent, undefined, 'TOML export→reload leaves the unset server unset');
 
     // .env export round trip: same guarantee through the other exporter.
     const envLoader2 = new ConfigLoader();
     await envLoader2.load({ envPath, tomlPath: path.join(dir, 'absent.toml') });
     const exportedEnv = envLoader2.exportToEnv();
     assert.ok(/SSH_SERVER_AA_OFF_ANNOUNCE_AGENT=false/.test(exportedEnv), 'exportToEnv emits the opt-out');
+    assert.ok(/SSH_SERVER_AA_ON_ANNOUNCE_AGENT=true/.test(exportedEnv), 'exportToEnv emits the opt-in');
+    assert.ok(!/SSH_SERVER_AA_NONE_ANNOUNCE_AGENT/.test(exportedEnv), 'exportToEnv writes nothing for the unset server');
     scrub();
     const envRound = path.join(dir, 'roundtrip.env');
     fs.writeFileSync(envRound, exportedEnv);
@@ -243,8 +248,8 @@ async function testAnnounceAgentCoercion() {
     const toml = await new ConfigLoader().load({ envPath: path.join(dir, 'absent.env'), tomlPath });
     assert.strictEqual(toml.get('aa_toml_off').announceAgent, false, 'TOML announce_agent = false → false');
     assert.strictEqual(toml.get('aa_toml_str').announceAgent, false, 'TOML announce_agent = "false" → false');
-    assert.strictEqual(toml.get('aa_toml_none').announceAgent, true, 'no announce_agent → true (default on)');
-    ok('announceAgent defaults on, coerces "false"/"0" correctly, and its opt-out survives both export round trips');
+    assert.strictEqual(toml.get('aa_toml_none').announceAgent, undefined, 'no announce_agent → unset, so the global switch decides');
+    ok('announceAgent is off unless chosen, coerces "false"/"0" correctly, and both explicit values survive both export round trips');
   } finally {
     scrub();
     fs.rmSync(dir, { recursive: true, force: true });
