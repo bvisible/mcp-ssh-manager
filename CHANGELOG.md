@@ -5,20 +5,43 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] - Unreleased
+## [4.0.0-rc.1] - 2026-09-24
+
+**A preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1). npm keeps serving
+3.8.5 until the stable 4.0.0, so no existing installation receives this.
 
 The control plane: a local application that shows what your agents are doing on
 your servers, and lets you stop them before they do it.
 
-**Upgrading changes nothing on its own.** With no vault, no approval set and
+**Upgrading changes nothing on its own** — with one deliberate exception, host
+keys, described first below. With no vault, no approval set and
 nothing running, the engine behaves exactly as 3.8.5 did — verified end to end
 by `scripts/test-upgrade-from-published.mjs`, which installs 3.8.5 from the
 registry, asks it what it sees over MCP, installs this version over the top and
 asks again, then rolls back. Same 37 tool schemas, server fields and unchanged
 `.env` / TOML fixtures; no automatic vault or control plane.
 
+### Behaviour change: host keys are verified
+
+3.8.5 never compared the key a server presented with the one in `known_hosts`;
+it accepted any connection to a known host, and any unknown one. V4 compares it
+on every connection. An unknown host is trusted on first use and its key is
+recorded in `known_hosts`; a **changed** or revoked key is refused before any
+credential is sent. A server rebuilt since its key was recorded is therefore
+refused until the old entry is removed — see
+[the migration guide](docs/MIGRATION.md#the-one-thing-that-behaves-differently-host-keys).
+`SSH_MANAGER_KNOWN_HOSTS` points V4 at a separate file.
+
 ### Added
 
+- **Announcing the agent to your servers**, off by default. With
+  `SSH_MANAGER_ANNOUNCE_AGENT=true` (or `ANNOUNCE_AGENT=true` per server),
+  commands, `ssh_tail --follow`, interactive sessions and `ssh_sync` carry
+  `AI_AGENT=mcp-ssh-manager`, following the
+  [AI_AGENT over SSH convention](https://github.com/mthamil107/whotyped/blob/main/docs/spec/ai-agent-over-ssh.md),
+  so a server that keeps it (`AcceptEnv AI_AGENT`) can tell an agent's sessions
+  from a person's. Actions taken from the control plane are a person's and are
+  never announced. Contributed by @mthamil107 (#84).
 - **The control plane** (`ssh-manager control`, or the desktop app): what an
   agent is running right now with its output through a terminal emulator, a
   queue of commands waiting on your decision, a dual-pane file browser, health
@@ -71,6 +94,23 @@ asks again, then rolls back. Same 37 tool schemas, server fields and unchanged
   theme, server layout and collapsed groups survive a new local port.
 - `mkdirSync` under an unwritable path could hang indefinitely on Linux, which
   cost this project's CI a six-hour job before anyone looked.
+- **Editing a server from the CLI menu always failed** with `Server '' not
+  found`: the menu stored its choice in `selected_server` and the edit wizard
+  read `SELECTED_SERVER`. Also in 3.8.5. Fixed by @TheRealKamisama (#83).
+
+### Security
+
+- hono 4.13.9 (through the MCP SDK), clearing GHSA-gqvv-2mrq-wpjv,
+  GHSA-g6gw-c38x-mqfc and GHSA-crvj-82cr-hjcx. The stdio server never loads it;
+  the desktop build ships it. `npm audit --omit=dev` is clean for the engine,
+  the desktop application and the interface.
+
+### Distribution
+
+- **macOS** (Apple silicon, Intel): signed with a Developer ID and notarized.
+- **Windows** (x64, arm64): **not code-signed in this preview**; Windows warns
+  before running it. Signing is required before the stable release.
+- **Linux** (x64): `.deb` and `.AppImage`, unsigned as Linux packages usually are.
 
 ## [3.8.5] - 2026-08-28
 

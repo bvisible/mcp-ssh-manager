@@ -12,7 +12,7 @@ fixtures, not your SSH hosts, credentials or keychain.
 
 ```sh
 npm ci
-npm test                        # 44 engine, migration, security, release and preview suites
+npm test                        # 46 engine, migration, security, release and preview suites
 npm run lint
 npm run typecheck
 npx knip
@@ -84,6 +84,17 @@ file that its own restore screen cannot accept.
 - RC: npm `next` and GitHub prerelease; no stable Homebrew/MCP Registry update.
 - Stable: final tested commit/tag, all artifact manifests validated, platform
   checks green and explicit release decision. See [DISTRIBUTION.md](DISTRIBUTION.md).
+
+## Verified locally on 2026-09-24, for 4.0.0-rc.1
+
+On the release-candidate commit, macOS, Node 25.8.2: `npm test` (46 suites),
+lint and JSDoc typecheck pass; the actual registry upgrade/rollback
+(`npm run test:published-upgrade`) passes all eight checks; `npm audit
+--omit=dev` is clean for the engine, desktop shell and interface. The AI_AGENT
+announcement was additionally checked against a real OpenSSH with
+`AcceptEnv AI_AGENT`: absent by default, present on exec, interactive shell and
+ssh+SendEnv once enabled, absent under a per-server `false` and for control-plane
+actions. CI repeats the engine suites on Node 18, 20, 22 and 24.
 
 ## Verified locally on 2026-09-07
 

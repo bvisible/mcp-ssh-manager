@@ -91,3 +91,7 @@ desktop/electron/engine/
 !dist/
 !dist/ui/
 !dist/ui/**
+
+# Internal release-audit records: dated, written for the maintainers, and of no
+# use to a package installed from npm. They stay in the repository.
+docs/AUDIT-*.md
