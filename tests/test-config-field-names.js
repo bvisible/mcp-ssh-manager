@@ -26,6 +26,7 @@ const EXPECTED_CAMEL_FIELDS = {
   proxyJump: 'bastion',
   proxyCommand: 'ncat --proxy 127.0.0.1:1080 %h %p',
   forwardAgent: true,
+  announceAgent: false,
   group: 'production'
 };
 
@@ -68,6 +69,7 @@ async function testEnvFieldNames() {
     'SSH_SERVER_FIELDCHECK_ENV_PROXYCOMMAND=ncat --proxy 127.0.0.1:1080 %h %p',
     'SSH_SERVER_FIELDCHECK_ENV_FORWARD_AGENT=true',
     'SSH_SERVER_FIELDCHECK_ENV_GROUP=production',
+    'SSH_SERVER_FIELDCHECK_ENV_ANNOUNCE_AGENT=false',
     ''
   ].join('\n'));
 
@@ -103,6 +105,7 @@ async function testTomlFieldNames() {
     'proxy_jump = "bastion"',
     'proxy_command = "ncat --proxy 127.0.0.1:1080 %h %p"',
     'forward_agent = true',
+    'announce_agent = false',
     'group = "production"',
     ''
   ].join('\n'));
@@ -174,6 +177,80 @@ async function testForwardAgentCoercion() {
   }
 }
 
+// announceAgent is the mirror of forwardAgent: it defaults to TRUE, so the
+// coercion must not follow parseBool's "anything unrecognised is false" rule —
+// that would opt every server out. And because the default is on, only the
+// opt-out is worth exporting: if exportToToml/exportToEnv drop the `false`,
+// a config round trip silently starts announcing again on a host the operator
+// deliberately kept quiet. Both exporters are covered below.
+async function testAnnounceAgentCoercion() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-mgr-announce-'));
+  const envPath = path.join(dir, 'test.env');
+  fs.writeFileSync(envPath, [
+    'SSH_SERVER_AA_ON_HOST=h', 'SSH_SERVER_AA_ON_USER=u', 'SSH_SERVER_AA_ON_ANNOUNCE_AGENT=true',
+    'SSH_SERVER_AA_OFF_HOST=h', 'SSH_SERVER_AA_OFF_USER=u', 'SSH_SERVER_AA_OFF_ANNOUNCE_AGENT=false',
+    'SSH_SERVER_AA_ZERO_HOST=h', 'SSH_SERVER_AA_ZERO_USER=u', 'SSH_SERVER_AA_ZERO_ANNOUNCE_AGENT=0',
+    'SSH_SERVER_AA_NONE_HOST=h', 'SSH_SERVER_AA_NONE_USER=u',
+    ''
+  ].join('\n'));
+  const tomlPath = path.join(dir, 'config.toml');
+  fs.writeFileSync(tomlPath, [
+    '[ssh_servers.aa_toml_off]', 'host = "h"', 'user = "u"', 'announce_agent = false',
+    '[ssh_servers.aa_toml_str]', 'host = "h"', 'user = "u"', 'announce_agent = "false"',
+    '[ssh_servers.aa_toml_none]', 'host = "h"', 'user = "u"',
+    ''
+  ].join('\n'));
+
+  const scrub = () => {
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith('SSH_SERVER_AA_')) delete process.env[key];
+    }
+  };
+
+  try {
+    const envLoader = new ConfigLoader();
+    const envs = await envLoader.load({ envPath, tomlPath: path.join(dir, 'absent.toml') });
+    assert.strictEqual(envs.get('aa_on').announceAgent, true, 'env ANNOUNCE_AGENT=true → true');
+    assert.strictEqual(envs.get('aa_off').announceAgent, false, 'env ANNOUNCE_AGENT=false → false');
+    assert.strictEqual(envs.get('aa_zero').announceAgent, false, 'env ANNOUNCE_AGENT=0 → false');
+    assert.strictEqual(envs.get('aa_none').announceAgent, true, 'no ANNOUNCE_AGENT → true (default on)');
+
+    // TOML export round trip: the opt-out must survive, the default must not
+    // be written out as though it were a choice.
+    const exportedToml = envLoader.exportToToml();
+    assert.ok(/announce_agent = false/.test(exportedToml), 'exportToToml emits announce_agent = false for the opted-out server');
+    assert.strictEqual((exportedToml.match(/announce_agent/g) || []).length, 2, 'only the two opted-out servers carry announce_agent');
+    scrub();
+    const tomlRound = path.join(dir, 'roundtrip.toml');
+    fs.writeFileSync(tomlRound, exportedToml);
+    const reloadedToml = await new ConfigLoader().load({ envPath: path.join(dir, 'absent.env'), tomlPath: tomlRound });
+    assert.strictEqual(reloadedToml.get('aa_off').announceAgent, false, 'TOML export→reload keeps announceAgent=false');
+    assert.strictEqual(reloadedToml.get('aa_on').announceAgent, true, 'TOML export→reload leaves the opted-in server announcing');
+
+    // .env export round trip: same guarantee through the other exporter.
+    const envLoader2 = new ConfigLoader();
+    await envLoader2.load({ envPath, tomlPath: path.join(dir, 'absent.toml') });
+    const exportedEnv = envLoader2.exportToEnv();
+    assert.ok(/SSH_SERVER_AA_OFF_ANNOUNCE_AGENT=false/.test(exportedEnv), 'exportToEnv emits the opt-out');
+    scrub();
+    const envRound = path.join(dir, 'roundtrip.env');
+    fs.writeFileSync(envRound, exportedEnv);
+    const reloadedEnv = await new ConfigLoader().load({ envPath: envRound, tomlPath: path.join(dir, 'absent.toml') });
+    assert.strictEqual(reloadedEnv.get('aa_off').announceAgent, false, '.env export→reload keeps announceAgent=false');
+    assert.strictEqual(reloadedEnv.get('aa_on').announceAgent, true, '.env export→reload leaves the opted-in server announcing');
+    scrub();
+
+    const toml = await new ConfigLoader().load({ envPath: path.join(dir, 'absent.env'), tomlPath });
+    assert.strictEqual(toml.get('aa_toml_off').announceAgent, false, 'TOML announce_agent = false → false');
+    assert.strictEqual(toml.get('aa_toml_str').announceAgent, false, 'TOML announce_agent = "false" → false');
+    assert.strictEqual(toml.get('aa_toml_none').announceAgent, true, 'no announce_agent → true (default on)');
+    ok('announceAgent defaults on, coerces "false"/"0" correctly, and its opt-out survives both export round trips');
+  } finally {
+    scrub();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // group (issue #55) is free-form text: it can hold spaces and `#`. dotenv stops
 // an unquoted value at the first ` #`, so the .env exporter has to quote it or
 // exporting and re-importing a config silently truncates the group.
@@ -236,6 +313,7 @@ async function main() {
   await testEnvFieldNames();
   await testTomlFieldNames();
   await testForwardAgentCoercion();
+  await testAnnounceAgentCoercion();
   await testGroupExportRoundTrip();
   testNoStaleAccessInSource();
   console.log(`\n✅ config field name tests passed (${passed} checks)`);
