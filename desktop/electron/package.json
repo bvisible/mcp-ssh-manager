@@ -1,7 +1,7 @@
 {
   "name": "ssh-manager-desktop",
   "productName": "SSH Manager",
-  "version": "4.0.0-rc.1",
+  "version": "4.0.0-beta.1",
   "private": true,
   "description": "The SSH Manager control plane as a desktop application",
   "main": "main.js",

@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Exact existing version tag (v4.0.0 or v4.0.0-rc.1).'
+        description: 'Exact existing version tag (v4.0.0 or v4.0.0-beta.1).'
         required: true
 permissions:
   contents: read

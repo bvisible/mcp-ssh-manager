@@ -20,7 +20,7 @@
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/V4-preview_4.0.0--rc.1-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1)
+[![Version](https://img.shields.io/badge/V4-preview_4.0.0--beta.1-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -52,9 +52,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application — V4 preview (`4.0.0-rc.1`):** one installation with its
+**Desktop application — V4 preview (`4.0.0-beta.1`):** one installation with its
 own runtime, terminal, file browser and server settings. No separate Node.js or
-npm installation. [Download the preview](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1):
+npm installation. [Download the preview](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -154,7 +154,7 @@ No syntax to learn. Your assistant already knows how to use the 37 tools; you ta
 
 ## Watch over its shoulder — the control plane
 
-> **V4 preview — [`4.0.0-rc.1`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1), on GitHub only.** The application is opt-in: with no vault and no approval enabled, the engine keeps working headlessly, exactly as 3.8.5. See the [migration guide](docs/MIGRATION.md) for host-key verification and recovery behaviour.
+> **V4 preview — [`4.0.0-beta.1`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1), on GitHub only.** The application is opt-in: with no vault and no approval enabled, the engine keeps working headlessly, exactly as 3.8.5. See the [migration guide](docs/MIGRATION.md) for host-key verification and recovery behaviour.
 
 ```bash
 ssh-manager control          # prints a local URL — or open the desktop app
@@ -624,7 +624,7 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 
 ## What's new
 
-**V4 preview — [`4.0.0-rc.1`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1).** The control plane: see what an agent is running on your servers, with its output, and stop it before it runs. A desktop application for macOS, Windows and Linux; an encrypted vault for credentials; human approval per server; a shell on your own machine alongside the remote ones. Everything new is opt-in — an npm install upgraded from 3.8.5 keeps behaving as 3.8.5, which [a test installs from the registry and proves](docs/TESTING-V4.md). Published on GitHub only while it is a preview; [what changes and how to go back](docs/MIGRATION.md).
+**V4 preview — [`4.0.0-beta.1`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1).** The control plane: see what an agent is running on your servers, with its output, and stop it before it runs. A desktop application for macOS, Windows and Linux; an encrypted vault for credentials; human approval per server; a shell on your own machine alongside the remote ones. Everything new is opt-in — an npm install upgraded from 3.8.5 keeps behaving as 3.8.5, which [a test installs from the registry and proves](docs/TESTING-V4.md). Published on GitHub only while it is a preview; [what changes and how to go back](docs/MIGRATION.md).
 
 **v3.8.5 — a security release.** Three command-injection advisories fixed, one of which defeated `readonly` mode. Upgrade if you use `ssh_backup_*`, `ssh_db_dump`, `ssh_service_status` or `ssh_tail`.
 

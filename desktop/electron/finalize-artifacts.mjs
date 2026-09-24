@@ -13,8 +13,27 @@ const require = createRequire(import.meta.url);
 const artifact = /\.(?:zip|dmg|exe|AppImage|deb|blockmap)$/;
 export const digest = (file, algorithm = 'sha512') => crypto.createHash(algorithm).update(fs.readFileSync(file)).digest(algorithm === 'sha512' ? 'base64' : 'hex');
 
+// The update metadata electron-builder writes for the GitHub provider. It is
+// always the `latest` channel, prerelease or not: app-builder-lib's
+// computeChannelNames() returns the configured channel (default `latest`) for
+// GitHub, because a prerelease is expressed by the GitHub release flag rather
+// than by a channel file. electron-updater follows suit: a prerelease build
+// asks for `<channel>-mac.yml` first and falls back to `latest-mac.yml` on a
+// 404 (GitHubProvider, 6.8.9). Expecting `beta-mac.yml` here refused the files
+// the first real prerelease build produced.
+const UPDATE_METADATA = { darwin: 'latest-mac.yml', win32: 'latest.yml', linux: 'latest-linux.yml' };
+
+// Only these prerelease names can reach the stable release by themselves.
+// electron-updater lets an alpha or beta build take the newest release in the
+// feed, stable included; any other name (`rc`, `next`) is a custom channel
+// that only ever follows its own kind, so everyone who installed an `rc`
+// would stay on it after 4.0.0 shipped, waiting for an `rc` that never comes.
+const DESKTOP_PRERELEASE_CHANNELS = ['alpha', 'beta'];
+
 export async function finalizeArtifacts(dir, version, platform, { rebuildBlockmaps = true, yaml = null } = {}) {
-  const { channel } = releaseVersion(version);
+  const { prerelease, channel } = releaseVersion(version);
+  assert.ok(!prerelease || DESKTOP_PRERELEASE_CHANNELS.includes(channel),
+    `Desktop prereleases must be alpha or beta, not "${channel}": electron-updater never moves any other prerelease on to a stable release`);
   const { load, dump } = yaml || require('js-yaml');
   for (const file of fs.readdirSync(dir).filter(name => artifact.test(name))) {
     const safe = file.replace(/ /g, '-');
@@ -31,8 +50,8 @@ export async function finalizeArtifacts(dir, version, platform, { rebuildBlockma
   }
   const metadataFiles = fs.readdirSync(dir).filter(name => /\.yml$/.test(name) && !name.startsWith('builder-'));
   assert.ok(metadataFiles.length, 'No updater metadata was built');
+  assert.deepEqual(metadataFiles, [UPDATE_METADATA[platform]], `Unexpected update metadata: ${metadataFiles.join(', ')}`);
   for (const file of metadataFiles) {
-    assert.ok(file === `${channel}.yml` || file.startsWith(`${channel}-`), `Unexpected update channel: ${file}`);
     const metadata = load(fs.readFileSync(path.join(dir, file), 'utf8'));
     assert.equal(metadata.version, version, 'Updater metadata version mismatch');
     assert.ok(metadata.files?.length, 'Updater metadata has no files');

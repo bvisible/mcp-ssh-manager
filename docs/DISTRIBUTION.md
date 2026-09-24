@@ -23,8 +23,12 @@ release check.
    `dist/ui`, run browser flows, and exercise an upgrade from the real npm 3.8.5.
 2. Update root/desktop package manifests and lockfiles, plus both version fields
    in `server.json`. `scripts/release-version.mjs` checks their agreement.
-3. For a candidate, use a version such as `4.0.0-rc.1` and its exact `v4.0.0-rc.1`
-   tag. `release.yml` publishes with npm provenance to **next**, creates a draft
+3. For a candidate, use a version such as `4.0.0-beta.1` and its exact
+   `v4.0.0-beta.1` tag. **`alpha` or `beta`, never `rc`**: electron-updater lets
+   an alpha or beta build take the newest release, stable included, but treats
+   any other name as a custom channel that only follows its own kind — everyone
+   who installed an `rc` would stay on it after the stable shipped.
+   `finalize-artifacts.mjs` refuses any other name for a desktop build. `release.yml` publishes with npm provenance to **next**, creates a draft
    prerelease on GitHub, and leaves stable Homebrew and npm `latest` alone.
 4. Run **Release desktop apps** with `publish: false` against the candidate.
    Install the artifacts on clean machines and verify imports, old configuration,

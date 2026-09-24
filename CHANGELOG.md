@@ -5,9 +5,9 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0-rc.1] - 2026-09-24
+## [4.0.0-beta.1] - 2026-09-24
 
-**A preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1). npm keeps serving
+**A preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1). npm keeps serving
 3.8.5 until the stable 4.0.0, so no existing installation receives this.
 
 The control plane: a local application that shows what your agents are doing on
@@ -111,6 +111,10 @@ refused until the old entry is removed — see
 - **Windows** (x64, arm64): **not code-signed in this preview**; Windows warns
   before running it. Signing is required before the stable release.
 - **Linux** (x64): `.deb` and `.AppImage`, unsigned as Linux packages usually are.
+- An installed preview updates itself: to the next preview, and to 4.0.0 when it
+  ships. Previews are named `beta` for that reason — electron-updater only moves
+  `alpha` and `beta` builds on to a stable release, and an `rc` would have left
+  its testers on it indefinitely.
 
 ## [3.8.5] - 2026-08-28
 

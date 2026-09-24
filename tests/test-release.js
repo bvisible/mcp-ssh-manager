@@ -20,11 +20,15 @@ assert.throws(() => releaseVersion('4.0.0-1'), /named prerelease/);
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-release-test-'));
 const yaml = { load: JSON.parse, dump: data => JSON.stringify(data) };
 try {
-  const version = '4.0.0-rc.1';
+  // What electron-builder actually writes for the GitHub provider: the
+  // `latest` channel files, for a prerelease too. The first version of this
+  // test invented `rc-mac.yml`, agreed with a script that expected it, and both
+  // were wrong — the first real prerelease build failed on it.
+  const version = '4.0.0-beta.1';
   for (const [platform, suffixes, feed] of [
-    ['darwin', ['arm64.zip', 'x64.zip', 'arm64.dmg', 'x64.dmg'], 'rc-mac.yml'],
-    ['win32', ['setup.exe'], 'rc.yml'],
-    ['linux', ['x64.AppImage', 'x64.deb'], 'rc-linux.yml'],
+    ['darwin', ['arm64.zip', 'x64.zip', 'arm64.dmg', 'x64.dmg'], 'latest-mac.yml'],
+    ['win32', ['setup.exe'], 'latest.yml'],
+    ['linux', ['x64.AppImage', 'x64.deb'], 'latest-linux.yml'],
   ]) {
     const dir = path.join(scratch, platform);
     fs.mkdirSync(dir);
@@ -48,10 +52,16 @@ try {
   fs.appendFileSync(victim, ' changed after verification');
   assert.throws(() => verifyArtifacts(scratch, version), /Expected values/);
 
+  // A channel-named file is not what the GitHub provider publishes, and an
+  // updater could be pointed at the wrong one.
   const rejected = path.join(scratch, 'wrong-channel');
   fs.mkdirSync(rejected);
-  fs.writeFileSync(path.join(rejected, 'latest.yml'), '{}');
-  await assert.rejects(() => finalizeArtifacts(rejected, version, 'win32', { yaml, rebuildBlockmaps: false }), /Unexpected update channel/);
+  fs.writeFileSync(path.join(rejected, 'beta.yml'), '{}');
+  await assert.rejects(() => finalizeArtifacts(rejected, version, 'win32', { yaml, rebuildBlockmaps: false }), /Unexpected update metadata/);
+
+  // An `rc` desktop build would strand its users: electron-updater only moves
+  // alpha and beta builds on to a stable release.
+  await assert.rejects(() => finalizeArtifacts(rejected, '4.0.0-rc.1', 'win32', { yaml, rebuildBlockmaps: false }), /alpha or beta/);
   console.log('Release channels, exact version tags, final artifact hashes and tamper detection passed.');
 } finally {
   fs.rmSync(scratch, { recursive: true, force: true });

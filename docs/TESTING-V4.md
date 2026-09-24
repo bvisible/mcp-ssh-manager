@@ -85,9 +85,9 @@ file that its own restore screen cannot accept.
 - Stable: final tested commit/tag, all artifact manifests validated, platform
   checks green and explicit release decision. See [DISTRIBUTION.md](DISTRIBUTION.md).
 
-## Verified locally on 2026-09-24, for 4.0.0-rc.1
+## Verified locally on 2026-09-24, for 4.0.0-beta.1
 
-On the release-candidate commit, macOS, Node 25.8.2: `npm test` (46 suites),
+On the preview commit, macOS, Node 25.8.2: `npm test` (46 suites),
 lint and JSDoc typecheck pass; the actual registry upgrade/rollback
 (`npm run test:published-upgrade`) passes all eight checks; `npm audit
 --omit=dev` is clean for the engine, desktop shell and interface. The AI_AGENT

@@ -1,6 +1,6 @@
 # Upgrading from 3.8 to 4.0
 
-**V4 is in preview: [`4.0.0-rc.1`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1), published on GitHub only.** npm
+**V4 is in preview: [`4.0.0-beta.1`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1), published on GitHub only.** npm
 still serves 3.8.5 — `npm install -g mcp-ssh-manager`, `npm update -g` and
 `npx mcp-ssh-manager` all keep giving you 3.8.5 until the stable 4.0.0 is
 released. Nothing reaches an existing installation while this is a preview.
@@ -10,7 +10,7 @@ and approval settings are optional.
 
 ## Trying the preview
 
-**The desktop application:** download it from [the preview release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-rc.1). The
+**The desktop application:** download it from [the preview release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1). The
 macOS build is signed and notarized; the Windows installer is **not code-signed**
 in this preview (Windows warns: *More info → Run anyway*); Linux ships `.deb`
 and `.AppImage`.
@@ -19,7 +19,7 @@ and `.AppImage`.
 nothing global changes, your MCP client keeps using 3.8.5:
 
 ```bash
-npm install --prefix ~/ssh-manager-v4-preview https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-rc.1/mcp-ssh-manager-4.0.0-rc.1.tgz
+npm install --prefix ~/ssh-manager-v4-preview https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.1/mcp-ssh-manager-4.0.0-beta.1.tgz
 ~/ssh-manager-v4-preview/node_modules/.bin/ssh-manager control   # prints a local URL
 ```
 
@@ -35,7 +35,7 @@ claude mcp remove ssh-manager-v4
 **Or replace your global install** with the preview, and go back the same way:
 
 ```bash
-npm install -g https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-rc.1/mcp-ssh-manager-4.0.0-rc.1.tgz
+npm install -g https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.1/mcp-ssh-manager-4.0.0-beta.1.tgz
 npm install -g mcp-ssh-manager@3.8.5      # back to the release
 ```
 
