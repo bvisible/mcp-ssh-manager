@@ -17,7 +17,7 @@
     "build:all": "npm run prepare-engine && electron-builder --mac --win --linux"
   },
   "devDependencies": {
-    "app-builder-lib": "26.15.3",
+    "app-builder-lib": "26.17.0",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "js-yaml": "^4.3.2"

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "cli/**/*.js",
     "tests/*.js",
@@ -8,11 +8,16 @@
   "project": [
     "src/**/*.js"
   ],
-  // Browser tooling is installed from ui/package.json, separately from the engine.
+  // Operating-system tools the code starts through child_process. They come
+  // with OpenSSH, macOS, libsecret or Windows, never from npm, so there is no
+  // package to declare for them.
   "ignoreBinaries": [
     "pip",
-    "python",
-    "playwright"
+    "plutil",
+    "secret-tool",
+    "ssh-keygen",
+    "ssh-keyscan",
+    "wsl.exe"
   ],
   // Release fixture tests import desktop tooling, whose dev dependencies are
   // declared and locked in desktop/electron/package.json, not the npm engine.
