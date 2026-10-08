@@ -52,9 +52,11 @@ const payloads = [
 ];
 const mode = file => fs.statSync(file).mode & 0o777;
 const legacyFile = path.join(ROOT, '.hooks-config.json');
-// Read, not checked then read: the file is rewritten below.
-let legacyBackup = null;
-try { legacyBackup = fs.readFileSync(legacyFile); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+// Read, never checked then used: the file is rewritten below.
+const readOrNull = file => {
+  try { return fs.readFileSync(file); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+};
+const legacyBackup = readOrNull(legacyFile);
 
 // 3.8.5 created an empty hooks/ directory in the package on every start; an
 // old checkout may still have one. rmdir only ever removes it while empty.
@@ -107,7 +109,7 @@ try {
   assert.equal(loadHooksConfig().custom.enabled, true);
   removeHook('custom');
   assert.equal(loadHooksConfig().custom, undefined);
-  assert.equal(fs.existsSync(legacyFile) && !legacyBackup, false, 'nothing written inside the package');
+  assert.deepEqual(readOrNull(legacyFile), legacyBackup, 'nothing written inside the package');
   ok('add, toggle and remove persist in SSH_MANAGER_HOME/hooks.json (0600), not in the package');
 
   toggleHook('on-error', false);
