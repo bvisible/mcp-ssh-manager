@@ -103,7 +103,9 @@ const BUILDERS = [
   { name: 'MongoDBRestore', fn: buildMongoDBRestoreCommand, params: ['user', 'password', 'host', 'port', 'inputPath'] },
   { name: 'MySQLQuery', fn: buildMySQLQueryCommand, params: ['database', 'user', 'password', 'host', 'port'] },
   { name: 'PostgreSQLQuery', fn: buildPostgreSQLQueryCommand, params: ['database', 'user', 'password', 'host', 'port'] },
-  { name: 'MongoDBQuery', fn: buildMongoDBQueryCommand, params: ['database', 'collection', 'user', 'password', 'host', 'port'] },
+  // A filter document, not 'SELECT 1': since 4.0 the builder refuses anything
+  // else, which would skip every payload below instead of testing it.
+  { name: 'MongoDBQuery', fn: buildMongoDBQueryCommand, params: ['database', 'collection', 'user', 'password', 'host', 'port'], extra: { query: '{}' } },
 ];
 
 const ARRAY_PARAMS = new Set(['tables', 'collections']);
@@ -143,7 +145,7 @@ function testInjectionResistance() {
     for (const param of builder.params) {
       for (const makePayload of PAYLOADS) {
         const payload = makePayload(CANARY);
-        const options = benignOptions();
+        const options = { ...benignOptions(), ...builder.extra };
         options[param] = ARRAY_PARAMS.has(param) ? [payload] : payload;
 
         let command;
@@ -175,7 +177,7 @@ function testBenignStillQuoted() {
     buildPostgreSQLListTablesCommand(benignOptions()),
     buildMongoDBListCollectionsCommand(benignOptions()),
     buildMySQLDumpCommand(benignOptions()),
-    buildMongoDBQueryCommand(benignOptions()),
+    buildMongoDBQueryCommand({ ...benignOptions(), query: '{}' }),
   ];
   for (const cmd of spot) {
     assert.ok(typeof cmd === 'string' && cmd.length > 0);

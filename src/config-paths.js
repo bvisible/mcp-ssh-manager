@@ -5,6 +5,16 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 /**
+ * The directory that holds this user's settings and state: SSH_MANAGER_HOME,
+ * or ~/.ssh-manager. Read at call time so a test or a host that sets the
+ * variable after import still gets its own directory.
+ * @returns {string}
+ */
+export function managerHome() {
+  return process.env.SSH_MANAGER_HOME || path.join(os.homedir(), '.ssh-manager');
+}
+
+/**
  * The same .env must be used by the MCP engine, CLI and optional control plane.
  * Keep the published engine's discovery order; SSH_MANAGER_ENV is the CLI's
  * existing explicit override and is accepted when SSH_ENV_PATH is absent.
@@ -16,9 +26,8 @@ export function resolveEnvFilePath({
 } = {}) {
   if (process.env.SSH_ENV_PATH) return process.env.SSH_ENV_PATH;
   if (process.env.SSH_MANAGER_ENV) return process.env.SSH_MANAGER_ENV;
-  const managerHome = process.env.SSH_MANAGER_HOME || path.join(os.homedir(), '.ssh-manager');
   const candidates = [
-    path.join(managerHome, '.env'),
+    path.join(managerHome(), '.env'),
     path.join(process.cwd(), '.env'),
     path.join(os.homedir(), '.env'),
     path.join(projectRoot, '.env'),

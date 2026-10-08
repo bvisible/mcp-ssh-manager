@@ -61,6 +61,11 @@ archived/
 .server-aliases.json
 .ssh-command-history.json
 .server-groups.json
+# Pre-4.0 runtime state from a development checkout: never ship it. A tracked
+# .hooks-config.json once turned on Frappe hooks for every npm user.
+.hooks-config.json
+.command-aliases.json
+.ssh-manager-profile
 
 # Python (only Node.js needed for npm)
 __pycache__/

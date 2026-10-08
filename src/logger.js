@@ -5,10 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { managerHome } from './config-paths.js';
 
 // Log levels
 /**
@@ -78,18 +75,39 @@ class Logger {
     // Enable verbose mode from environment
     this.verbose = process.env.SSH_VERBOSE === 'true';
 
-    // Log file path
-    this.logFile = process.env.SSH_LOG_FILE || path.join(__dirname, '..', '.ssh-manager.log');
-
-    // Command history file. Overridable for the same reason the log is: a host
-    // that runs the engine from somewhere it must not write — inside a signed
-    // application bundle, where one added file breaks the seal and macOS then
-    // refuses to launch it — has to be able to say where these go.
-    this.historyFile = process.env.SSH_HISTORY_FILE
-      || path.join(__dirname, '..', '.ssh-command-history.json');
-
     // Initialize command history
     this.commandHistory = this.loadCommandHistory();
+  }
+
+  /**
+   * Where the log goes. SSH_LOG_FILE wins; otherwise ssh-manager.log in the
+   * manager home, beside the .env. Up to 3.8.5 the default was inside the
+   * installed package: lost on upgrade, readable by every local user, and a
+   * write into the install directory (issue #87). The home is never created
+   * just for a log, so a user who keeps no settings there gets stderr only,
+   * and starting the server leaves a pristine home pristine.
+   * @returns {string|null}
+   */
+  get logFile() {
+    return process.env.SSH_LOG_FILE || this.homeFile('ssh-manager.log');
+  }
+
+  /**
+   * The command history behind ssh_history, under the same rule. Overridable
+   * for the same reason the log is: a host that runs the engine from somewhere
+   * it must not write — inside a signed application bundle, where one added
+   * file breaks the seal and macOS then refuses to launch it — has to be able
+   * to say where these go.
+   * @returns {string|null}
+   */
+  get historyFile() {
+    return process.env.SSH_HISTORY_FILE || this.homeFile('command-history.json');
+  }
+
+  /** @param {string} name */
+  homeFile(name) {
+    const home = managerHome();
+    return fs.existsSync(home) ? path.join(home, name) : null;
   }
 
   /**
@@ -97,8 +115,9 @@ class Logger {
    */
   loadCommandHistory() {
     try {
-      if (fs.existsSync(this.historyFile)) {
-        const data = fs.readFileSync(this.historyFile, 'utf8');
+      const file = this.historyFile;
+      if (file && fs.existsSync(file)) {
+        const data = fs.readFileSync(file, 'utf8');
         return JSON.parse(data);
       }
     } catch (error) {
@@ -128,7 +147,8 @@ class Logger {
     }
 
     try {
-      fs.writeFileSync(this.historyFile, JSON.stringify(this.commandHistory, null, 2));
+      const file = this.historyFile;
+      if (file) fs.writeFileSync(file, JSON.stringify(this.commandHistory, null, 2), { mode: 0o600 });
     } catch (error) {
       // Ignore write errors
     }
@@ -178,9 +198,11 @@ class Logger {
     // Output to stderr for proper MCP logging
     console.error(formatted.console);
 
-    // Also write to file
+    // Also write to file, readable by its owner only: it records the commands
+    // run on remote servers.
     try {
-      fs.appendFileSync(this.logFile, formatted.file + '\n');
+      const file = this.logFile;
+      if (file) fs.appendFileSync(file, formatted.file + '\n', { mode: 0o600 });
     } catch (error) {
       // Ignore file write errors
     }
@@ -302,8 +324,8 @@ class Logger {
   clear() {
     this.commandHistory = [];
     try {
-      fs.writeFileSync(this.historyFile, '[]');
-      fs.writeFileSync(this.logFile, '');
+      if (this.historyFile) fs.writeFileSync(this.historyFile, '[]', { mode: 0o600 });
+      if (this.logFile) fs.writeFileSync(this.logFile, '', { mode: 0o600 });
       this.info('Logs and history cleared');
     } catch (error) {
       this.error('Failed to clear logs', { error: error.message });

@@ -3,15 +3,18 @@
  * Provides shortcuts for frequently used commands
  */
 
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadProfile } from './profile-loader.js';
+import { readUserState, writeUserState } from './user-state.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ALIASES_FILE = path.join(__dirname, '..', '.command-aliases.json');
+// Custom aliases live in the manager home; the package copy is read only as a
+// fallback for a source checkout (see user-state.js, issue #87).
+const ALIASES_NAME = 'command-aliases.json';
+const LEGACY_ALIASES_FILE = path.join(__dirname, '..', '.command-aliases.json');
 
 // Get aliases from the active profile
 let profileAliases = {};
@@ -31,9 +34,9 @@ export function loadCommandAliases() {
     let aliases = { ...profileAliases };
 
     // Merge with custom aliases from file
-    if (fs.existsSync(ALIASES_FILE)) {
-      const data = fs.readFileSync(ALIASES_FILE, 'utf8');
-      aliases = { ...aliases, ...JSON.parse(data) };
+    const state = readUserState(ALIASES_NAME, LEGACY_ALIASES_FILE);
+    if (state) {
+      aliases = { ...aliases, ...JSON.parse(state.text) };
     }
 
     return aliases;
@@ -56,7 +59,7 @@ function saveCommandAliases(aliases) {
       }
     }
 
-    fs.writeFileSync(ALIASES_FILE, JSON.stringify(customAliases, null, 2));
+    writeUserState(ALIASES_NAME, JSON.stringify(customAliases, null, 2));
     return true;
   } catch (error) {
     console.error(`Error saving command aliases: ${error.message}`);

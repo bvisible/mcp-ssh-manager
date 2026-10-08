@@ -31,9 +31,10 @@
       "description": "Run after successful deployment",
       "actions": [
         {
-          "type": "notification",
+          "type": "log",
           "name": "log-deployment",
-          "command": "echo \"[$(date)] Deployment completed to {server}\" >> deployments.log"
+          "file": "deployments.log",
+          "message": "Deployment completed to {server}"
         }
       ]
     },
@@ -42,9 +43,10 @@
       "description": "Run when an error occurs",
       "actions": [
         {
-          "type": "notification",
+          "type": "log",
           "name": "log-error",
-          "command": "echo \"[$(date)] Error on {server}: {error}\" >> errors.log"
+          "file": "errors.log",
+          "message": "Error on {server}: {error}"
         }
       ]
     }

@@ -6,14 +6,19 @@
  *   - "readonly":   blocks mutating tools entirely; for ssh_execute / ssh_execute_sudo /
  *                   ssh_execute_group / ssh_session_send, blocks commands matching the
  *                   built-in destructive denylist below.
- *   - "restricted": command must match at least one ALLOW_PATTERNS regex AND no
- *                   DENY_PATTERNS regex. DENY wins over ALLOW.
+ *   - "restricted": every command on the line (each part of a list or pipeline)
+ *                   must match at least one ALLOW_PATTERNS regex, and neither the
+ *                   line nor any of its commands may match a DENY_PATTERNS regex.
+ *                   DENY wins over ALLOW. Command substitution and redirections
+ *                   that write a file are refused: they run or change things the
+ *                   patterns never see.
  *
  * Returns { allowed: boolean, reason?: string } — never throws. Callers translate
  * a refusal into an MCP-level error response.
  */
 
 import { logger } from './logger.js';
+import { splitShellCommand } from './shell-segments.js';
 
 const MODE_UNRESTRICTED = 'unrestricted';
 const MODE_READONLY = 'readonly';
@@ -170,12 +175,17 @@ export function evaluatePolicy(serverConfig, toolName, command) {
       };
     }
     if (COMMAND_BEARING_TOOLS.has(toolName) && typeof command === 'string') {
-      for (const re of READONLY_DENY_REGEX) {
-        if (re.test(command)) {
-          return {
-            allowed: false,
-            reason: `Command refused on server "${serverConfig.name}" (mode: readonly): matches built-in destructive pattern ${re}.`,
-          };
+      // The whole line, then each command in it, including those inside $(…)
+      // and backticks: `echo $(rm -rf x)` has no space before its `rm`.
+      const { segments, substitutions } = splitShellCommand(command);
+      for (const text of [command, ...segments, ...substitutions]) {
+        for (const re of READONLY_DENY_REGEX) {
+          if (re.test(text)) {
+            return {
+              allowed: false,
+              reason: `Command refused on server "${serverConfig.name}" (mode: readonly): matches built-in destructive pattern ${re}.`,
+            };
+          }
         }
       }
     }
@@ -206,32 +216,43 @@ export function evaluatePolicy(serverConfig, toolName, command) {
       };
     }
 
+    const refuse = why => ({
+      allowed: false,
+      reason: `Command refused on server "${serverConfig.name}" (mode: restricted): ${why}.`,
+    });
+
+    // Each pattern is tested against every command on the line, not the line
+    // as a whole: tested against the line, `^docker ps` only checked how it
+    // started, and `docker ps; id` passed (GHSA-rfxw-26h6-7w42).
+    const { segments, substitutions, writes, problem } = splitShellCommand(command);
+
     for (const re of deny) {
-      if (re.test(command)) {
-        return {
-          allowed: false,
-          reason: `Command refused on server "${serverConfig.name}" (mode: restricted): matches DENY pattern ${re}.`,
-        };
+      for (const text of [command, ...segments]) {
+        if (re.test(text)) return refuse(`matches DENY pattern ${re}`);
       }
     }
 
     if (allow.length === 0) {
-      return {
-        allowed: false,
-        reason: `Command refused on server "${serverConfig.name}" (mode: restricted): no ALLOW_PATTERNS configured — restricted mode requires an explicit allowlist.`,
-      };
+      return refuse('no ALLOW_PATTERNS configured — restricted mode requires an explicit allowlist');
     }
 
-    for (const re of allow) {
-      if (re.test(command)) {
-        return { allowed: true };
+    if (problem) return refuse(`the command could not be checked (${problem})`);
+    if (substitutions.length) {
+      return refuse('command substitution ($(…), backticks, <(…)) runs commands the allowlist cannot check');
+    }
+    if (writes.length) {
+      return refuse(`redirecting output to "${writes[0]}" writes a file, which restricted mode does not allow`);
+    }
+    if (!segments.length) return refuse('empty command');
+
+    for (const segment of segments) {
+      if (!allow.some(re => re.test(segment))) {
+        return refuse(segments.length > 1
+          ? `"${segment}" does not match any ALLOW_PATTERNS (every command in a list or pipeline must)`
+          : 'does not match any ALLOW_PATTERNS');
       }
     }
-
-    return {
-      allowed: false,
-      reason: `Command refused on server "${serverConfig.name}" (mode: restricted): does not match any ALLOW_PATTERNS.`,
-    };
+    return { allowed: true };
   }
 
   // Unknown mode — fail-closed with a clear message rather than silently allowing.

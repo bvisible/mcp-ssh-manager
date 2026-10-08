@@ -103,7 +103,8 @@ import {
   buildListBackupsCommand,
   parseBackupsList,
   buildCleanupCommand,
-  buildCronScheduleCommand
+  buildCronScheduleCommand,
+  isCronSchedule
 } from './backup-manager.js';
 import {
   HEALTH_STATUS,
@@ -2280,7 +2281,7 @@ registerToolConditional(
         const deployServers = await loadServerConfig();
         const deployServerConfig = deployServers[server.toLowerCase()];
         for (const step of strategy.steps) {
-          const command = step.command.replace('{{tempFile}}', tempFile);
+          const command = step.command.replace('{{tempFile}}', () => shellQuote(tempFile));
 
           // step.stdin carries the sudo password for steps that need it, so it
           // never reaches the remote command line (issue #34).
@@ -3831,6 +3832,16 @@ registerToolConditional(
   async ({ server: serverName, schedule, type, name, database, paths, retention = 7 }) => {
 
     try {
+      // The name becomes a file name, a cron comment and a find pattern, and
+      // the schedule the first fields of a crontab line, where anything past
+      // the fifth field is the command cron runs and a line break starts a
+      // new job. Both are checked before anything reaches the server.
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+        throw new Error('Backup name may only contain letters, digits, ".", "_" and "-"');
+      }
+      if (!isCronSchedule(schedule)) {
+        throw new Error('Schedule must be five cron fields (e.g. "0 2 * * *") or a macro such as @daily');
+      }
       const ssh = await getConnection(serverName);
 
       // Build backup script path
@@ -3852,29 +3863,31 @@ registerToolConditional(
       scriptContent += `BACKUP_FILE="${backupFile}"\n\n`;
       scriptContent += 'mkdir -p "$BACKUP_DIR"\n\n';
 
-      // Add backup command based on type
+      // Add backup command based on type. The script runs later from cron, so
+      // a value spliced in raw here would run every night, not once.
       switch (type) {
       case BACKUP_TYPES.MYSQL:
-        scriptContent += `mysqldump --single-transaction --routines --triggers ${database} | gzip > "$BACKUP_FILE"\n`;
+        scriptContent += `mysqldump --single-transaction --routines --triggers ${shellQuote(database)} | gzip > "$BACKUP_FILE"\n`;
         break;
       case BACKUP_TYPES.POSTGRESQL:
-        scriptContent += `pg_dump --format=custom --clean --if-exists ${database} | gzip > "$BACKUP_FILE"\n`;
+        scriptContent += `pg_dump --format=custom --clean --if-exists ${shellQuote(database)} | gzip > "$BACKUP_FILE"\n`;
         break;
       case BACKUP_TYPES.MONGODB:
-        scriptContent += `mongodump --db ${database} --out /tmp/mongo_\${RANDOM} && tar -czf "$BACKUP_FILE" -C /tmp mongo_*\n`;
+        scriptContent += `mongodump --db ${shellQuote(database)} --out /tmp/mongo_\${RANDOM} && tar -czf "$BACKUP_FILE" -C /tmp mongo_*\n`;
         break;
       case BACKUP_TYPES.FILES:
-        scriptContent += `tar -czf "$BACKUP_FILE" ${paths.join(' ')}\n`;
+        scriptContent += `tar -czf "$BACKUP_FILE" ${(paths || []).map(shellQuote).join(' ')}\n`;
         break;
       }
 
       // Add cleanup command
       scriptContent += '\n# Cleanup old backups\n';
-      scriptContent += `find "$BACKUP_DIR" -name "*_${name}_*" -type f -mtime +${retention} -delete\n`;
+      scriptContent += `find "$BACKUP_DIR" -name "*_${name}_*" -type f -mtime +${safeInteger(retention, 7)} -delete\n`;
 
-      // Save script to remote server
-      const escapedScript = scriptContent.replace(/'/g, '\'\\\'\'');
-      await ssh.execCommand(`echo '${escapedScript}' > "${scriptPath}" && chmod +x "${scriptPath}"`);
+      // Save script to remote server. printf, not echo: dash's echo rewrites
+      // backslashes, which would alter a quoted path inside the script.
+      const quotedPath = shellQuote(scriptPath);
+      await ssh.execCommand(`printf '%s' ${shellQuote(scriptContent)} > ${quotedPath} && chmod +x ${quotedPath}`);
 
       // Add to crontab
       const cronComment = `ssh-manager-backup-${name}`;
@@ -4788,7 +4801,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_db_query',
   {
-    description: 'Runs a read-only query against a remote database. For mysql and postgresql it is strictly limited to SELECT: the query must begin with SELECT and any insert, update, delete, drop, create, alter, truncate, grant, revoke, or exec keyword is rejected before execution. For mongodb it runs a find() and requires the collection parameter. Returns the raw command output as text.',
+    description: 'Runs a read-only query against a remote database. For mysql and postgresql it is strictly limited to one SELECT statement: the query must begin with SELECT, and INTO, file functions, and any insert, update, delete, drop, create, alter, truncate, grant, revoke, or exec keyword are rejected before execution; it then runs inside a read-only transaction, so the database itself refuses any write. For mongodb it runs a find() and requires the collection parameter; the query must be a filter document (JSON or mongo shell syntax such as ObjectId("…")), and $where, $function and $accumulator are refused. Returns the raw command output as text.',
     inputSchema: {
       server: z.string().describe('Server name'),
       type: z.enum(['mysql', 'postgresql', 'mongodb'])
@@ -4850,7 +4863,11 @@ registerToolConditional(
       // Execute query
       const result = await ssh.execCommand(queryCommand);
 
-      if (result.code !== 0) {
+      // The MySQL JSON output is piped through awk, whose exit status hides the
+      // client's: a write refused by the read-only transaction (ERROR 1792) or
+      // a syntax error would otherwise come back as an empty result.
+      const clientError = type === DB_TYPES.MYSQL && /^ERROR \d+/m.test(result.stderr || '');
+      if (result.code !== 0 || clientError) {
         throw new Error(`Query failed: ${result.stderr || result.stdout}`);
       }
 
