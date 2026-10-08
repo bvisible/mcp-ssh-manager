@@ -42,7 +42,10 @@ jobs:
           npm run test:all
           npm run build --prefix ui
           git diff --exit-code -- dist/ui
+          # Both ways in: 3.8.5, the last release before the security fixes,
+          # and 3.8.6, what npm users run when 4.0.0 arrives.
           node scripts/test-upgrade-from-published.mjs 3.8.5
+          node scripts/test-upgrade-from-published.mjs 3.8.6
       - name: Run browser flows
         run: |
           npm exec --prefix ui -- playwright install --with-deps chromium
