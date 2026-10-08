@@ -6,12 +6,20 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readUserState, writeUserState } from './user-state.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PROFILES_DIR = path.join(__dirname, '..', 'profiles');
-const PROFILE_CONFIG_FILE = path.join(__dirname, '..', '.ssh-manager-profile');
+// The active profile is remembered in the manager home; the package copy is
+// read only as a fallback for a source checkout (see user-state.js, issue #87).
+const PROFILE_STATE_NAME = 'profile';
+const LEGACY_PROFILE_CONFIG_FILE = path.join(__dirname, '..', '.ssh-manager-profile');
+
+// A profile name becomes a file name under profiles/: nothing that could
+// climb out of that directory and load some other JSON file as hooks.
+const PROFILE_NAME = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Get the active profile name
@@ -23,15 +31,13 @@ export function getActiveProfileName() {
   }
 
   // 2. Check configuration file
-  if (fs.existsSync(PROFILE_CONFIG_FILE)) {
-    try {
-      const profileName = fs.readFileSync(PROFILE_CONFIG_FILE, 'utf8').trim();
-      if (profileName) {
-        return profileName;
-      }
-    } catch (error) {
-      console.error(`Error reading profile config: ${error.message}`);
+  try {
+    const profileName = readUserState(PROFILE_STATE_NAME, LEGACY_PROFILE_CONFIG_FILE)?.text.trim();
+    if (profileName) {
+      return profileName;
     }
+  } catch (error) {
+    console.error(`Error reading profile config: ${error.message}`);
   }
 
   // 3. Default to 'default' profile
@@ -46,7 +52,7 @@ export function loadProfile(profileName = null) {
   const profilePath = path.join(PROFILES_DIR, `${name}.json`);
 
   try {
-    if (fs.existsSync(profilePath)) {
+    if (PROFILE_NAME.test(name) && fs.existsSync(profilePath)) {
       const profileData = fs.readFileSync(profilePath, 'utf8');
       const profile = JSON.parse(profileData);
 
@@ -127,12 +133,12 @@ export function setActiveProfile(profileName) {
   try {
     // Verify profile exists
     const profilePath = path.join(PROFILES_DIR, `${profileName}.json`);
-    if (!fs.existsSync(profilePath)) {
+    if (!PROFILE_NAME.test(String(profileName)) || !fs.existsSync(profilePath)) {
       throw new Error(`Profile '${profileName}' does not exist`);
     }
 
     // Write to config file
-    fs.writeFileSync(PROFILE_CONFIG_FILE, profileName);
+    writeUserState(PROFILE_STATE_NAME, `${profileName}\n`);
     return true;
   } catch (error) {
     console.error(`Error setting active profile: ${error.message}`);

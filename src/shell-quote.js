@@ -28,6 +28,14 @@ export function shellQuote(value) {
   return SQ + String(value).replace(/'/g, SQ + '\\' + SQ + SQ) + SQ;
 }
 
+/** Quote a POSIX path while preserving the documented ~/ home shorthand. */
+export function shellPath(value) {
+  const text = String(value);
+  if (text === '~') return '"$HOME"';
+  if (text.startsWith('~/')) return `"$HOME"/${shellQuote(text.slice(2))}`;
+  return shellQuote(text);
+}
+
 /**
  * Coerce a value to a safe non-negative integer for use in a command.
  *

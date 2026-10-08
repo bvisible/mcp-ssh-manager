@@ -63,4 +63,12 @@ id_ed25519*
 .ssh-manager.log
 .ssh-command-history.json
 .server-groups.json
+# Runtime state that 3.8.5 and earlier wrote inside the package. It now lives
+# in ~/.ssh-manager; an old copy in a checkout must never be committed again.
+.hooks-config.json
+.command-aliases.json
+.ssh-manager-profile
+errors.log
+deployments.log
+ssh-key-changes.log
 archived/

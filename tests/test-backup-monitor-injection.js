@@ -29,8 +29,10 @@ import {
   buildSaveMetadataCommand,
   buildListBackupsCommand,
   buildCleanupCommand,
-  buildCronScheduleCommand
+  buildCronScheduleCommand,
+  isCronSchedule
 } from '../src/backup-manager.js';
+import { buildDeploymentStrategy, getTempFilename } from '../src/deploy-helper.js';
 import {
   buildServiceStatusCommand,
   buildProcessListCommand,
@@ -48,7 +50,7 @@ function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); 
 // through, so an escape would really execute.
 const FAKE_BINARIES = [
   'mysqldump', 'mysql', 'pg_dump', 'pg_restore', 'mongodump', 'mongorestore',
-  'crontab', 'systemctl', 'service', 'pgrep', 'ps'
+  'crontab', 'systemctl', 'service', 'pgrep', 'ps', 'sudo'
 ];
 
 // Payloads that each break out of a different quoting mistake.
@@ -98,6 +100,14 @@ function canaryFired(command) {
   return fired;
 }
 
+// ssh_deploy's steps as the handler sends them, temp file substituted.
+function deployCommands(remotePath, options = {}, localName = 'app.js') {
+  const temp = getTempFilename(localName);
+  return buildDeploymentStrategy(remotePath, { backup: true, ...options }).steps
+    .map(step => step.command.replace('{{tempFile}}', () => shellQuote(temp)))
+    .join('\n');
+}
+
 // Each case names a builder and the argument the payload is injected into.
 function buildCases(payload) {
   const out = path.join(workRoot, 'out.dump');
@@ -129,6 +139,12 @@ function buildCases(payload) {
     ['cleanup / dir', () => buildCleanupCommand(payload, 7)],
     ['cron schedule / schedule', () => buildCronScheduleCommand(payload, 'echo hi', 'c')],
     ['cron schedule / comment', () => buildCronScheduleCommand('0 2 * * *', 'echo hi', payload)],
+    // ssh_deploy: the remote path sat in double quotes, owner and permissions
+    // were bare, and the temp name carried the local file name unquoted.
+    ['deploy / remotePath', () => deployCommands(path.join(workRoot, payload))],
+    ['deploy / owner', () => deployCommands(path.join(workRoot, 'f'), { owner: payload })],
+    ['deploy / permissions', () => deployCommands(path.join(workRoot, 'f'), { permissions: payload })],
+    ['deploy / local file name', () => deployCommands(path.join(workRoot, 'f'), {}, payload)],
     // GHSA-m793 sink A
     ['service status / name', () => buildServiceStatusCommand(payload)],
     ['process list / filter', () => buildProcessListCommand({ filter: payload })],
@@ -188,6 +204,36 @@ function testProcessInfoRejectsNonNumericPid() {
   ok('buildProcessInfoCommand rejects every non-PID input');
 }
 
+function testHostKeyRemovalIsNotAShellCommand() {
+  // removeHostKey ran `ssh-keygen -R "<host>"` through a shell, and `host`
+  // comes from a server config — which an operator, or the control plane's own
+  // form, can set to anything. Same class as the builders above, found while
+  // wiring the options screen.
+  const source = fs.readFileSync(new URL('../src/ssh-key-manager.js', import.meta.url), 'utf8');
+  assert.ok(!/execSync\(`[^`]*\$\{/.test(source),
+    'ssh-key-manager must not interpolate values into a shell command string');
+  assert.ok(source.includes('execFileSync(\'ssh-keygen\''),
+    'host key removal must pass arguments to the process, not through a shell');
+  ok('host key removal passes arguments directly, never through a shell');
+}
+
+function testCronLineCannotCarryAJob() {
+  // Quoting the echo was not enough in 3.8.5: the canary above never fires for
+  // a schedule, because the line is data for crontab. The job it installs is
+  // the attack: cron runs everything after the fifth field, and a line break
+  // starts another job.
+  for (const schedule of ['* * * * * touch CANARY #', '0 2 * * *\n* * * * * touch CANARY', '@reboot touch CANARY', '0 2 * *', '']) {
+    assert.equal(isCronSchedule(schedule), false, JSON.stringify(schedule));
+    assert.throws(() => buildCronScheduleCommand(schedule, '/usr/local/bin/x.sh', 'c'), JSON.stringify(schedule));
+  }
+  for (const schedule of ['0 2 * * *', '*/15 * * * mon-fri', '0 0 1 jan *', '@daily', ' 30 4 * * 0 ']) {
+    assert.equal(isCronSchedule(schedule), true, JSON.stringify(schedule));
+  }
+  const line = buildCronScheduleCommand('0 2 * * *', '/usr/local/bin/x.sh', 'a\n* * * * * touch CANARY');
+  assert.ok(!line.includes('\n'), 'a comment cannot start a second crontab line');
+  ok('a cron schedule must be a schedule: no command, no second job');
+}
+
 function testBenignValuesStillWork() {
   // Quoting must not break ordinary use — a fix nobody can use is not a fix.
   const cmd = buildMySQLDumpCommand({
@@ -209,6 +255,8 @@ function main() {
     testNoPayloadEverExecutes();
     testNumericArgumentsCannotCarryCommands();
     testProcessInfoRejectsNonNumericPid();
+    testHostKeyRemovalIsNotAShellCommand();
+    testCronLineCannotCarryAJob();
     testBenignValuesStillWork();
     console.log(`\n✅ backup/monitor injection tests passed (${passed} checks)`);
   } finally {

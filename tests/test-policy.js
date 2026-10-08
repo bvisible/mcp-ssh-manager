@@ -287,6 +287,86 @@ test('auditLog records denials with reason', () => {
   }
 });
 
+// ── every command on the line (GHSA-rfxw-26h6-7w42) ───────────────────────────
+//
+// The patterns used to be tested against the whole line, so `^echo ` only
+// checked how it started. The report's proof of concept was the first case.
+
+const echoOnly = () => ({ name: 's', mode: 'restricted', allowPatterns: ['^echo '], denyPatterns: [] });
+const refused = (cfg, command) => evaluatePolicy(cfg, 'ssh_execute', command).allowed === false;
+
+test('restricted: the advisory proof of concept is refused', () => {
+  _clearCompiledCache();
+  const poc = 'echo hi; id > /tmp/pwned_marker2; hostname >> /tmp/pwned_marker2; echo INJECTED_REGEX_BYPASS >> /tmp/pwned_marker2';
+  assertTrue(refused(echoOnly(), poc), 'appended commands must not ride on an allowed prefix');
+  assertEqual(evaluatePolicy(echoOnly(), 'ssh_execute', 'echo baseline-test').allowed, true, 'the allowed command still runs');
+});
+
+test('restricted: every list and pipeline operator splits the line', () => {
+  _clearCompiledCache();
+  for (const op of [';', '&&', '||', '|', '&', '\n', '|&', ';;']) {
+    assertTrue(refused(echoOnly(), `echo a${op}id`), `"${JSON.stringify(op)}" must not carry id`);
+    assertTrue(refused(echoOnly(), `echo a ${op} id`), `" ${JSON.stringify(op)} " must not carry id`);
+  }
+});
+
+test('restricted: a line whose every command is allowed still runs', () => {
+  _clearCompiledCache();
+  const cfg = { name: 's', mode: 'restricted', allowPatterns: ['^docker (ps|logs|inspect)', '^grep '], denyPatterns: [] };
+  assertEqual(evaluatePolicy(cfg, 'ssh_execute', 'docker ps -a').allowed, true, 'documented recipe, one command');
+  assertEqual(evaluatePolicy(cfg, 'ssh_execute', 'docker ps | grep web').allowed, true, 'both sides allowed');
+  assertEqual(evaluatePolicy(cfg, 'ssh_execute', 'docker ps && docker logs app').allowed, true, 'a list of allowed commands');
+  const reason = evaluatePolicy(cfg, 'ssh_execute', 'docker ps | sh').reason;
+  assertTrue(/"sh" does not match any ALLOW_PATTERNS/.test(reason), `the refusal names the command: ${reason}`);
+});
+
+test('restricted: separators inside quotes or escaped are data, not operators', () => {
+  _clearCompiledCache();
+  for (const command of ['echo "a;b|c&&d"', 'echo \'a; id\'', 'echo a\\;id', 'echo "it\'s; fine"']) {
+    assertEqual(evaluatePolicy(echoOnly(), 'ssh_execute', command).allowed, true, command);
+  }
+});
+
+test('restricted: command substitution is refused, even inside double quotes', () => {
+  _clearCompiledCache();
+  for (const command of ['echo $(id)', 'echo `id`', 'echo "$(id)"', 'echo "x`id`"', 'echo ${x:-$(id)}', 'echo <(id)', 'echo $((1+2))']) {
+    assertTrue(refused(echoOnly(), command), command);
+  }
+  assertEqual(evaluatePolicy(echoOnly(), 'ssh_execute', 'echo \'$(id)\'').allowed, true, 'single quotes keep it literal');
+});
+
+test('restricted: redirections that write a file are refused', () => {
+  _clearCompiledCache();
+  for (const command of ['echo x > /etc/cron.d/job', 'echo x >> ~/.bashrc', 'echo x >| f', 'echo x &> f', 'echo x >& f', 'echo x <> f', 'echo x 2> err.log']) {
+    assertTrue(refused(echoOnly(), command), command);
+  }
+  for (const command of ['echo x > /dev/null', 'echo x 2>&1', 'echo x >&2', 'echo x &>/dev/null', 'echo x 2>/dev/null']) {
+    assertEqual(evaluatePolicy(echoOnly(), 'ssh_execute', command).allowed, true, command);
+  }
+});
+
+test('restricted: DENY patterns apply to each command, not only the start of the line', () => {
+  _clearCompiledCache();
+  const cfg = { name: 's', mode: 'restricted', allowPatterns: ['^echo ', '^rm '], denyPatterns: ['^rm '] };
+  assertTrue(refused(cfg, 'echo x; rm -rf /data'), 'a ^-anchored deny must catch a later command');
+  assertTrue(/DENY pattern/.test(evaluatePolicy(cfg, 'ssh_execute', 'echo x && rm -rf /data').reason), 'reported as a deny');
+});
+
+test('restricted: a line that cannot be read is refused', () => {
+  _clearCompiledCache();
+  for (const command of ['echo "unterminated', 'echo \'unterminated', 'echo $(id', 'echo `id', '', '  ;  ']) {
+    assertTrue(refused(echoOnly(), command), JSON.stringify(command));
+  }
+});
+
+test('readonly: destructive commands inside $(…) and backticks are caught', () => {
+  for (const command of ['echo $(rm -rf /x)', 'echo `rm -rf /x`', 'echo "$(shutdown -h now)"', 'ls; echo x | sudo tee /etc/x']) {
+    const result = evaluatePolicy({ name: 's', mode: 'readonly' }, 'ssh_execute', command);
+    assertEqual(result.allowed, false, command);
+  }
+  assertEqual(evaluatePolicy({ name: 's', mode: 'readonly' }, 'ssh_execute', 'ls -la $(pwd)').allowed, true, 'read-only substitution passes');
+});
+
 // ── summary ───────────────────────────────────────────────────────────────────
 
 console.log('\n' + YELLOW + 'Results:' + NC);

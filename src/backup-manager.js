@@ -442,6 +442,29 @@ export function buildCronScheduleCommand(schedule, backupCommand, cronComment) {
   // through shellQuote so a schedule or comment carrying quotes cannot break
   // out of the echo and run something else. backupCommand is built by the
   // builders above, which quote their own arguments.
-  const cronLine = `${schedule} ${backupCommand} # ${cronComment}`;
+  //
+  // Quoting the echo was the 3.8.5 fix, and it was not enough: cron reads
+  // everything after the fifth field as the command to run, and a line break
+  // as the start of another job, so `* * * * * curl … | sh #` installed a job
+  // of the caller's choosing. The schedule must now be a schedule.
+  if (!isCronSchedule(schedule)) {
+    throw new Error('Schedule must be five cron fields (e.g. "0 2 * * *") or a macro such as @daily');
+  }
+  const comment = String(cronComment).replace(/[\r\n]+/g, ' ');
+  const cronLine = `${schedule.trim()} ${backupCommand} # ${comment}`;
   return `(crontab -l 2>/dev/null; echo ${shellQuote(cronLine)}) | crontab -`;
+}
+
+/**
+ * Whether a string is a crontab schedule and nothing more: five time fields,
+ * or one of cron's @ macros.
+ * @param {any} schedule
+ * @returns {boolean}
+ */
+export function isCronSchedule(schedule) {
+  if (typeof schedule !== 'string') return false;
+  const text = schedule.trim();
+  if (/^@(yearly|annually|monthly|weekly|daily|midnight|hourly|reboot)$/.test(text)) return true;
+  const fields = text.split(/[ \t]+/);
+  return fields.length === 5 && fields.every(field => /^[0-9A-Za-z*/,-]+$/.test(field));
 }

@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dt/mcp-ssh-manager.svg?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/Version-3.8.5-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.5)
+[![Version](https://img.shields.io/badge/Version-3.8.6-brightgreen?style=for-the-badge)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v3.8.6)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=for-the-badge&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=for-the-badge)](https://modelcontextprotocol.io)
@@ -23,19 +23,20 @@ A Model Context Protocol (MCP) server that enables **Claude Code** and **OpenAI 
 
 ---
 
-## 🎉 What's New in v3.8.5
+## 🎉 What's New in v3.8.6
 
-**🔒 Security release — three command-injection advisories fixed, one of which defeated `readonly` mode** (Released: August 28, 2026)
+**🔒 Security release — six advisories fixed. Upgrade.** (Released: October 8, 2026)
 
-**Upgrade if you use `ssh_backup_*`, `ssh_db_dump`, `ssh_service_status` or `ssh_tail` — and especially if you rely on the `readonly` / `restricted` security modes.**
+- **🔴 Command injection on your own machine through the default `on-error` hook** (GHSA-759m-wfpq-xmx3) — the connection error, whose text a server chooses, was pasted into a shell command. Any SSH server you connected to could run a command on the machine running mcp-ssh-manager. Hook values now reach commands as shell variables, never as command text, and the default hook writes its log without a shell.
+- **🔴 `restricted` mode only checked how a line started** (GHSA-rfxw-26h6-7w42) — `^echo ` let `echo hi; id` through. Every command in a list or pipeline must now match your allowlist; command substitution and writes to files are refused.
+- **🔴 `cwd` reached the shell unquoted** (GHSA-37fv-fcpc-j236), past the security policy.
+- **🔴 `ssh_db_query` could write** (GHSA-9w6j-vg8f-hp8g, GHSA-q37w-vhpx-q5q9) — `SELECT … INTO OUTFILE`, `SELECT … INTO` a new table, and JavaScript in MongoDB queries. Queries now run in a read-only transaction, and a MongoDB query must be a filter document.
+- **🟠 Host keys were never compared** (GHSA-cwg3-pfmm-w8rm) — **a changed host key is now refused**, as OpenSSH does. A server reinstalled since its key was recorded needs `ssh-keygen -R <host>` once.
+- `ssh_deploy` and `ssh_backup_schedule` quote every value, and a cron schedule must be a schedule.
 
-- **🔴 RCE bypassing `readonly` / `restricted`** (GHSA-m793-whw6-f537) — `ssh_service_status` and `ssh_tail` are read-only, so they stay enabled on servers you locked down, and neither quoted its arguments nor consulted the policy layer. A service name like `nginx; id > /tmp/pwned` executed. This defeated the exact control those modes exist to provide.
-- **🔴 RCE through `ssh_db_dump`** (GHSA-796j-h5q5-jx6p) — the `stat` command run after the dump interpolated the output path raw. The v3.6.7 patch had stopped one line short.
-- **🟠 RCE through every `ssh_backup_*` tool** (GHSA-qwwm-vrm9-4mw8) — `backup-manager.js` had **zero** shell escaping across its 9 builders, while `database-manager.js` had 95. The v3.6.7 fix was never extended to it.
+Hook settings, aliases, the active profile and the logs now live in `~/.ssh-manager/`, readable by you alone, instead of inside the installed package, where every upgrade lost them.
 
-The quoting helper now lives in one module (`src/shell-quote.js`) so "did this builder quote its inputs?" has a single answer, and a new test drives **340 builder × argument × payload combinations** through a real shell to prove none of them execute.
-
-[Read full changelog →](CHANGELOG.md#385---2026-08-28)
+[Read full changelog →](CHANGELOG.md#386---2026-10-08) · Previous: [v3.8.5](CHANGELOG.md#385---2026-08-28), three command-injection advisories.
 
 ---
 
@@ -717,7 +718,7 @@ SSH Manager uses profiles to configure aliases and hooks for different project t
 
 1. **Set active profile**: 
    - Environment variable: `export SSH_MANAGER_PROFILE=frappe`
-   - Configuration file: Create `.ssh-manager-profile` with profile name
+   - Configuration file: `~/.ssh-manager/profile` holds the profile name (switching from your assistant writes it)
    - Default: Uses `default` profile if not specified
 
 2. **Available profiles**:

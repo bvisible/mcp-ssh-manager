@@ -1,5 +1,6 @@
 import path from 'path';
 import crypto from 'crypto';
+import { shellQuote } from './shell-quote.js';
 
 /**
  * Deploy helper functions for secure file deployment
@@ -11,8 +12,11 @@ import crypto from 'crypto';
 export function getTempFilename(originalName) {
   const timestamp = Date.now();
   const random = crypto.randomBytes(4).toString('hex');
-  const ext = path.extname(originalName);
-  const base = path.basename(originalName, ext);
+  // The local name is only a hint for whoever reads /tmp: keep the characters
+  // that need no quoting anywhere, so the name stays inert in every command.
+  const safe = text => text.replace(/[^A-Za-z0-9._-]/g, '_');
+  const ext = safe(path.extname(originalName));
+  const base = safe(path.basename(originalName, path.extname(originalName)));
   return `/tmp/${base}_${timestamp}_${random}${ext}`;
 }
 
@@ -33,11 +37,15 @@ export function buildDeploymentStrategy(remotePath, options = {}) {
     requiresSudo: false
   };
 
+  // Every value below reaches the remote shell. Up to 3.8.5 the path sat in
+  // double quotes, where $(…) still runs, and owner and permissions were bare.
+  const target = shellQuote(remotePath);
+
   // Step 1: Backup existing file if requested
   if (backup) {
     strategy.steps.push({
       type: 'backup',
-      command: `if [ -f "${remotePath}" ]; then cp "${remotePath}" "${remotePath}.bak.$(date +%Y%m%d_%H%M%S)"; fi`
+      command: `if [ -f ${target} ]; then cp ${target} ${target}.bak.$(date +%Y%m%d_%H%M%S); fi`
     });
   }
 
@@ -60,8 +68,8 @@ export function buildDeploymentStrategy(remotePath, options = {}) {
 
   // Step 3: Copy from temp to final location
   const copyCmd = needsSudo ?
-    `${sudoPrefix}cp {{tempFile}} "${remotePath}"` :
-    `cp {{tempFile}} "${remotePath}"`;
+    `${sudoPrefix}cp {{tempFile}} ${target}` :
+    `cp {{tempFile}} ${target}`;
 
   strategy.steps.push(needsSudo ? withSudoStdin({
     type: 'copy',
@@ -75,7 +83,7 @@ export function buildDeploymentStrategy(remotePath, options = {}) {
   if (owner) {
     strategy.steps.push(withSudoStdin({
       type: 'chown',
-      command: `${sudoPrefix}chown ${owner} "${remotePath}"`
+      command: `${sudoPrefix}chown ${shellQuote(owner)} ${target}`
     }));
   }
 
@@ -83,7 +91,7 @@ export function buildDeploymentStrategy(remotePath, options = {}) {
   if (permissions) {
     strategy.steps.push(withSudoStdin({
       type: 'chmod',
-      command: `${sudoPrefix}chmod ${permissions} "${remotePath}"`
+      command: `${sudoPrefix}chmod ${shellQuote(permissions)} ${target}`
     }));
   }
 
