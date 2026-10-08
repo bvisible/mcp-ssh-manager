@@ -84,6 +84,14 @@ if [ -n "$DMG" ]; then
   else
     fail "the matching DMG has no stapled ticket"
   fi
+  # The disk image carries its own signature (dmg.sign), so every Apple tool
+  # agrees it is distributable, not only the double-click.
+  if codesign --verify --strict "$DMG" >/dev/null 2>&1 \
+    && spctl --assess --type open --context context:primary-signature "$DMG" >/dev/null 2>&1; then
+    pass "the DMG itself is signed and accepted"
+  else
+    fail "the matching DMG is not signed, or Gatekeeper refuses its signature"
+  fi
 else
   fail "no matching ${APP_ARCH} DMG for version ${APP_VERSION}"
 fi

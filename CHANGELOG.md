@@ -5,6 +5,124 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-beta.2] - 2026-10-08
+
+**A second preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2).
+npm serves [3.8.6](#386---2026-10-08), released the same day with the same
+security fixes, until the stable 4.0.0. Installed beta.1 desktop builds update
+to this one by themselves.
+
+### Security
+
+Everything in [3.8.6](#386---2026-10-08) below. Host key verification and the
+quoting of `cwd` were already in beta.1.
+
+### Fixed — found by using V4 in place of our previous tool
+
+- **A refused password was reported as "Too many authentication failures"**
+  ([#88](https://github.com/bvisible/mcp-ssh-manager/issues/88)). With an agent
+  loaded, ssh2 follows a refused password with every agent key, and OpenSSH's
+  `MaxAuthTries` ends it all with its own message. The order is unchanged — an
+  agent key that works still connects — but each attempt is recorded, and the
+  error now says what was refused: *the password was refused; the server then
+  closed the connection while ssh-agent keys were being tried (Too many
+  authentication failures)*. A method the server does not offer is no longer
+  sent. Checked against OpenSSH 9 with six agent keys.
+- **`KEYPATH` expanded the first `~` anywhere in the path**
+  ([#89](https://github.com/bvisible/mcp-ssh-manager/issues/89)). Only a leading
+  `~` or `~/` is expanded now, as a shell does.
+- **A stale `SSH_MANAGER_ENV` loaded zero servers, silently**
+  ([#90](https://github.com/bvisible/mcp-ssh-manager/issues/90)). 3.8.x's engine
+  never read that variable (only the CLI did); beta.1 did, so a profile still
+  pointing it at a deleted file took a working setup from 59 servers to none. A
+  missing file named by `SSH_MANAGER_ENV` is now skipped, as 3.8.x skipped the
+  variable, with a warning. A missing file named by `SSH_ENV_PATH` stays the
+  choice and is reported at startup, in `ssh_list_servers` and in "server not
+  found".
+- Dependencies: `@modelcontextprotocol/sdk` 1.32.1 and the advisories published
+  since beta.1 (`fast-uri`, `ip-address`, `proxy-addr`, `smol-toml`,
+  `brace-expansion`); `npm audit` is clean, development dependencies included.
+
+## [3.8.6] - 2026-10-08
+
+### Security
+
+Six advisories, five reported to us and one found while replacing our previous
+tool with this one. **Upgrade.**
+
+- **Command injection on the machine running mcp-ssh-manager, through the
+  default `on-error` hook** (GHSA-759m-wfpq-xmx3, high). The hook ran
+  `echo "… {error}" >> errors.log` through a shell, with the connection error
+  pasted inside double quotes. That text comes from the server: an SSH server
+  that disconnects with `$(…)` in its reason, before any key exchange, ran a
+  command on your machine. Hook values never become command text any more:
+  each `{placeholder}` becomes a reference to a shell variable holding the value
+  (`SSH_MANAGER_HOOK_SERVER`, …), and the default `on-error` hook is a `log`
+  action written without a shell, to `~/.ssh-manager/errors.log`.
+- **`restricted` mode only checked how a line started** (GHSA-rfxw-26h6-7w42,
+  high, reported by @uozergit). The allow patterns were tested against the
+  whole line, so `^echo ` let `echo hi; id` through, and `^rm ` as a deny pattern
+  missed `echo x; rm -rf /data`. Every command in a list or pipeline must now
+  match, deny patterns apply to each, and command substitution and redirections
+  that write a file are refused. `readonly` also checks the commands inside
+  `$(…)` and backticks.
+- **`cwd` reached the shell unquoted, past the security policy**
+  (GHSA-37fv-fcpc-j236, high, reported by @uozergit). `ssh_execute`,
+  `ssh_execute_group` and `ssh_execute_sudo` built `cd ${cwd} && …`; the
+  directory is now quoted, `~/` still expanding to the remote home.
+- **`ssh_db_query` could write** (GHSA-9w6j-vg8f-hp8g, medium, reported by
+  @zaara2004; GHSA-q37w-vhpx-q5q9, high, reported by @davutselcuk). On MySQL,
+  `SELECT … INTO OUTFILE` wrote a file on the database server; on PostgreSQL,
+  `SELECT … INTO` created a table; on MongoDB, the collection and the query were
+  pasted into JavaScript, so `drop()` or `run()` ran on a tool documented as
+  read-only. SQL is now one `SELECT`, without `INTO` or the server-file
+  functions, run inside a read-only transaction — which also stops a stored
+  function that writes; a MySQL error no longer comes back as an empty result.
+  A MongoDB query must be a filter document (JSON or mongo shell syntax such as
+  `ObjectId("…")`), `$where`, `$function` and `$accumulator` are refused, and the
+  collection is passed as a string. Checked against MariaDB 11, PostgreSQL 16
+  and MongoDB 5.
+- **Host keys were never compared** (GHSA-cwg3-pfmm-w8rm, high, reported by
+  Francesco Canovi (@TheDarkMist), Black Studio Solutions). The key a server presented was
+  accepted for known and unknown hosts alike. It is now compared with
+  `known_hosts` (hashed entries, `[host]:port`, wildcards and `@revoked`
+  included): an unknown host is trusted on first use and recorded, **a changed
+  key is refused** before any credential is sent.
+- **`ssh_deploy` and `ssh_backup_schedule` still spliced values into commands**,
+  the class fixed in 3.8.5 (GHSA-qwwm-vrm9-4mw8) but missed here: the remote path
+  sat in double quotes, where `$(…)` runs; owner, permissions and the temporary
+  file name were bare; the scheduled script pasted the database and the paths.
+  And quoting the crontab line was not enough: cron runs whatever follows the
+  fifth field, so a schedule such as `* * * * * curl … | sh #` installed a job of
+  the caller's choosing. A schedule must now be five cron fields or an `@` macro.
+
+Each fix carries a test that fails without it.
+
+### Behaviour changes
+
+- **A changed host key is refused.** A server reinstalled since its key was
+  recorded stops connecting until the old entry is removed
+  (`ssh-keygen -R <host>`) — this is what an interception looks like, so it is
+  the one change that cannot be opt-in. `SSH_MANAGER_KNOWN_HOSTS` points at a
+  separate file.
+- **A `restricted` allowlist is now checked per command.** A pipe into a
+  command you never allowed, a `;` followed by another command, a `$(…)`, a `>`
+  into a file: each is refused, and the refusal names the command. Add a pattern
+  for each command you do want.
+- **Hook settings, aliases, the active profile, the log and the command
+  history live in `~/.ssh-manager/`** (or `SSH_MANAGER_HOME`), readable by you
+  alone, instead of inside the installed package, where every upgrade lost them
+  and the log was readable by any local user
+  ([#87](https://github.com/bvisible/mcp-ssh-manager/issues/87)). Nothing is
+  written on start; a log needs `~/.ssh-manager` to exist. An old file in the
+  package is still read until your next change writes the new one.
+- **The package no longer ships a `.hooks-config.json`.** The one it carried
+  was a development copy that turned Frappe hooks on for every npm user: each
+  `ssh_deploy` ran `git status` and `npm test` in your working directory, and any
+  command containing `bench update` first ran a full `bench backup` on the
+  server. The hooks now come from your profile, as documented; the `frappe`
+  profile still has them.
+
 ## [4.0.0-beta.1] - 2026-09-24
 
 **A preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1). npm keeps serving

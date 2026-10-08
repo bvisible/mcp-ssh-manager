@@ -24,7 +24,27 @@ attacks, layered between the MCP client and the SSH session.
 |---|---|
 | `unrestricted` (default) | No filter. Identical to pre-v3.5.0 behavior. Zero overhead — `evaluatePolicy()` early-returns. |
 | `readonly` | Blocks mutating tools at the tool level (`ssh_upload`, `ssh_deploy`, `ssh_sync`, `ssh_execute_sudo`, `ssh_backup_create/restore/schedule`, `ssh_db_import/dump`, `ssh_key_manage` write actions, `ssh_alert_setup` set, `ssh_process_manager kill`). For `ssh_execute` / `ssh_execute_sudo` / `ssh_execute_group` / `ssh_session_send`, applies a built-in denylist (rm, mv, dd, mkfs, chmod, chown, sudo, systemctl restart/stop, docker rm/stop, pipe-to-sh, redirect outside `/tmp`, etc.). |
-| `restricted` | All readonly blocks plus: every command must match at least one `ALLOW_PATTERNS` regex AND no `DENY_PATTERNS` regex. **DENY wins over ALLOW**. With no `ALLOW_PATTERNS`, every command is refused (fail-closed). |
+| `restricted` | All readonly blocks plus: **every command on the line** must match at least one `ALLOW_PATTERNS` regex, and neither the line nor any command in it may match a `DENY_PATTERNS` regex. **DENY wins over ALLOW**. Command substitution and redirections that write a file are refused. With no `ALLOW_PATTERNS`, every command is refused (fail-closed). |
+
+### How a command line is checked in `restricted` mode
+
+The line is split into the commands it would run — at `;`, `&&`, `||`, `|`, `&`
+and line breaks, outside quotes — and **each one** must match an allow pattern.
+`^docker ps` therefore allows `docker ps -a`, but not `docker ps; id`, and
+`docker ps | grep web` only if `grep` is allowed too. Up to 3.8.5 the patterns
+were tested against the whole line, so an allowed start carried anything
+appended to it ([GHSA-rfxw-26h6-7w42](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-rfxw-26h6-7w42)).
+
+Also refused, because they run or change things the patterns never see:
+
+- command substitution: `$(…)`, backticks, `<(…)`, `>(…)`, even inside double quotes;
+- redirections that write a file: `>`, `>>`, `>|`, `&>`, `<>` — except to
+  `/dev/null`, `/dev/stdout`, `/dev/stderr` and descriptor copies such as `2>&1`;
+- a line that cannot be read with confidence (an unterminated quote, for example).
+
+Comments are not recognised: `ls # a; b` is checked as `ls # a` and ` b`, which
+refuses it rather than missing a command. `readonly` mode also checks the commands
+inside `$(…)` and backticks against its built-in list.
 
 ## Configuration
 
@@ -151,7 +171,8 @@ SSH_SERVER_CLIENT_PROD_AUDIT_LOG=~/.ssh-manager/audit/client-prod.jsonl
 **Not gated** (pure reads or local-only state — no remote effect to block):
 `ssh_list_servers`, `ssh_download`, `ssh_tail`, `ssh_monitor`, `ssh_history`,
 `ssh_health_check`, `ssh_service_status`, `ssh_db_list`, `ssh_db_query`
-(already SELECT-only), `ssh_backup_list`, `ssh_session_start`,
+(one SELECT run in a read-only transaction; for MongoDB a filter document,
+never code), `ssh_backup_list`, `ssh_session_start`,
 `ssh_session_list`, `ssh_session_close`, `ssh_connection_status`,
 `ssh_tunnel_*`, `ssh_group_manage`, `ssh_command_alias`, `ssh_alias`,
 `ssh_hooks`, `ssh_profile`.
@@ -164,7 +185,9 @@ SSH_SERVER_CLIENT_PROD_AUDIT_LOG=~/.ssh-manager/audit/client-prod.jsonl
 - **Regex-based filtering can be bypassed** with creative command crafting
   (encoded payloads, indirection via shell variables, etc.). Treat `readonly`
   as protection against accidents and prompt injection of the common form,
-  not as an unbreakable shell escape.
+  not as an unbreakable shell escape. `restricted` is the stronger of the two:
+  every command must be one you allowed, so keep its patterns narrow — an
+  allowed interpreter (`^python`, `^bash`, `^sh`) allows everything.
 - **Aliases are expanded before policy evaluation** — you can't bypass a DENY
   by hiding `rm` behind an alias defined via `ssh_command_alias`.
 - **No transport-level / per-client policies.** All clients see the same
@@ -187,3 +210,10 @@ A v3.4.x `.env` or TOML loads identically under v3.5.0:
   so the client never sees a new prompt.
 
 See `CHANGELOG.md` v3.5.0 for the full diff.
+
+**One deliberate exception, in 3.8.6 and 4.0:** a `restricted` server now checks
+every command on a line, so an existing allowlist refuses lines it used to let
+through — a pipe into a command you never allowed, a `;` followed by another
+command, a `$(…)`, a `>` into a file. That was the hole. Add a pattern for each
+command you do want (`^grep `, `^head `), and the refusal names the command that
+did not match. Servers without `MODE`, and `readonly` ones, are unaffected.

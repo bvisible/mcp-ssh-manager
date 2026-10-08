@@ -1,8 +1,8 @@
 # Upgrading from 3.8 to 4.0
 
-**V4 is in preview: [`4.0.0-beta.1`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1), published on GitHub only.** npm
-still serves 3.8.5 — `npm install -g mcp-ssh-manager`, `npm update -g` and
-`npx mcp-ssh-manager` all keep giving you 3.8.5 until the stable 4.0.0 is
+**V4 is in preview: [`4.0.0-beta.2`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2), published on GitHub only.** npm
+serves 3.8.6 — `npm install -g mcp-ssh-manager`, `npm update -g` and
+`npx mcp-ssh-manager` all keep giving you 3.8.6 until the stable 4.0.0 is
 released. Nothing reaches an existing installation while this is a preview.
 
 The upgrade path preserves headless npm/CLI use. The application, vault import
@@ -10,21 +10,21 @@ and approval settings are optional.
 
 ## Trying the preview
 
-**The desktop application:** download it from [the preview release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.1). The
+**The desktop application:** download it from [the preview release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2). The
 macOS build is signed and notarized; the Windows installer is **not code-signed**
 in this preview (Windows warns: *More info → Run anyway*); Linux ships `.deb`
 and `.AppImage`.
 
 **The npm engine and interface, side by side with your current install** —
-nothing global changes, your MCP client keeps using 3.8.5:
+nothing global changes, your MCP client keeps using 3.8.x:
 
 ```bash
-npm install --prefix ~/ssh-manager-v4-preview https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.1/mcp-ssh-manager-4.0.0-beta.1.tgz
+npm install --prefix ~/ssh-manager-v4-preview https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.2/mcp-ssh-manager-4.0.0-beta.2.tgz
 ~/ssh-manager-v4-preview/node_modules/.bin/ssh-manager control   # prints a local URL
 ```
 
 It reads the same `.env`, TOML and `~/.ssh-manager` as your installation, and
-behaves as 3.8.5 until you adopt something new. To let an agent use it, add it
+behaves as 3.8.6 until you adopt something new. To let an agent use it, add it
 as a second MCP server and remove it when you are done:
 
 ```bash
@@ -35,8 +35,8 @@ claude mcp remove ssh-manager-v4
 **Or replace your global install** with the preview, and go back the same way:
 
 ```bash
-npm install -g https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.1/mcp-ssh-manager-4.0.0-beta.1.tgz
-npm install -g mcp-ssh-manager@3.8.5      # back to the release
+npm install -g https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.2/mcp-ssh-manager-4.0.0-beta.2.tgz
+npm install -g mcp-ssh-manager@3.8.6      # back to the release
 ```
 
 ## When 4.0.0 is released
@@ -265,11 +265,17 @@ Three ways out, in order of preference:
 | Key | OS keychain, or `~/.ssh-manager/vault.key` (0600) | the master key |
 | Recovery file | wherever you put it | saved servers and credentials, under your passphrase |
 | Groups | `~/.ssh-manager/groups.json` | shared by npm, CLI and desktop |
+| Hooks, aliases, profile | `~/.ssh-manager/hooks.json`, `command-aliases.json`, `server-aliases.json`, `profile` | written only when you change one (since 3.8.6) |
+| Logs | `~/.ssh-manager/ssh-manager.log`, `command-history.json`, `errors.log` (0600) | only when `~/.ssh-manager` exists; `SSH_LOG_FILE` / `SSH_HISTORY_FILE` override |
 
 `SSH_MANAGER_HOME` overrides the state directory; `SSH_GROUPS_FILE` overrides
 just the groups file. An existing package-local `.server-groups.json` is read
 conservatively and copied to user state on the first successful edit. Keep a
 copy before removing an older installation if it contains your only groups file.
+
+Up to 3.8.5 the hook settings, the aliases, the active profile, the log and the
+command history were written inside the installed package, so an upgrade lost
+them. An old file there is still read until your next change writes the new one.
 
 `SSH_MANAGER_KEY_SOURCE=file` skips the keychain entirely — needed in CI, in
 containers, and over an SSH session with no desktop keyring.
@@ -281,15 +287,25 @@ with no vault, no `APPROVAL` setting and no control plane running behaves
 exactly like 3.8. The control plane is a separate command you run when you want
 it; the engine never starts one.
 
-## Rolling back to 3.8.5
+## Which `.env` is read
+
+`SSH_ENV_PATH` names the file explicitly. When it is not set, V4 also honours
+`SSH_MANAGER_ENV` — the CLI's variable, which 3.8.x's engine never read. A
+profile that still exports `SSH_MANAGER_ENV` towards a file that no longer
+exists is skipped with a warning, so the usual discovery (`~/.ssh-manager/.env`,
+then the working directory, then your home) applies as it did in 3.8.x. A missing
+file named by `SSH_ENV_PATH` stays the choice and is reported at startup, in
+`ssh_list_servers` and in "server not found".
+
+## Rolling back to 3.8.6
 
 ```bash
-npm install -g mcp-ssh-manager@3.8.5
+npm install -g mcp-ssh-manager@3.8.6
 ```
 
-3.8.5 reads the original `.env` / TOML / process environment. V4 does not edit
+3.8.6 reads the original `.env` / TOML / process environment. V4 does not edit
 those files during vault import, so keeping them makes rollback possible.
-Changes made only in the V4 vault are **not** understood by 3.8.5: retain an
+Changes made only in the V4 vault are **not** understood by 3.8.6: retain an
 appropriate original configuration and backup before adopting vault-only changes.
 An older CLI may also use its older package-local groups file. Do not expect it
 to read V4's new user-state groups file automatically.

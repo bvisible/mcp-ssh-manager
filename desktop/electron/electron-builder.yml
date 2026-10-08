@@ -104,6 +104,11 @@ mac:
 
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
+  # Signed with the same Developer ID as the app, then notarized and stapled by
+  # the release workflow. Unsigned, it opened without a warning but Apple's
+  # syspolicy_check called it not distributable (4.0.0-beta.1). Skipped by
+  # electron-builder when no identity is available, as on a local build.
+  sign: true
 
 win:
   files:
