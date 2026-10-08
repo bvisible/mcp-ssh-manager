@@ -52,7 +52,9 @@ const payloads = [
 ];
 const mode = file => fs.statSync(file).mode & 0o777;
 const legacyFile = path.join(ROOT, '.hooks-config.json');
-const legacyBackup = fs.existsSync(legacyFile) ? fs.readFileSync(legacyFile) : null;
+// Read, not checked then read: the file is rewritten below.
+let legacyBackup = null;
+try { legacyBackup = fs.readFileSync(legacyFile); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 
 // 3.8.5 created an empty hooks/ directory in the package on every start; an
 // old checkout may still have one. rmdir only ever removes it while empty.
