@@ -8,10 +8,9 @@ import { connectSSH, connectServer } from './ssh-connection.js';
 import * as dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { isDeepStrictEqual } from 'node:util';
-import { resolveEnvFilePath } from './config-paths.js';
+import { envFileChoice, envFileProblem, expandHomePath } from './config-paths.js';
 import { fileURLToPath } from 'url';
 import { ServerConfigManager } from './server-config-manager.js';
 import {
@@ -156,7 +155,11 @@ import { auditLog, sanitize } from './audit.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const envFilePath = resolveEnvFilePath({ projectRoot: path.join(__dirname, '..') });
+const envChoice = envFileChoice({ projectRoot: path.join(__dirname, '..') });
+const envFilePath = envChoice.path;
+// Said at startup and repeated wherever a missing server would otherwise be
+// the only clue: an empty configuration used to fail without a word (#90).
+const envProblem = envFileProblem(envChoice);
 const envFile = dotenv.config({ path: envFilePath, processEnv: {} });
 const envFileValues = envFile.parsed || {};
 
@@ -170,6 +173,8 @@ logger.info('MCP SSH Manager starting', {
   verbose: getRuntimeEnv('SSH_VERBOSE') === 'true',
   envFilePath
 });
+
+if (envProblem) logger.warn(envProblem);
 
 // Load SSH server configuration
 const serverConfigManager = new ServerConfigManager({
@@ -255,7 +260,9 @@ async function loadServerConfig() {
 async function getServerConfig(serverName) {
   const servers = await loadServerConfig();
   const name = serverName && resolveServerName(String(serverName), servers);
-  if (!name) throw new Error(`Server "${serverName}" not found`);
+  if (!name) {
+    throw new Error(`Server "${serverName}" not found${envProblem && !Object.keys(servers).length ? ` (${envProblem})` : ''}`);
+  }
   return servers[name];
 }
 
@@ -1010,7 +1017,7 @@ registerToolConditional(
         sshOptions.push('-o StrictHostKeyChecking=accept-new'); // Accept new keys, reject changed ones
         sshOptions.push('-o ConnectTimeout=10');        // Connection timeout
 
-        const keyPath = serverConfig.keyPath.replace('~', os.homedir());
+        const keyPath = expandHomePath(serverConfig.keyPath);
         sshOptions.push(`-i ${keyPath}`);
       } else {
         // With sshpass, we don't use BatchMode
@@ -2214,14 +2221,15 @@ registerToolConditional(
       description: config.description || ''
     }));
 
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(serverInfo, null, 2),
-        },
-      ],
-    };
+    const content = [
+      {
+        type: 'text',
+        text: JSON.stringify(serverInfo, null, 2),
+      },
+    ];
+    // The list stays the first item, unchanged, for anything that parses it.
+    if (envProblem && !serverInfo.length) content.push({ type: 'text', text: `No server loaded: ${envProblem}.` });
+    return { content };
   }
 );
 

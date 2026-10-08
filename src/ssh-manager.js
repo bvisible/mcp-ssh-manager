@@ -1,9 +1,9 @@
 import { Client } from 'ssh2';
 import fs from 'fs';
-import os from 'os';
 import { trustedHostKeyAlgorithms, verifyHostKey } from './ssh-key-manager.js';
 import { logger } from './logger.js';
 import { shellPath } from './shell-quote.js';
+import { expandHomePath } from './config-paths.js';
 
 // Validate liveness-probe output across shells (bash, cmd.exe, PowerShell).
 // Normalize CRLF, stray quotes/backslashes and case before matching so quoted
@@ -87,7 +87,7 @@ class SSHManager {
 
       this.client.on('error', (err) => {
         this.connected = false;
-        reject(err);
+        reject(this.describeAuthFailure(err));
       });
 
       this.client.on('end', () => {
@@ -186,7 +186,7 @@ class SSHManager {
       // Add authentication (support both keyPath and keypath for compatibility)
       const keyPath = this.config.keyPath || this.config.keypath;
       if (keyPath) {
-        const resolvedKeyPath = keyPath.replace('~', os.homedir());
+        const resolvedKeyPath = expandHomePath(keyPath);
         connConfig.privateKey = fs.readFileSync(resolvedKeyPath);
         if (this.config.passphrase) {
           connConfig.passphrase = this.config.passphrase;
@@ -195,6 +195,8 @@ class SSHManager {
         connConfig.password = this.config.password;
       }
 
+      connConfig.authHandler = this.trackedAuthHandler(connConfig);
+
       // Use provided stream for proxy jump connections
       if (options.sock) {
         connConfig.sock = options.sock;
@@ -202,6 +204,80 @@ class SSHManager {
 
       this.client.connect(connConfig);
     });
+  }
+
+  /**
+   * ssh2's own order (none, password, publickey, agent), with two additions:
+   * a method the server said it does not accept is not sent, and every
+   * attempt is recorded so a failure can say what was refused.
+   *
+   * The order is unchanged on purpose: a server whose password changed but
+   * that accepts a key from the agent still connects, as it did in 3.8.5.
+   * What changes is the error. A refused password followed by every agent key
+   * used to end as the server's "Too many authentication failures", and the
+   * refused password never reached the user (issue #88).
+   * @param {Record<string, any>} connConfig
+   */
+  trackedAuthHandler(connConfig) {
+    const queue = ['none'];
+    if (connConfig.password !== undefined) queue.push('password');
+    if (connConfig.privateKey !== undefined) queue.push('publickey');
+    if (connConfig.agent !== undefined) queue.push('agent');
+    /** @type {{tried: string[], skipped: string[], offered: string[]|null}} */
+    const auth = { tried: [], skipped: [], offered: null };
+    this.auth = auth;
+    return (methodsLeft) => {
+      if (Array.isArray(methodsLeft)) auth.offered = methodsLeft;
+      while (queue.length) {
+        const method = queue.shift();
+        const accepted = method === 'none' || !auth.offered
+          || auth.offered.includes(method === 'agent' ? 'publickey' : method);
+        if (accepted) {
+          auth.tried.push(method);
+          return method;
+        }
+        auth.skipped.push(method);
+      }
+      return false;
+    };
+  }
+
+  /**
+   * The connection error, with what authentication tried when that is what
+   * failed. The server's own words are kept at the end.
+   * @param {Error & {level?: string}} err
+   * @returns {Error}
+   */
+  describeAuthFailure(err) {
+    const auth = this.auth;
+    const authFailed = err?.level === 'client-authentication'
+      || /authentication|too many/i.test(err?.message || '');
+    if (!auth || !authFailed) return err;
+
+    const offered = auth.offered?.length ? auth.offered.join(', ') : null;
+    const facts = [];
+    const outcome = method => {
+      if (auth.tried.includes(method)) return 'refused';
+      if (auth.skipped.includes(method)) return 'not offered';
+      return null;
+    };
+    const password = outcome('password');
+    if (password === 'refused') facts.push('the password was refused');
+    if (password === 'not offered') facts.push(`the server does not accept passwords${offered ? ` (it offers: ${offered})` : ''}`);
+    const key = outcome('publickey');
+    if (key === 'refused') facts.push('the configured key was refused');
+    if (key === 'not offered') facts.push(`the server does not accept keys${offered ? ` (it offers: ${offered})` : ''}`);
+    if (auth.tried.includes('agent')) {
+      facts.push(/too many/i.test(err.message)
+        ? 'the server then closed the connection while ssh-agent keys were being tried'
+        : 'no ssh-agent key was accepted');
+    }
+    if (!facts.length) return err;
+
+    const target = `${this.config.user || this.config.username}@${this.config.host}:${this.config.port || 22}`;
+    const described = new Error(`Authentication failed for ${target}: ${facts.join('; ')} (${err.message})`);
+    Object.assign(described, { level: err.level, cause: err });
+    return described;
   }
 
   /**
