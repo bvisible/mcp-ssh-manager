@@ -1,0 +1,70 @@
+{
+  "actions": {
+    "browse": "Browse files",
+    "cancel": "Cancel",
+    "connect": "Connect SSH",
+    "delete": "Delete",
+    "edit": "Edit"
+  },
+  "files": {
+    "columnModified": "Modified",
+    "columnName": "Name",
+    "columnSize": "Size",
+    "contextCompressZip": "Compress to Zip",
+    "contextCopyPath": "Copy Path",
+    "contextDelete": "Delete",
+    "contextDownload": "Download",
+    "contextExtractZip": "Extract Zip",
+    "contextGetInfo": "Get Info",
+    "contextNewFile": "New File",
+    "contextNewFolder": "New Folder",
+    "contextOpen": "Open",
+    "contextOpenTerminal": "Open Terminal",
+    "contextQuickLook": "Quick Look",
+    "contextRefresh": "Refresh",
+    "contextRename": "Rename",
+    "contextShowInFinder": "Show in Finder",
+    "contextUpload": "Upload",
+    "copyPath": "Copy path",
+    "download": "Download",
+    "emptyDirectory": "Empty directory",
+    "goUp": "Go up",
+    "hideHidden": "Hide hidden files",
+    "home": "Home (~)",
+    "modified": "Modified",
+    "name": "Name",
+    "newFolder": "New folder",
+    "openInCode": "Open in Code",
+    "openInEditor": "Open in editor",
+    "openTerminal": "Open terminal here",
+    "permissions": "Permissions",
+    "refresh": "Refresh",
+    "root": "Root (/)",
+    "setDefault": "Set as default directory",
+    "showHidden": "Show hidden files",
+    "size": "Size",
+    "statusHidden": "hidden",
+    "statusItems": "items",
+    "statusLink": "link",
+    "statusSelected": "selected",
+    "upload": "Upload"
+  },
+  "servers": {
+    "addFirst": "Add a server",
+    "dupDialog": {
+      "description": "A {{type}} session is already open for {{name}}.",
+      "goExisting": "Go to existing",
+      "openNew": "Open new",
+      "title": "Connection already open"
+    },
+    "emptyDescription": "Connect to your SSH servers to manage files, run commands, and access your infrastructure remotely.",
+    "emptyTitle": "Add your first server",
+    "import": "Import",
+    "noResults": "No servers match your search",
+    "status": {
+      "browserActive": "File browser active",
+      "browserAndTerminal": "File browser + SSH terminal",
+      "terminalActive": "SSH terminal active"
+    }
+  }
+}

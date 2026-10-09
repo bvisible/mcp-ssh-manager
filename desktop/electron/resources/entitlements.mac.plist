@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Electron needs both to run its own JIT. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- Outbound network: every SSH connection this app exists to make. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <!-- The vault's master key lives in the login keychain. Without this the
+       `security` call fails and the vault quietly falls back to a key file,
+       which is weaker and would happen without anyone noticing. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- File transfers reach the user's own directories. -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+</dict>
+</plist>

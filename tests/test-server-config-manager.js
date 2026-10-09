@@ -2,7 +2,11 @@ import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ServerConfigManager } from '../src/server-config-manager.js';
+const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'config-manager-'));
+process.env.SSH_MANAGER_HOME = sandbox;
+process.env.SSH_MANAGER_KEY_SOURCE = 'file';
+process.env.SSH_LOG_FILE = path.join(sandbox, 'log');
+const { ServerConfigManager } = await import('../src/server-config-manager.js');
 
 let passed = 0;
 function ok(label) { console.log(`[32m✓[0m ${label}`); passed++; }
@@ -32,7 +36,7 @@ function writeEnv(filePath, host) {
 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const tmpdir = (tag) => fs.mkdtempSync(path.join(os.tmpdir(), `mcp-ssh-${tag}-`));
+const tmpdir = (tag) => fs.mkdtempSync(path.join(sandbox, `${tag}-`));
 
 // Spy loader: deterministic, counts loads and lets each test program the result.
 // The manager still stat()s the *real* files on disk to decide whether to reload,
@@ -169,11 +173,13 @@ async function testDeletedFileIsSafe() {
 }
 
 async function main() {
-  await testInitialLoadAndHotReload();
-  await testLazyReload();
-  await testReloadFailureKeepsPrevious();
-  await testDeletedFileIsSafe();
-  console.log(`\n✅ server config manager tests passed (${passed} checks)`);
+  try {
+    await testInitialLoadAndHotReload();
+    await testLazyReload();
+    await testReloadFailureKeepsPrevious();
+    await testDeletedFileIsSafe();
+    console.log(`\n✅ server config manager tests passed (${passed} checks)`);
+  } finally { fs.rmSync(sandbox, { recursive: true, force: true }); }
 }
 
 main().catch(error => {

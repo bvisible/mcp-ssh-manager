@@ -14,6 +14,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { platform } from 'node:os';
+import { suggestDesktop } from './experience.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -26,6 +27,17 @@ if (!existsSync(bashScript)) {
 
 const isWindows = platform() === 'win32';
 const args = process.argv.slice(2);
+
+// These commands are native Node and also work on Windows without Git Bash.
+const nativeCommands = { control: 'control.js', vault: 'vault.js', import: 'portability.js', export: 'portability.js' };
+if (Object.hasOwn(nativeCommands, args[0])) {
+  const commandArgs = ['import', 'export'].includes(args[0]) ? args : args.slice(1);
+  const result = spawnSync(process.execPath, [join(__dirname, nativeCommands[args[0]]), ...commandArgs], { stdio: 'inherit' });
+  if (result.error) console.error(`[ssh-manager] ${result.error.message}`);
+  process.exit(result.status ?? 1);
+}
+
+suggestDesktop(args);
 
 /**
  * Convert a Windows-style path (C:\foo\bar) into a POSIX-style path
