@@ -33,6 +33,34 @@ claude mcp add ssh-manager-v4 ~/ssh-manager-v4/node_modules/.bin/mcp-ssh-manager
 claude mcp remove ssh-manager-v4
 ```
 
+## From npm to the application, and back
+
+Your AI tools start whichever ssh-manager their settings name. Installing the
+desktop application changes none of them: they keep starting the npm engine,
+and the application shows what that engine does (approvals, live output) as the
+window on top of it.
+
+To have a tool start the application's engine instead — say, to stop
+maintaining Node and npm — open **Options → AI tools** in the application and
+press *Use the app* for that tool. The same tab, opened from
+`ssh-manager control`, works the other way. What it does:
+
+| Tool | Where the entry lives | How it is changed |
+|---|---|---|
+| Claude Code | `~/.claude.json` (user scope) | `claude mcp remove` + `claude mcp add-json` when the command is installed; otherwise that one key of the file |
+| Claude Desktop | its `claude_desktop_config.json` | That one key, **only while Claude Desktop is closed** (it rewrites the file when it quits) |
+| Codex | `~/.codex/config.toml` (or `$CODEX_HOME`) | The `[mcp_servers.ssh-manager]` table, replaced where it stands; comments and other tables kept |
+
+The entry's environment variables (`SSH_ENV_PATH`, `SSH_CONFIG_PATH`…) are kept,
+so the same servers are read either way. The application's engine is the
+application binary with `ELECTRON_RUN_AS_NODE=1` and its bundled
+`resources/engine/src/index.js`: no Node needed. Restart the tool (or start a
+new Claude Code session) afterwards. *Use npm* switches back.
+
+Nothing is offered from an AppImage or from a disk image that was never copied
+to Applications: their path changes on the next start, and an entry pointing
+there would stop working.
+
 ## How 4.0.0 reaches you
 
 ```bash
@@ -52,9 +80,10 @@ To stay on 3.8 for now, pin it: `npm install -g mcp-ssh-manager@3`, or
 
 Your `.env`, your TOML file, your environment variables, your security modes,
 your groups remain supported. Starting the MCP engine does not start an
-interface or create a vault. The CLI only suggests the application once in an
-interactive terminal; scripts, help, version output and MCP stdout stay unchanged.
-Set `SSH_MANAGER_NO_TIPS=1` to suppress that invitation.
+interface or create a vault, and nothing tells you about one: no invitation, no
+banner, no hint in scripts, help, version output or MCP stdout. The interface and
+the desktop application are there for whoever wants them (`ssh-manager control`,
+`ssh-manager app`, key `a` in the menu) and silent for whoever does not.
 
 `npm run test:published-upgrade` installs the actual published 3.8.5, upgrades
 to this checkout's npm tarball, and rolls back. It compares the 37 MCP tool

@@ -23,6 +23,30 @@ behaviour change is that **SSH host keys are verified** (see
 [4.0.0-beta.1](#400-beta1---2026-09-24) and the [migration guide](docs/MIGRATION.md)).
 The previews below list everything in detail.
 
+### The application without npm, and nothing new for those who keep npm
+
+- **Options → AI tools.** Lists Claude Code, Claude Desktop and Codex, shows
+  which ssh-manager each one starts (the npm engine, the desktop application's,
+  another command, or none) with its version, and switches it on a click. The
+  application's engine runs under the application's own runtime
+  (`ELECTRON_RUN_AS_NODE`), so a machine with no Node and no npm gets a working
+  MCP server from the application alone. A switch rewrites that one entry —
+  through `claude mcp` when Claude Code's command is installed, in place in
+  Codex's `config.toml` (comments and other tables kept), and in Claude
+  Desktop's settings only while Claude Desktop is closed, since it rewrites
+  them when it quits. Environment variables of the entry are kept. A file that
+  does not parse is refused, never replaced. No engine is offered from an
+  AppImage or from a disk image, whose path changes on the next start.
+- **No invitation in the CLI.** The one-time "new in v4" note shown by a CLI
+  command is gone, and the menu names the desktop application only when it is
+  installed. Someone who uses the npm engine headless sees exactly what they
+  saw before.
+- The packaged-application smoke test, run on macOS, Windows and Linux before a
+  release, now starts the application's engine as an AI tool would and lists
+  its tools over MCP.
+- Options' tabs wrap inside their bar in a narrow window instead of spilling
+  over the panel below.
+
 ### Windows: not code-signed in this release
 
 The Windows installer and application are **not Authenticode-signed** in 4.0.0:

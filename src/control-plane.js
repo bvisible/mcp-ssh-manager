@@ -49,6 +49,7 @@ import { READERS, WELL_KNOWN, importFile, readTransmit, plan } from './server-im
 import { listGroups, getGroup, createGroup, updateGroup, deleteGroup, executeOnGroup, setServerConfigProvider } from './server-groups.js';
 import { readPublishedTunnels } from './tunnel-manager.js';
 import { desktopStatus, installDesktop, openDesktop, desktopRunning, engineVersion, RELEASES_PAGE } from './desktop-install.js';
+import { agentContext, agentsStatus, useEngine } from './agent-clients.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -279,10 +280,12 @@ export class ControlPlane {
    * @param {Partial<DesktopHooks>} [options.desktop] - Stand-ins for desktop-install.js (tests)
    * @param {number} [options.handoverMs] - Delay between "continued in the app" and stopping
    * @param {() => void} [options.onHandover] - Called once this plane has stopped for the app
+   * @param {Partial<import('./agent-clients.js').Context>} [options.agents] - Stand-ins for the
+   *   AI tools' configuration files and commands (tests)
    */
   constructor({
     socketPath, port = 0, auditPaths = [], vaultPath = defaultVaultPath(),
-    offerDesktop = false, desktop = {}, handoverMs = HANDOVER_MS, onHandover = null,
+    offerDesktop = false, desktop = {}, handoverMs = HANDOVER_MS, onHandover = null, agents = {},
   }) {
     this.socketPath = socketPath;
     this.port = port;
@@ -304,6 +307,8 @@ export class ControlPlane {
     };
     this.handoverMs = handoverMs;
     this.onHandover = onHandover;
+    /** Where the AI tools' configurations are read and written (tests point it elsewhere). */
+    this.agentContext = agentContext(agents);
     /** @type {{installing: boolean, handingOver: boolean, phase: string|null, received: number, total: number, error: string|null}} */
     this.desktopState = { installing: false, handingOver: false, phase: null, received: 0, total: 0, error: null };
     // Live command output from the engine, kept with a bounded scrollback so a
@@ -694,6 +699,13 @@ export class ControlPlane {
       if (req.method === 'GET' && url.pathname === '/api/desktop') return this.#serveDesktop(res);
       if (req.method === 'POST' && url.pathname === '/api/desktop/install') return this.#installDesktopApp(req, res);
       if (req.method === 'POST' && url.pathname === '/api/desktop/open') return this.#openDesktopApp(req, res);
+    }
+    // Which engine each AI tool runs, npm's or the application's, and the
+    // switch between them. Offered everywhere: to whoever uses npm and to
+    // whoever has only the application.
+    if (req.method === 'GET' && url.pathname === '/api/agents') return this.#serveAgents(res);
+    if (req.method === 'POST' && url.pathname === '/api/agents/use') {
+      return this.#readJsonBody(req, res, payload => this.#useAgentEngine(payload, res));
     }
     if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
       return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
@@ -2281,6 +2293,41 @@ export class ControlPlane {
    *
    * @param {import('http').ServerResponse} res - Response
    */
+  /**
+   * What each AI tool's ssh-manager entry runs, and the engines on offer.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #serveAgents(res) {
+    try {
+      this.#json(res, 200, await agentsStatus(this.agentContext));
+    } catch (error) {
+      logger.warn('Cannot read the AI tools configuration', { error: error.message });
+      this.#json(res, 500, { error: error.message });
+    }
+  }
+
+  /**
+   * Point one tool at the npm engine or the application's. Only ever on a
+   * request: nothing in a tool's configuration changes by itself.
+   *
+   * @param {{client?: unknown, engine?: unknown}} payload - `{client, engine: 'app'|'npm'}`
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #useAgentEngine(payload, res) {
+    const engine = payload?.engine;
+    if (typeof payload?.client !== 'string' || (engine !== 'app' && engine !== 'npm')) {
+      return this.#json(res, 400, { error: 'Expected { client, engine: "app" | "npm" }' });
+    }
+    try {
+      const client = await useEngine(payload.client, engine, this.agentContext);
+      this.#broadcast({ type: 'agents' });
+      return this.#json(res, 200, { client });
+    } catch (error) {
+      return this.#json(res, error.status || 500, { error: error.message });
+    }
+  }
+
   #serveDesktop(res) {
     let status;
     try {

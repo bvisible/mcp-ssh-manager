@@ -3,36 +3,23 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { suggestDesktop } from '../cli/experience.js';
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-v4-'));
 const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const plain = text => text.replace(/\x1b\[[0-9;]*m/g, '');
 try {
-  let output = '';
-  const options = { stdin: { isTTY: true }, stderr: { isTTY: true, write: text => { output += text; } }, env: { SSH_MANAGER_HOME: scratch } };
-  for (const args of [['--version'], ['--help'], ['server', 'list'], ['control'], ['vault', 'list'], ['app'], ['app', '--status']]) {
-    assert.equal(suggestDesktop(args, options), false);
-  }
-  assert.equal(output, '');
-  assert.deepEqual(fs.readdirSync(scratch), []);
-  assert.equal(suggestDesktop([], { ...options, stdin: { isTTY: false } }), false);
-  assert.equal(suggestDesktop([], { ...options, env: { ...options.env, CI: 'true' } }), false);
-  assert.equal(suggestDesktop([], { ...options, env: { ...options.env, SSH_MANAGER_NO_TIPS: '1' } }), false);
-  assert.equal(suggestDesktop([], options), true);
-  assert.match(output, /ssh-manager control/);
-  assert.match(output, /ssh-manager app/, 'the invitation points to the command that installs the app');
-  assert.doesNotMatch(output, /releases/, 'not to a page where a file has to be picked by hand');
-  assert.match(output, /interface is optional/);
-  const once = output;
-  assert.equal(suggestDesktop([], options), false);
-  assert.equal(output, once);
+  // Someone who uses the CLI as they always have is told nothing new: no
+  // "new in v4" invitation, no marker file, nothing on stderr.
+  const entry = fs.readFileSync(new URL('../cli/ssh-manager.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(entry, /suggestDesktop|experience\.js/, 'the CLI entry point prints no invitation');
+  assert.equal(fs.existsSync(new URL('../cli/experience.js', import.meta.url)), false);
 
   const versionRun = spawnSync(process.execPath, ['cli/ssh-manager.js', '--version'], { encoding: 'utf8', env: { ...process.env, SSH_MANAGER_HOME: scratch } });
   assert.equal(versionRun.status, 0);
   assert.ok(versionRun.stdout.includes(`SSH Manager CLI v${version}`));
   assert.equal(versionRun.stderr, '');
-  console.log('CLI compatibility: direct commands/pipes/CI stay silent; desktop invitation points to `ssh-manager app` and is shown once.');
+  assert.deepEqual(fs.readdirSync(scratch), [], 'nothing written for a CLI user');
+  console.log('CLI compatibility: no invitation, nothing on stderr, nothing written.');
 
   if (process.platform !== 'win32') {
     const home = path.join(scratch, 'home');
@@ -112,6 +99,20 @@ try {
 
     const bare = plain(draw(100, { MENU_DESKTOP_STATUS: '', SSH_MANAGER_ENV: path.join(home, 'missing.env'), NO_COLOR: '1' }));
     assert.match(bare, /^ {2}no servers yet$/m, 'each part of the status line degrades to nothing rather than breaking');
+
+    // The desktop app is named in the status line only when it is installed:
+    // a CLI user who chose not to have it is not reminded on every screen.
+    const fakeCli = path.join(scratch, 'fake-cli');
+    fs.mkdirSync(fakeCli);
+    const statusAfterRefresh = line => {
+      fs.writeFileSync(path.join(fakeCli, 'app.js'), `console.log(${JSON.stringify(line)});\n`);
+      const result = spawnSync('bash', ['-c', `SCRIPT_DIR=${JSON.stringify(fakeCli)}; source cli/lib/menu.sh; refresh_desktop_status; printf '%s' "$MENU_DESKTOP_STATUS"`], { encoding: 'utf8', env: baseEnv });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout;
+    };
+    assert.equal(statusAfterRefresh('desktop app not installed'), '');
+    assert.equal(statusAfterRefresh('desktop app not available for linux arm64'), '');
+    assert.equal(statusAfterRefresh('desktop app 4.0.0 installed'), 'desktop app 4.0.0 installed');
     console.log('Home screen: status line, every key, two columns at 72+ and one below, orange or bold.');
 
     // The real menu: every old way out still works, and the new keys do not break it.

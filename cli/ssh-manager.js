@@ -14,7 +14,6 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { platform } from 'node:os';
-import { suggestDesktop } from './experience.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,9 +36,10 @@ if (Object.hasOwn(nativeCommands, args[0])) {
   process.exit(result.status ?? 1);
 }
 
-// The menu clears the screen when it draws; told the invitation was just
-// printed, it keeps it above its first screen instead of wiping it at once.
-if (suggestDesktop(args)) process.env.SSH_MANAGER_KEEP_SCREEN = '1';
+// No "new in v4" invitation, not even once. Someone who uses the CLI and the
+// npm engine as they always have gets exactly that: the interface and the
+// desktop app are one key away in the menu (a) for whoever wants them, and say
+// nothing to whoever does not.
 
 /**
  * Convert a Windows-style path (C:\foo\bar) into a POSIX-style path

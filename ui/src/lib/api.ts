@@ -719,7 +719,32 @@ export const desktop = {
   open: () => post<unknown>('/api/desktop/open'),
 };
 
-export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys, desktop };
+/** An ssh-manager an AI tool can be pointed at. */
+export interface AgentEngine {
+  kind: 'app' | 'npm';
+  command: string;
+  args: string[];
+  version: string | null;
+}
+
+/** One AI tool and what its ssh-manager entry starts. */
+export interface AgentClient {
+  id: 'claude-code' | 'claude-desktop' | 'codex';
+  name: string;
+  installed: boolean;
+  configPath: string;
+  /** `other` is a checkout or a custom command; null, no entry at all. */
+  engine: 'app' | 'npm' | 'other' | null;
+  version: string | null;
+}
+
+export const agents = {
+  status: () => get<{ engines: { app: AgentEngine | null; npm: AgentEngine | null }; clients: AgentClient[] }>('/api/agents'),
+  use: (client: AgentClient['id'], engine: AgentEngine['kind']) =>
+    post<{ client: AgentClient }>('/api/agents/use', { client, engine }),
+};
+
+export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys, desktop, agents };
 export type Api = typeof api;
 
 export interface VaultStatus {

@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { terminalSmokeCommand, verifyLocalTerminalSmoke } from '../desktop/electron/smoke-test.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { terminalSmokeCommand, verifyLocalTerminalSmoke, verifyEngineAnswers } from '../desktop/electron/smoke-test.mjs';
 
 function fixture(shell, response) {
   const data = [], exits = [];
@@ -28,3 +32,20 @@ for (const shell of ['cmd.exe', 'powershell.exe', 'pwsh.exe', 'bash', 'zsh']) {
   assert.equal(working.killed, false, 'a healthy shell should exit normally');
 }
 console.log('✓ desktop smoke accepts VT command results for CMD, PowerShell and POSIX shells, rejects input echoes and exits normally');
+
+// The engine an AI tool would start: this checkout's, as the application starts its own.
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-engine-'));
+const saved = { ...process.env };
+Object.assign(process.env, { HOME: scratch, SSH_MANAGER_HOME: scratch, SSH_ENV_PATH: path.join(scratch, '.env'), SSH_CONFIG_PATH: path.join(scratch, 'absent.toml') });
+try {
+  const stages = [];
+  await verifyEngineAnswers({ command: process.execPath, args: [fileURLToPath(new URL('../src/index.js', import.meta.url))], env: {} }, { stage: line => stages.push(line) });
+  assert.match(stages[0], /application engine answered over MCP \(\d+ tools\)/);
+  await assert.rejects(verifyEngineAnswers({ command: process.execPath, args: ['-e', 'process.exit(3)'], env: {} }), /exited 3 before answering initialize/);
+} finally {
+  for (const key of ['HOME', 'SSH_MANAGER_HOME', 'SSH_ENV_PATH', 'SSH_CONFIG_PATH']) {
+    if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+  }
+  fs.rmSync(scratch, { recursive: true, force: true });
+}
+console.log('✓ desktop smoke starts an engine as an AI tool would and reads its tools over MCP; an engine that dies is reported');

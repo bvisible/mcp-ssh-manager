@@ -12,7 +12,7 @@ fixtures, not your SSH hosts, credentials or keychain.
 
 ```sh
 npm ci
-npm test                        # 46 engine, migration, security, release and preview suites
+npm test                        # 52 engine, migration, security, release and preview suites
 npm run lint
 npm run typecheck
 npx knip
@@ -34,7 +34,7 @@ server. Playwright reports, traces and failure screenshots are retained in CI.
 
 For focused work, run `npm run test:migration`, `test:security`, `test:hostkeys`,
 `test:proxy`, `test:working-directory`, `test:groups-persistence`, `test:release`,
-`test:preview`, `test:desktop-smoke` or `test:cli-experience`. Existing `test:upgrade`, `test:vault`, `test:recovery`,
+`test:preview`, `test:desktop-smoke`, `test:cli-experience` or `test:agent-clients`. Existing `test:upgrade`, `test:vault`, `test:recovery`,
 `test:controlplane`, `test:terminal` and `test:files` cover adjacent behavior.
 
 `npm run test:preview` checks the disposable candidate profile, real local
@@ -55,7 +55,8 @@ manually supplied URL or a user's running application.
 | Vault and live configuration | Vault creation/edit/deletion reloads; env precedence preserves approval; partial edits preserve secrets, accounts, proxies and restrictions; lost-key and external recovery cases; unreadable vault blocks remote operations while local inspection, cleanup and graphical recovery remain available; strict decryption; stale preview/concurrent restore refusal; confirmed recovery repairs a corrupt key file |
 | Approval boundary | Previously bypassed remote tools, aliases/partial names, exactly one prompt, opt-in fail-closed behavior, in-flight identity snapshot and pooled-connection invalidation |
 | SSH transport | Real local ssh2 host-key handshake and changed-key refusal before authentication; revoked and hashed known hosts; multi-hop ProxyJump and ProxyCommand; working-directory injection canaries |
-| CLI adoption | One optional terminal invitation; no hint on commands, help, version, pipes, CI or MCP stdout |
+| CLI adoption | No invitation at all; nothing on commands, help, version, pipes, CI or MCP stdout; the desktop app named in the menu's status line only when installed |
+| AI tools engine switch | Claude Code (through `claude mcp` and by file), Claude Desktop (refused while running) and Codex (table replaced in place, comments kept) switched between npm and the application and back; other settings and the entry's environment kept; unparsable files refused untouched; AppImage and disk-image paths never offered; the written configuration starts a real engine over MCP; Options → AI tools in the browser, with axe; the packaged application's own engine started over MCP on all three platforms |
 | Interface | First-server creation, direct import, legacy import/edit preservation, keyboard focus/Escape, axe accessibility, narrow viewport, reduced motion, connection loss, preferences across a new port, encrypted backup/preview/restore including files above 1 MB |
 | Groups and distribution | Legacy groups migrated into shared user state, write failures preserved; signed application unchanged by edits; version/channel/commit/hash checks, tampered artifacts rejected, RC isolation |
 | Candidate preview | Disposable home and file-backed key; encrypted fixture credentials; real SFTP confined to scratch files; simulated remote commands; same-profile control-plane restart; older desktop artifacts refused; orderly cleanup |

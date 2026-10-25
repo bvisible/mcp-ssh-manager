@@ -78,6 +78,21 @@ opens it when it is already there. The browser interface of `ssh-manager control
 offers the same as one button. Your agents keep using the npm engine; the
 application is the window on top of it. Nothing is downloaded unless you ask.
 
+**Without npm at all.** The application carries the engine too, and your AI
+tools can start that one: *Options → AI tools* lists Claude Code, Claude Desktop
+and Codex, says which ssh-manager each one starts (npm's, the application's, or
+none yet) and switches it in one click — no Node, no terminal. The same tab, in
+`ssh-manager control`, shows npm users which version each tool really runs.
+A switch rewrites that tool's one `ssh-manager` entry, keeps its environment
+variables, and takes effect when the tool next starts; switching back is the
+same click.
+
+**Updates.** The application checks for a new version at launch and every six
+hours, downloads it when you click *Update* and installs it when it quits. The
+npm engine updates with npm, on its own schedule. A change to the interface
+reaches npm users with the next npm release and application users with the next
+application release.
+
 ## Up and running with npm
 
 ```bash

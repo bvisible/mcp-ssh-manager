@@ -9,10 +9,15 @@
 
 # The desktop app's state, from `ssh-manager app --status`. Read when the menu
 # opens and after the app key, not on every redraw; nothing when it cannot be.
+# Shown only when the app is installed: someone who uses the CLI alone is not
+# told, every time, about an application they chose not to have.
 refresh_desktop_status() {
     MENU_DESKTOP_STATUS=""
     if [ -n "${SCRIPT_DIR:-}" ] && [ -f "$SCRIPT_DIR/app.js" ] && command -v node >/dev/null 2>&1; then
         MENU_DESKTOP_STATUS="$(node "$SCRIPT_DIR/app.js" --status 2>/dev/null || true)"
+        case "$MENU_DESKTOP_STATUS" in
+            *"not installed"*|*"not available"*) MENU_DESKTOP_STATUS="" ;;
+        esac
     fi
 }
 
@@ -55,7 +60,7 @@ menu_cell() {
 
 # Display main menu
 show_main_menu() {
-    # Kept once: the invitation printed just before would otherwise vanish.
+    # Kept once when asked, so a test can read the screen it draws.
     if [ -n "${SSH_MANAGER_KEEP_SCREEN:-}" ]; then
         unset SSH_MANAGER_KEEP_SCREEN
     else

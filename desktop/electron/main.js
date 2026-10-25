@@ -145,6 +145,19 @@ function engineRoot() {
     : path.join(__dirname, '..', '..');
 }
 
+/**
+ * This application as Options → AI tools offers it to Claude Code, Claude
+ * Desktop or Codex: the binary that runs its engine. Looking in /Applications
+ * the way `ssh-manager control` does would miss a copy kept anywhere else.
+ */
+function ownInstallation() {
+  if (!app.isPackaged) return undefined;
+  const installed = process.platform === 'darwin'
+    ? path.resolve(process.execPath, '..', '..', '..')
+    : process.platform === 'linux' && process.env.APPIMAGE ? process.env.APPIMAGE : process.execPath;
+  return { desktop: () => ({ supported: true, installed: true, path: installed, version: app.getVersion(), method: null }) };
+}
+
 /** @type {import('../../src/control-plane.js').ControlPlane|null} */
 let plane = null;
 /** @type {BrowserWindow|null} */
@@ -169,6 +182,7 @@ async function startControlPlane() {
     // Packaged, `dist/ui` sits next to the engine rather than in the source
     // tree; the control plane resolves it relative to its own file, so nothing
     // extra is needed here.
+    agents: ownInstallation(),
   });
   plane.setLocalShellProvider(localShellProvider());
   return plane.start();

@@ -1,6 +1,7 @@
 // Runs only through --release-smoke-test, with an isolated directory supplied
 // by scripts/smoke-desktop.mjs. Exercise the packaged code, UI and native PTY.
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -79,6 +80,49 @@ export async function verifyLocalTerminalSmoke(terminal, { timeoutMs = 10000, st
   });
 }
 
+/**
+ * Start an engine the way an AI tool starts it from its settings, and ask it
+ * for its tools over MCP's stdio framing (one JSON-RPC message per line).
+ */
+export async function verifyEngineAnswers(engine, { timeoutMs = 30000, stage = () => {} } = {}) {
+  const child = spawn(engine.command, engine.args, {
+    env: { ...process.env, ...engine.env, SSH_LOG_LEVEL: 'ERROR' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4096); });
+  const replies = new Map();
+  let buffer = '';
+  child.stdout.on('data', chunk => {
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      try { const message = JSON.parse(line); if (message.id !== undefined) replies.get(message.id)?.(message); } catch { /* not ours */ }
+    }
+  });
+  const send = message => child.stdin.write(`${JSON.stringify(message)}\n`);
+  const request = (id, method, params) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`The application's engine did not answer ${method} within ${timeoutMs / 1000} s: ${stderr.trim()}`)), timeoutMs);
+    child.once('exit', code => { clearTimeout(timer); reject(new Error(`The application's engine exited ${code} before answering ${method}: ${stderr.trim()}`)); });
+    replies.set(id, message => { clearTimeout(timer); resolve(message); });
+    send({ jsonrpc: '2.0', id, method, params });
+  });
+  try {
+    await request(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'release-smoke', version: '1' } });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    const listed = await request(2, 'tools/list', {});
+    const names = (listed.result?.tools ?? []).map(tool => tool.name);
+    assert.ok(names.includes('ssh_execute'), `the application's engine lists its tools (got ${names.length})`);
+    stage(`application engine answered over MCP (${names.length} tools)`);
+  } finally {
+    child.stdin.end();
+    child.kill();
+  }
+}
+
 export async function runSmokeTest({ app, BrowserWindow, url, root, localShellProvider }) {
   const stage = createStages();
   stage('control plane started');
@@ -95,6 +139,18 @@ export async function runSmokeTest({ app, BrowserWindow, url, root, localShellPr
   assert.equal(await page.webContents.executeJavaScript('document.querySelector("#root")?.children.length > 0'), true, 'packaged interface renders');
   assert.deepEqual(failures, []);
   stage('interface rendered');
+  // Options → AI tools offers this application's own engine, and that engine
+  // answers when an AI tool starts it: nothing else to install, npm included.
+  const base = new URL(url);
+  const agents = await (await fetch(`${base.origin}/api/agents${base.search}`)).json();
+  if (process.platform === 'linux' && process.env.APPIMAGE) {
+    assert.equal(agents.engines.app, null, 'an AppImage moves on every start: no engine is offered from it');
+  } else {
+    assert.ok(agents.engines.app, 'the application offers its own engine to AI tools');
+    assert.equal(fs.realpathSync(agents.engines.app.command), fs.realpathSync(process.execPath));
+    assert.equal(agents.engines.app.version, app.getVersion());
+    await verifyEngineAnswers(agents.engines.app, { stage });
+  }
   const groups = await import(pathToFileURL(path.join(root, 'src/server-groups.js')).href);
   groups.createGroup('release_smoke', ['fixture']);
   assert.equal(fs.existsSync(path.join(root, '.server-groups.json')), false, 'groups must not write inside the application');

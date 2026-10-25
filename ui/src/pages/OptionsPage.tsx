@@ -19,8 +19,12 @@ import { useWorkspace } from '@/stores/workspace';
 import { useTheme, type ThemeMode } from '@/stores/theme';
 import { cn } from '@/lib/utils';
 import { VaultPanel } from '@/components/VaultPanel';
+import { AgentsPanel } from '@/components/AgentsPanel';
 import { PageHeader } from '@/components/layout/PageHeader';
 
+
+/** A tab's own height, so a wrapped row keeps the size of the first. */
+const TAB = 'h-7 flex-none';
 
 const THEMES: { id: ThemeMode; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'system', label: 'Match the desktop', hint: 'follows your system setting, including when it changes', icon: Monitor },
@@ -186,13 +190,18 @@ export function OptionsPage() {
           scrolled through, which made "where is the thing I came for" a reading
           exercise. Tabs answer it before you scroll. */}
       <Tabs defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-6 mt-4 h-auto w-fit max-w-[calc(100%-3rem)] shrink-0 flex-wrap">
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="vault">Vault</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
-          <TabsTrigger value="groups">Groups</TabsTrigger>
-          <TabsTrigger value="tunnels">Tunnels</TabsTrigger>
-          <TabsTrigger value="hosts">Known hosts</TabsTrigger>
+        {/* Wraps in a narrow window. The list's one-row height and the tabs'
+            "fill the list" height are both overridden, under the same variant
+            the component sets them with, or a second row falls outside the
+            list and over the panel below. */}
+        <TabsList className="mx-6 mt-4 w-fit max-w-[calc(100%-3rem)] shrink-0 flex-wrap justify-start group-data-[orientation=horizontal]/tabs:h-auto">
+          <TabsTrigger value="appearance" className={TAB}>Appearance</TabsTrigger>
+          <TabsTrigger value="vault" className={TAB}>Vault</TabsTrigger>
+          <TabsTrigger value="agents" className={TAB}>AI tools</TabsTrigger>
+          <TabsTrigger value="alerts" className={TAB}>Alerts</TabsTrigger>
+          <TabsTrigger value="groups" className={TAB}>Groups</TabsTrigger>
+          <TabsTrigger value="tunnels" className={TAB}>Tunnels</TabsTrigger>
+          <TabsTrigger value="hosts" className={TAB}>Known hosts</TabsTrigger>
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -205,6 +214,8 @@ export function OptionsPage() {
         </TabsContent>
 
         <TabsContent value="vault" className="mt-0"><VaultPanel /></TabsContent>
+
+        <TabsContent value="agents" className="mt-0"><AgentsPanel /></TabsContent>
 
         <TabsContent value="alerts" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
