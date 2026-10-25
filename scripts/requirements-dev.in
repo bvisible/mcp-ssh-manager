@@ -1,8 +1,12 @@
 # Python tools for the pre-commit hooks (scripts/setup-hooks.sh). The hashed
-# lock, requirements-dev.txt, is generated from this file:
-#   uv pip compile scripts/requirements-dev.in --generate-hashes --universal --python-version 3.9 -o scripts/requirements-dev.txt
-pre-commit==4.0.1
-black==24.10.0
-flake8==7.1.1
-isort==5.13.2
-detect-secrets==1.5.0
+# lock, requirements-dev.txt, is generated from this file; floors only, the lock
+# holds the exact versions. Python 3.11 and later: 3.10 reaches end of life this month, and the
+# fixed releases of black, filelock, requests and urllib3 do not support older ones.
+#   uv pip compile scripts/requirements-dev.in --generate-hashes --universal --python-version 3.11 -o scripts/requirements-dev.txt
+# Check the result against OSV before committing: a lock of pinned versions is
+# read by OpenSSF Scorecard, and an affected version there is a standing alert.
+pre-commit>=4.0.1
+black>=26.3.1
+flake8>=7.1.1
+isort>=5.13.2
+detect-secrets>=1.5.0
