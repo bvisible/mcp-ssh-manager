@@ -38,6 +38,52 @@ export function getBackupMetadataPath(backupId, backupDir = DEFAULT_BACKUP_DIR) 
 }
 
 /**
+ * Refuse a backup ID that is not one.
+ *
+ * GHSA-2wjh-xm9c-7qf9: ssh_backup_restore took `backupId` from the caller and
+ * spliced the path built from it into `cat "…"`, where `$(...)` and backticks
+ * still run — remote code execution through a tool that was only meant to
+ * restore. Quoting (buildReadMetadataCommand) is the fix; this is the second
+ * wall. An ID is a file name inside the backup directory, so a path separator,
+ * a `..` segment or a control character can only mean somebody is reaching
+ * elsewhere. Spaces and dots stay allowed: IDs carry the backup's name, and a
+ * name that worked before must still restore.
+ *
+ * @param {unknown} backupId - As the caller sent it
+ * @returns {string} The same ID, known to be a plain file name
+ */
+export function assertSafeBackupId(backupId) {
+  const id = String(backupId ?? '');
+  // eslint-disable-next-line no-control-regex
+  if (!id || /[/\\\u0000-\u001f\u007f]/.test(id) || id === '.' || id === '..') {
+    throw new Error(`Invalid backup ID: ${JSON.stringify(id)}`);
+  }
+  return id;
+}
+
+/**
+ * Build the command that reads a backup's metadata (ssh_backup_restore).
+ * @param {string} backupId - Checked with assertSafeBackupId
+ * @param {string} [backupDir]
+ * @returns {string}
+ */
+export function buildReadMetadataCommand(backupId, backupDir = DEFAULT_BACKUP_DIR) {
+  return `cat ${shellQuote(getBackupMetadataPath(assertSafeBackupId(backupId), backupDir))}`;
+}
+
+/**
+ * Build the command that makes sure the backup directory exists
+ * (ssh_backup_create). Quoted like every other use of the directory: the
+ * inline `mkdir -p "…"` it replaces was the half of GHSA-qwwm-vrm9-4mw8 that
+ * the 3.8.x fix missed.
+ * @param {string} [backupDir]
+ * @returns {string}
+ */
+export function buildEnsureBackupDirCommand(backupDir = DEFAULT_BACKUP_DIR) {
+  return `mkdir -p ${shellQuote(backupDir)}`;
+}
+
+/**
  * Get backup file path
  */
 export function getBackupFilePath(backupId, backupDir = DEFAULT_BACKUP_DIR, extension = '.gz') {

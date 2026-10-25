@@ -89,6 +89,9 @@ import {
   generateBackupId,
   getBackupMetadataPath,
   getBackupFilePath,
+  assertSafeBackupId,
+  buildReadMetadataCommand,
+  buildEnsureBackupDirCommand,
   buildMySQLDumpCommand,
   buildPostgreSQLDumpCommand,
   buildMongoDBDumpCommand,
@@ -268,7 +271,13 @@ async function loadServerConfig() {
 async function getServerConfig(serverName) {
   if (!serverName) return null;
   const servers = await loadServerConfig();
-  return servers[String(serverName).toLowerCase()] || null;
+  // The same resolution getConnection() applies: aliases, case, a unique part
+  // of a name, a host match. This used to be an exact-key lookup, so "p" or a
+  // freshly added alias found no configuration here — no policy, unrestricted —
+  // while the connection resolved it to the readonly "prod" and ran the command
+  // there (GHSA-mq9f-5385-rjf4). An ambiguous name throws here as it does there.
+  const name = resolveServerName(String(serverName), servers);
+  return (name && servers[String(name).toLowerCase()]) || null;
 }
 
 // Apply policy + audit a denial in one shot. Returns null when allowed; returns
@@ -1645,7 +1654,11 @@ registerToolConditional(
   async ({ server: serverName, name }) => {
     try {
       const ssh = await getConnection(serverName);
-      const session = await createSession(serverName, ssh);
+      // The session keeps the server's own name, not what the caller typed: a
+      // partial name or an alias resolved now must not resolve to another
+      // server, or to none, for every command sent later (GHSA-mq9f-5385-rjf4).
+      const canonical = resolveServerName(serverName, await loadServerConfig()) || serverName;
+      const session = await createSession(canonical, ssh);
 
       const sessionName = name || `Session on ${serverName}`;
 
@@ -3461,7 +3474,7 @@ registerToolConditional(
       const metadataPath = getBackupMetadataPath(backupId, backupDirectory);
 
       // Ensure backup directory exists with proper error handling
-      const mkdirResult = await ssh.execCommand(`mkdir -p "${backupDirectory}"`);
+      const mkdirResult = await ssh.execCommand(buildEnsureBackupDirCommand(backupDirectory));
       if (mkdirResult.code !== 0) {
         throw new Error(`Failed to create backup directory: ${mkdirResult.stderr || mkdirResult.stdout}`);
       }
@@ -3732,12 +3745,14 @@ registerToolConditional(
     if (denied) return denied;
 
     try {
+      // Checked before anything connects: an ID that is not a plain file name
+      // is refused outright, and the one that passes is still quoted.
+      assertSafeBackupId(backupId);
       const ssh = await getConnection(serverName);
       const backupDirectory = backupDir || DEFAULT_BACKUP_DIR;
-      const metadataPath = getBackupMetadataPath(backupId, backupDirectory);
 
       // Read backup metadata
-      const metadataResult = await ssh.execCommand(`cat "${metadataPath}"`);
+      const metadataResult = await ssh.execCommand(buildReadMetadataCommand(backupId, backupDirectory));
       if (metadataResult.code !== 0) {
         throw new Error(`Backup not found: ${backupId}`);
       }

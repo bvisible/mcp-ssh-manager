@@ -5,7 +5,33 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.8.7] - 2026-10-25
+
+### Security
+
+Two advisories, both reported to us. **Upgrade.**
+
+- **A partial server name or an alias escaped `readonly` and `restricted`
+  mode** (GHSA-mq9f-5385-rjf4, high, reported by @nikhilagrawalsf). The policy
+  looked a server up by its exact name, while the connection resolved aliases,
+  case, a unique part of a name and host matches. So `"p"` instead of `"prod"`,
+  an alias the agent had just created with `ssh_alias`, or the host itself
+  found no policy — unrestricted — and the command then ran on the protected
+  server. The policy now resolves the name exactly as the connection does; an
+  ambiguous name is refused by both. A session keeps the server's own name, not
+  what was typed to open it.
+- **Remote command execution through `ssh_backup_restore`'s `backupId`**
+  (GHSA-2wjh-xm9c-7qf9, high, reported by @NYBaywatch). The metadata path built
+  from it went to the server inside `cat "…"`, where `$(…)` and backticks still
+  run — through a tool that was only meant to restore. `ssh_backup_create`'s
+  `mkdir -p "…"` had the same flaw with `backupDir`, the half of
+  GHSA-qwwm-vrm9-4mw8 the earlier fix missed. Both are quoted now, a backup ID
+  must be a plain file name (no separator, no `..`, no control character), and
+  a test fails if any remote command in `index.js` splices a value inside double
+  quotes again.
+- Dependencies: `zod` 4.6.7, `body-parser` 2.4.0, `fast-uri` 3.1.9,
+  `ip-address` 10.7.5, for the advisories published since 3.8.6.
+  `npm audit` is clean.
 
 ### Added
 
