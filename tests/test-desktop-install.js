@@ -14,7 +14,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  desktopStatus, installDesktop, openDesktop, desktopRunning, compareVersions, engineVersion,
+  desktopStatus, installDesktop, openDesktop, desktopRunning, compareVersions, engineVersion, RELEASES_PAGE,
 } from '../src/desktop-install.js';
 import { runApp } from '../cli/app.js';
 
@@ -335,6 +335,19 @@ async function testUnsupportedPlatform() {
   ok('an unsupported platform (Linux arm64, FreeBSD, 32-bit Windows) is not offered and downloads nothing');
 }
 
+async function testOnlyReleaseVersionsReachTheUrl() {
+  reset();
+  const box = machine('odd-version');
+  const { run, calls } = fakeRunner(box);
+  for (const version of ['4.0.0/../../evil', '../4.0.0', '4.0.0?x=1', '4.0.0#frag', 'latest', '', '4.0.0-beta..3']) {
+    await assert.rejects(installDesktop({ ...mac(box), version, run }),
+      error => error.code === 'NOT_FOUND' && /Not a release version/.test(error.message), JSON.stringify(version));
+  }
+  assert.deepEqual(requests, [], 'a version that is not a release version must not reach the network');
+  assert.deepEqual(calls, []);
+  ok('only a release version (4.0.0, 4.0.0-beta.3) becomes part of a download URL; anything else is refused before a request');
+}
+
 async function testAlreadyInstalledOpensWithoutDownloading() {
   reset();
   const box = machine('installed');
@@ -440,8 +453,14 @@ async function testLinuxAppImageWithoutApt() {
   const result = await installDesktop({ ...options, run });
   const image = path.join(box.home, 'Applications', 'SSH-Manager.AppImage');
   assert.deepEqual(result, { path: image, version: VERSION, downloaded: true });
-  assert.equal(fs.statSync(image).mode & 0o777, 0o755);
-  assert.deepEqual(fs.readFileSync(image), artifacts[`SSH-Manager-${VERSION}-x86_64.AppImage`]);
+  // One open file for both checks: the mode and the bytes of the same file.
+  const fd = fs.openSync(image, 'r');
+  try {
+    assert.equal(fs.fstatSync(fd).mode & 0o777, 0o755);
+    assert.deepEqual(fs.readFileSync(fd), artifacts[`SSH-Manager-${VERSION}-x86_64.AppImage`]);
+  } finally {
+    fs.closeSync(fd);
+  }
   assert.deepEqual(calls, []);
   assert.deepEqual(fs.readdirSync(path.join(box.home, 'Applications')), ['SSH-Manager.AppImage'], 'no partial file left');
   assert.equal(desktopStatus(options).installed, true);
@@ -536,7 +555,7 @@ async function testAppCommandFailureAndExitCodes() {
   const unsupported = await app([], { platform: 'linux', arch: 'arm64', env: arm.env, baseUrl, tmpRoot: arm.tmp, run: fakeRunner(arm).run });
   assert.equal(unsupported.code, 2);
   assert.match(unsupported.text, /no desktop build for linux arm64/);
-  assert.match(unsupported.text, /github\.com\/bvisible\/mcp-ssh-manager\/releases/);
+  assert.ok(unsupported.text.split('\n').map(line => line.trim()).includes(`Releases: ${RELEASES_PAGE}`), unsupported.text);
   assert.deepEqual(requests, []);
   ok('`ssh-manager app` on an unsupported platform: exit 2 and the releases page, nothing fetched');
 }
@@ -604,6 +623,7 @@ try {
   await testWrongSizeInstallsNothing();
   await testMissingManifestInstallsNothing();
   await testUnsupportedPlatform();
+  await testOnlyReleaseVersionsReachTheUrl();
   await testAlreadyInstalledOpensWithoutDownloading();
   await testMacWrongTeamInstallsNothing();
   await testMacSignatureOrGatekeeperRefusalInstallsNothing();

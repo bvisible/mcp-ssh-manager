@@ -13,6 +13,7 @@ import os from 'os';
 import path from 'path';
 import http from 'http';
 import { ControlPlane, contentDisposition } from '../src/control-plane.js';
+import { RELEASES_PAGE } from '../src/desktop-install.js';
 import { requestDecision, buildRequest } from '../src/approval.js';
 import { tunnelStatePath } from '../src/tunnel-manager.js';
 import { streamSocketPath } from '../src/live-stream.js';
@@ -809,7 +810,7 @@ async function testDesktopRefusalsWithoutAnInstaller() {
   const other = await startPlane({ offerDesktop: true, desktop: none.hooks });
   const unsupported = await call(other.base, `/api/desktop/install?token=${other.plane.token}`, { method: 'POST' });
   assert.strictEqual(unsupported.status, 400);
-  assert.match((await unsupported.json()).releases, /github\.com\/bvisible\/mcp-ssh-manager\/releases/);
+  assert.strictEqual((await unsupported.json()).releases, RELEASES_PAGE);
   const notInstalled = await call(other.base, `/api/desktop/open?token=${other.plane.token}`, { method: 'POST' });
   assert.strictEqual(notInstalled.status, 409, 'nothing to open when nothing is installed');
   ok('an unsupported platform gets the releases page, and opening an app that is not installed is a 409');

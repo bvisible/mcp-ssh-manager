@@ -47,10 +47,13 @@ jobs:
           node scripts/test-upgrade-from-published.mjs 3.8.5
           node scripts/test-upgrade-from-published.mjs 3.8.6
           node scripts/test-upgrade-from-published.mjs 3.8.7
+      # The same two steps as test.yml: Playwright from ui/package-lock.json
+      # (npx finds the installed one), never a version npm exec would resolve.
+      - name: Install browser
+        working-directory: ui
+        run: npx playwright install --with-deps chromium
       - name: Run browser flows
-        run: |
-          npm exec --prefix ui -- playwright install --with-deps chromium
-          npm --prefix ui run test:e2e
+        run: npm --prefix ui run test:e2e
       - name: Pack the reviewed package
         run: npm pack --pack-destination "$RUNNER_TEMP"
       - name: Publish the reviewed tarball with provenance and the right channel

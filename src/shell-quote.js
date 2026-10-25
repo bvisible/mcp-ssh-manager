@@ -48,7 +48,14 @@ export function shellPath(value) {
  * @returns {number} A non-negative integer
  */
 export function safeInteger(value, fallback) {
-  const n = Number(value);
+  let n;
+  try {
+    n = Number(value);
+  } catch {
+    return fallback; // an object that cannot become a number at all (found by the property test)
+  }
   if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.trunc(n));
+  // Capped: above 2^53 a number is no longer exact, and from 1e21 up it prints
+  // as "1e+21", which no command reads as a count (found by the property test).
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.trunc(n)));
 }

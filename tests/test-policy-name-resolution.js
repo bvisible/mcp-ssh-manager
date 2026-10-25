@@ -27,7 +27,8 @@ fs.copyFileSync(path.join(repo, 'package.json'), path.join(engine, 'package.json
 fs.symlinkSync(path.join(repo, 'node_modules'), path.join(engine, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
 // Readers that use the OS home must see the fixture, not the developer's files.
 const preload = path.join(scratch, 'isolated-home.mjs');
-fs.writeFileSync(preload, `import os from 'node:os'; import {syncBuiltinESMExports} from 'node:module'; os.homedir=()=>${JSON.stringify(scratch)}; syncBuiltinESMExports();`);
+// Constant code: the directory arrives in SSH_TEST_HOME, never spliced into the source.
+fs.writeFileSync(preload, "import os from 'node:os'; import {syncBuiltinESMExports} from 'node:module'; const home = process.env.SSH_TEST_HOME; if (!home) throw new Error('SSH_TEST_HOME is not set'); os.homedir = () => home; syncBuiltinESMExports();");
 const envFile = path.join(scratch, 'servers.env');
 const privateKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048,
   privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
@@ -88,7 +89,7 @@ async function engineWith(extra) {
     SSH_ENV_PATH: envFile, SSH_CONFIG_PATH: path.join(scratch, 'absent.toml'),
     SSH_MANAGER_HOME: path.join(scratch, 'state'), SSH_MANAGER_KNOWN_HOSTS: path.join(scratch, 'known_hosts'),
     SSH_LOG_FILE: path.join(scratch, 'engine.log'), SSH_HISTORY_FILE: path.join(scratch, 'history.json'),
-    SSH_LOG_LEVEL: 'ERROR',
+    SSH_LOG_LEVEL: 'ERROR', SSH_TEST_HOME: scratch,
   });
   const transport = new StdioClientTransport({ command: process.execPath,
     args: ['--import', preload, path.join(engine, 'src/index.js')], cwd: engine, env, stderr: 'pipe' });

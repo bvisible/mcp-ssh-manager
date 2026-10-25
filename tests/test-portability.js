@@ -179,8 +179,9 @@ function testNoSecretEverLeaves() {
       assert.ok(!text.includes(secret),
         `the ${format} export leaked "${secret}" — an export is a file people email`);
     }
-    assert.ok(text.includes('p.example.com'), `the ${format} export must still carry the host`);
-    assert.ok(text.includes('id_ed25519'), 'a key *path* is not a secret and is useful');
+    const cells = text.split(/[\r\n,]/).map(cell => cell.trim().replace(/^"(.*)"$/, '$1'));
+    assert.ok(cells.includes('p.example.com'), `the ${format} export must still carry the host`);
+    assert.ok(cells.includes('/home/deploy/.ssh/id_ed25519'), 'a key *path* is not a secret and is useful');
   }
   ok('no export carries a password, a passphrase or a sudo password');
 

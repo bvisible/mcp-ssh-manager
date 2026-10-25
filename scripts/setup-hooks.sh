@@ -16,11 +16,13 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
-# Versions are pinned on purpose. An unpinned install in a setup script hands
-# every contributor whatever version is current that day, and the tools below
-# gate commits — a silent major bump changes what passes.
-echo "📦 Installing pre-commit..."
-pip install 'pre-commit==4.0.1'
+# Versions AND hashes are pinned. An unpinned install in a setup script hands
+# every contributor whatever version is current that day, and these tools gate
+# commits (detect-secrets even writes the baseline the hooks then trust). The
+# lock covers every transitive dependency; --require-hashes refuses any file
+# whose hash is not in it. Regenerate it from requirements-dev.in (see there).
+echo "📦 Installing pre-commit, black, flake8, isort and detect-secrets..."
+pip install --require-hashes -r "$(dirname "$0")/requirements-dev.txt"
 
 # eslint and prettier are already devDependencies, at versions the CI gates
 # depend on. `npm install --save-dev eslint prettier` would re-resolve both to
@@ -30,20 +32,12 @@ pip install 'pre-commit==4.0.1'
 echo "📦 Installing Node.js dev dependencies from the lockfile..."
 npm ci
 
-# Install Python linting tools
-echo "📦 Installing Python linting tools..."
-pip install 'black==24.10.0' 'flake8==7.1.1' 'isort==5.13.2'
-
 # Install pre-commit hooks
 echo "🔗 Installing git hooks..."
 pre-commit install
 
 # Create secrets baseline
 echo "🔐 Creating secrets baseline..."
-# Pinned: an unpinned install in a setup script gives every developer whatever
-# version is current that day, and this one writes the secrets baseline the
-# pre-commit hooks then trust.
-pip install 'detect-secrets==1.5.0'
 detect-secrets scan > .secrets.baseline
 
 # Run hooks on all files (optional first run)

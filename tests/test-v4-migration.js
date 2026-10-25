@@ -199,7 +199,9 @@ async function main() {
       cwd: scratch, env: process.env, input: 'n\n', encoding: 'utf8', timeout: 10000,
     });
     assert.equal(cli.status, 0, cli.stderr);
-    assert.match(cli.stdout, /global\.example\.com/);
+    // `  global           deploy@global.example.com  no secret`: whole words, not substrings.
+    const words = text => text.split(/[\s@]+/);
+    assert.ok(words(cli.stdout).includes('global.example.com'), cli.stdout);
     assert.match(cli.stdout, /Cancelled/);
     const tomlPath = path.join(scratch, 'servers.toml');
     fs.writeFileSync(tomlPath, '[ssh_servers.toml_only]\nhost="toml.example.com"\nuser="deploy"\n');
@@ -208,7 +210,7 @@ async function main() {
     });
     assert.equal(tomlCli.status, 0, tomlCli.stderr);
     assert.match(tomlCli.stdout, /toml_only/);
-    assert.ok(!tomlCli.stdout.includes('global.example.com'));
+    assert.ok(!words(tomlCli.stdout).includes('global.example.com'), tomlCli.stdout);
     process.env.SSH_ENV_PATH = envPath;
     ok('GUI migration and CLI import discover the global .env; explicit TOML import also works');
 

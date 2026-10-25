@@ -47,6 +47,9 @@ export const RELEASES_PAGE = 'https://github.com/bvisible/mcp-ssh-manager/releas
 /** Release assets live under `<this>/v<version>/<file>`. */
 const RELEASE_BASE_URL = `${RELEASES_PAGE}/download`;
 
+/** A version this project releases: 4.0.0, 4.0.0-beta.3. Nothing else reaches a URL. */
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/;
+
 /** The Developer ID team of bVisible Sarl, which signs and notarizes the macOS build. */
 const TEAM_ID = 'BT249938WK';
 
@@ -644,6 +647,11 @@ export async function installDesktop({
   const allowLoopbackHttp = root.protocol === 'http:' && LOOPBACK_HOSTS.has(root.hostname);
   if (root.protocol !== 'https:' && !allowLoopbackHttp) {
     throw desktopError('DOWNLOAD', `Refusing to download from ${root.origin}: HTTPS only`);
+  }
+  // The version comes from a file (the engine's own package.json) and becomes
+  // part of the download URL and of the file name: only a release version may.
+  if (!RELEASE_VERSION.test(version)) {
+    throw desktopError('NOT_FOUND', `Not a release version: ${JSON.stringify(version)}. See ${RELEASES_PAGE}`);
   }
   const base = new URL(`v${encodeURIComponent(version)}/`, root);
   const name = `${ARTIFACT_PREFIX}-${version}-${target.suffix}`;

@@ -54,12 +54,13 @@ try {
 
   const bashRepoRoot = toBashPath(repoRoot);
   const bashEnvPath = toBashPath(envPath);
+  // Constant script: the paths travel in the environment, so a quote in a
+  // temporary directory's name cannot end a string and run what follows.
   const script = [
-    `export SSH_MANAGER_ENV='${bashEnvPath}'`,
     'export TERM=dumb',
-    `source '${bashRepoRoot}/cli/lib/colors.sh'`,
-    `source '${bashRepoRoot}/cli/lib/config.sh'`,
-    `source '${bashRepoRoot}/cli/lib/menu.sh'`,
+    'source "$CLI_TEST_REPO/cli/lib/colors.sh"',
+    'source "$CLI_TEST_REPO/cli/lib/config.sh"',
+    'source "$CLI_TEST_REPO/cli/lib/menu.sh"',
     'wizard_edit_server',
   ].join('; ');
 
@@ -67,6 +68,7 @@ try {
   const result = spawnSync(findBash(), ['-c', script], {
     encoding: 'utf8',
     input,
+    env: { ...process.env, SSH_MANAGER_ENV: bashEnvPath, CLI_TEST_REPO: bashRepoRoot },
   });
   const output = `${result.stdout}${result.stderr}`;
 
