@@ -2,7 +2,7 @@
 # lock, requirements-dev.txt, is generated from this file:
 #   uv pip compile scripts/requirements-dev.in --generate-hashes --universal --python-version 3.9 -o scripts/requirements-dev.txt
 pre-commit==4.0.1
-black==24.10.0
+black==26.10.1
 flake8==7.1.1
 isort==5.13.2
 detect-secrets==1.5.0
