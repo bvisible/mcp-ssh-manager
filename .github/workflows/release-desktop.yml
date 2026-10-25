@@ -155,6 +155,13 @@ jobs:
         shell: pwsh
         run: |
           $required = '${{ inputs.publish }}' -eq 'true' -and '${{ steps.version.outputs.prerelease }}' -eq 'false'
+          # One named exception, not a switch: 4.0.0 ships its Windows build
+          # unsigned (maintainer's decision, 2026-10-25), because the Azure
+          # Artifact Signing public profile waits on the company's registration.
+          # The release notes say so and the installer is checked by its
+          # SHA-256 in release-manifest-win32.json. Every later stable release
+          # is held to the signature again; delete this line once one ships signed.
+          if ('${{ inputs.tag }}' -eq 'v4.0.0') { $required = $false }
           ./scripts/verify-windows-build.ps1 -RequireSigned:$required
       # The installer configures Chromium's sandbox and Ubuntu's AppArmor
       # profile. Starting the unpacked directory skips those required steps.

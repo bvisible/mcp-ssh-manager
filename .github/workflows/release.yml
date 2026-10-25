@@ -46,6 +46,7 @@ jobs:
           # and 3.8.6, what npm users run when 4.0.0 arrives.
           node scripts/test-upgrade-from-published.mjs 3.8.5
           node scripts/test-upgrade-from-published.mjs 3.8.6
+          node scripts/test-upgrade-from-published.mjs 3.8.7
       - name: Run browser flows
         run: |
           npm exec --prefix ui -- playwright install --with-deps chromium

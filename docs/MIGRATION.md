@@ -1,48 +1,42 @@
 # Upgrading from 3.8 to 4.0
 
-**V4 is in preview: [`4.0.0-beta.2`](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2), published on GitHub only.** npm
-serves 3.8.6 — `npm install -g mcp-ssh-manager`, `npm update -g` and
-`npx mcp-ssh-manager` all keep giving you 3.8.6 until the stable 4.0.0 is
-released. Nothing reaches an existing installation while this is a preview.
+**4.0.0 is released, on npm and as a desktop application** ([release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0)).
+The last 3.8 release is 3.8.7, for anyone who pins the 3.8 line.
 
 The upgrade path preserves headless npm/CLI use. The application, vault import
 and approval settings are optional.
 
-## Trying the preview
+## Getting 4.0
 
-**The desktop application:** download it from [the preview release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2). The
-macOS build is signed and notarized; the Windows installer is **not code-signed**
-in this preview (Windows warns: *More info → Run anyway*); Linux ships `.deb`
-and `.AppImage`.
+**The desktop application:** `ssh-manager app` installs the one matching your
+engine, checked against the release, or download it from
+[the release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0). The
+macOS build is signed and notarized; the Windows installer is **not code-signed
+in 4.0.0** (Windows warns: *More info → Run anyway*; its SHA-256 is in
+`release-manifest-win32.json` on the release, which `ssh-manager app` checks);
+Linux ships `.deb` and `.AppImage`.
 
 **The npm engine and interface, side by side with your current install** —
 nothing global changes, your MCP client keeps using 3.8.x:
 
 ```bash
-npm install --prefix ~/ssh-manager-v4-preview https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.2/mcp-ssh-manager-4.0.0-beta.2.tgz
-~/ssh-manager-v4-preview/node_modules/.bin/ssh-manager control   # prints a local URL
+npm install --prefix ~/ssh-manager-v4 mcp-ssh-manager@4
+~/ssh-manager-v4/node_modules/.bin/ssh-manager control   # prints a local URL
 ```
 
 It reads the same `.env`, TOML and `~/.ssh-manager` as your installation, and
-behaves as 3.8.6 until you adopt something new. To let an agent use it, add it
+behaves as 3.8.x until you adopt something new. To let an agent use it, add it
 as a second MCP server and remove it when you are done:
 
 ```bash
-claude mcp add ssh-manager-v4 ~/ssh-manager-v4-preview/node_modules/.bin/mcp-ssh-manager
+claude mcp add ssh-manager-v4 ~/ssh-manager-v4/node_modules/.bin/mcp-ssh-manager
 claude mcp remove ssh-manager-v4
 ```
 
-**Or replace your global install** with the preview, and go back the same way:
+## How 4.0.0 reaches you
 
 ```bash
-npm install -g https://github.com/bvisible/mcp-ssh-manager/releases/download/v4.0.0-beta.2/mcp-ssh-manager-4.0.0-beta.2.tgz
-npm install -g mcp-ssh-manager@3.8.6      # back to the release
-```
-
-## When 4.0.0 is released
-
-```bash
-npm update -g mcp-ssh-manager     # crosses the major version: 3.8.5 → 4.0.0
+npm update -g mcp-ssh-manager     # crosses the major version: 3.8.x → 4.0.0
 ```
 
 Two ways it can reach you without that command, both covered by the upgrade test
@@ -297,15 +291,15 @@ then the working directory, then your home) applies as it did in 3.8.x. A missin
 file named by `SSH_ENV_PATH` stays the choice and is reported at startup, in
 `ssh_list_servers` and in "server not found".
 
-## Rolling back to 3.8.6
+## Rolling back to 3.8.7
 
 ```bash
-npm install -g mcp-ssh-manager@3.8.6
+npm install -g mcp-ssh-manager@3.8.7
 ```
 
-3.8.6 reads the original `.env` / TOML / process environment. V4 does not edit
+3.8.7 reads the original `.env` / TOML / process environment. V4 does not edit
 those files during vault import, so keeping them makes rollback possible.
-Changes made only in the V4 vault are **not** understood by 3.8.6: retain an
+Changes made only in the V4 vault are **not** understood by 3.8.7: retain an
 appropriate original configuration and backup before adopting vault-only changes.
 An older CLI may also use its older package-local groups file. Do not expect it
 to read V4's new user-state groups file automatically.

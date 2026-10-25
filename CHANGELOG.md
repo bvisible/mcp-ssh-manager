@@ -5,7 +5,33 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.0.0] - 2026-10-25
+
+**V4 is stable, on npm and as a desktop application** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0).
+`npm update -g mcp-ssh-manager` crosses the major version from 3.8.x; to stay on
+the 3.8 line, pin `mcp-ssh-manager@3` (3.8.7 is its latest). Installed beta
+desktop builds update to 4.0.0 by themselves.
+
+The control plane: a local application — a browser tab or a desktop window —
+that shows what your agents are doing on your servers and lets you stop them
+before they do it, with an encrypted vault for credentials, human approval per
+server, a file browser and a shell on your own machine. Everything in it is
+opt-in: **with no vault, no approval set and nothing running, the engine behaves
+as 3.8.x**, which the release pipeline proves by installing 3.8.5, 3.8.6 and
+3.8.7 from the registry and upgrading each to this version. The one deliberate
+behaviour change is that **SSH host keys are verified** (see
+[4.0.0-beta.1](#400-beta1---2026-09-24) and the [migration guide](docs/MIGRATION.md)).
+The previews below list everything in detail.
+
+### Windows: not code-signed in this release
+
+The Windows installer and application are **not Authenticode-signed** in 4.0.0:
+Windows shows *"Windows protected your PC"* — *More info → Run anyway*. The
+code-signing account exists; its public certificate waits on the company's
+registration, and later releases will be signed. Until then the installer's
+SHA-256 is published in `release-manifest-win32.json` on the release, and
+`ssh-manager app` installs only a file that matches it. macOS builds are signed
+and notarized by Apple; Linux packages are unsigned, as usual.
 
 ### Security
 
