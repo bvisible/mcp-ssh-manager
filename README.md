@@ -738,6 +738,7 @@ SSH_SERVER_[NAME]_HOST=hostname_or_ip
 SSH_SERVER_[NAME]_USER=username
 SSH_SERVER_[NAME]_PASSWORD=password  # For password auth
 SSH_SERVER_[NAME]_KEYPATH=~/.ssh/key  # For SSH key auth
+SSH_SERVER_[NAME]_CERTPATH=~/.ssh/key-cert.pub  # Optional: OpenSSH user certificate for KEYPATH (needs ssh2 with certificate support; see SSH Certificates)
 SSH_SERVER_[NAME]_PASSPHRASE=key_passphrase  # Optional, for passphrase-protected keys
 SSH_SERVER_[NAME]_PORT=22  # Optional, defaults to 22
 SSH_SERVER_[NAME]_DEFAULT_DIR=/path/to/dir  # Optional, default working directory
@@ -895,6 +896,29 @@ forward_agent = true
 ```
 
 > ⚠️ **Security warning:** agent forwarding lets any process that can read the forwarded agent socket on the remote host — including anyone with **root** there — use your loaded keys to impersonate you against other hosts *for the life of the connection*. Only enable it for servers you trust, mirroring the same caution `ssh_config(5)` advises for `ForwardAgent`.
+
+### 📜 SSH User Certificates
+
+If your servers trust an OpenSSH certificate authority (`TrustedUserCAKeys` in `sshd_config`), point `CERTPATH` at the certificate signed for `KEYPATH` (usually `<key>-cert.pub`). The certificate is sent as the identity and the private key signs, like `ssh -i key -o CertificateFile=key-cert.pub`.
+
+`.env` format:
+```env
+SSH_SERVER_MYSERVER_KEYPATH=~/.ssh/id_ed25519
+SSH_SERVER_MYSERVER_CERTPATH=~/.ssh/id_ed25519-cert.pub
+```
+
+TOML format:
+```toml
+[ssh_servers.myserver]
+key_path = "~/.ssh/id_ed25519"
+cert_path = "~/.ssh/id_ed25519-cert.pub"
+```
+
+- The certificate file is read on every connection, so a short-lived certificate renewed on disk is used on the next connection without restarting the server.
+- If `CERTPATH` is set and the file is missing, the connection fails instead of falling back to the bare key.
+- `CERTPATH` is ignored without `KEYPATH`. Without `CERTPATH` nothing changes.
+- **Requires an `ssh2` release with certificate support** ([mscdex/ssh2#1495](https://github.com/mscdex/ssh2/pull/1495)). With `ssh2` 1.17.0 the option is ignored and the plain key is offered.
+- `ssh_sync` uses the system `rsync`/`ssh` and does not use `CERTPATH` yet; OpenSSH picks up `<key>-cert.pub` next to the key on its own.
 
 ## 📚 Advanced Usage
 

@@ -5,6 +5,16 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Per-server OpenSSH user certificates: `CERTPATH` / `cert_path`.** The
+  certificate is passed to `ssh2` as `publicKey` next to `privateKey`, read on
+  every connection (renewed short-lived certificates need no restart), and a
+  missing file fails the connection. Needs an `ssh2` release with certificate
+  support (mscdex/ssh2#1495); with `ssh2` 1.17.0 the option has no effect.
+
 ## [3.8.6] - 2026-10-08
 
 ### Security
