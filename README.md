@@ -450,6 +450,7 @@ SSH_SERVER_[NAME]_HOST=hostname_or_ip
 SSH_SERVER_[NAME]_USER=username
 SSH_SERVER_[NAME]_PASSWORD=password          # or use a key
 SSH_SERVER_[NAME]_KEYPATH=~/.ssh/key
+SSH_SERVER_[NAME]_CERTPATH=~/.ssh/key-cert.pub # optional: OpenSSH certificate for KEYPATH
 SSH_SERVER_[NAME]_PASSPHRASE=key_passphrase  # optional
 SSH_SERVER_[NAME]_PORT=22                    # optional
 SSH_SERVER_[NAME]_DEFAULT_DIR=/var/www       # optional working directory
@@ -492,6 +493,8 @@ host = "10.0.0.5"
 user = "admin"
 proxy_jump = "bastion"
 ```
+
+**OpenSSH user certificates** — for servers that trust a certificate authority (`TrustedUserCAKeys`), point `CERTPATH` / `cert_path` at the certificate signed for `KEYPATH` (usually `<key>-cert.pub`). It is read on every connection, so a short-lived certificate renewed on disk needs no restart, and a missing file fails the connection instead of falling back to the bare key. It takes effect once `ssh2` ships certificate support ([mscdex/ssh2#1495](https://github.com/mscdex/ssh2/pull/1495)); until then the plain key is offered, as before. `ssh_sync` uses the system `ssh`, which finds `<key>-cert.pub` next to the key on its own.
 
 **Loading order**, highest priority first: process environment → `.env` → the encrypted vault → TOML. A credential you deliberately put in the vault beats one left in a `.env`; an operator overriding for a single run still beats both.
 

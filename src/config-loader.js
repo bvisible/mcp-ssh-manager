@@ -25,6 +25,7 @@ import { resolveConfigOptions } from './config-paths.js';
  * @property {string} [user] SSH user.
  * @property {string} [password] Password for password authentication.
  * @property {string} [keyPath] Path to the private key (`KEYPATH` / `key_path`).
+ * @property {string} [certPath] OpenSSH user certificate for keyPath (`CERTPATH` / `cert_path`).
  * @property {string} [passphrase] Passphrase for a protected private key.
  * @property {number} [port] TCP port; defaults to 22.
  * @property {string} [defaultDir] Working directory used when a tool omits `cwd`.
@@ -264,6 +265,7 @@ export class ConfigLoader {
           user: serverConfig.user || serverConfig.username,
           password: serverConfig.password,
           keyPath: serverConfig.key_path || serverConfig.keypath || serverConfig.ssh_key,
+          certPath: serverConfig.cert_path,
           passphrase: serverConfig.passphrase,
           port: serverConfig.port || 22,
           defaultDir: serverConfig.default_dir || serverConfig.default_directory || serverConfig.cwd,
@@ -340,6 +342,7 @@ export class ConfigLoader {
           user: env[`SSH_SERVER_${match[1]}_USER`],
           password: env[`SSH_SERVER_${match[1]}_PASSWORD`],
           keyPath: env[`SSH_SERVER_${match[1]}_KEYPATH`],
+          certPath: env[`SSH_SERVER_${match[1]}_CERTPATH`],
           passphrase: env[`SSH_SERVER_${match[1]}_PASSPHRASE`],
           port: parseInt(env[`SSH_SERVER_${match[1]}_PORT`] || '22'),
           defaultDir: env[`SSH_SERVER_${match[1]}_DEFAULT_DIR`],
@@ -424,6 +427,7 @@ export class ConfigLoader {
 
       if (server.password) serverConfig.password = server.password;
       if (server.keyPath) serverConfig.key_path = server.keyPath;
+      if (server.certPath) serverConfig.cert_path = server.certPath;
       if (server.passphrase) serverConfig.passphrase = server.passphrase;
       if (server.defaultDir) serverConfig.default_dir = server.defaultDir;
       if (server.sudoPassword) serverConfig.sudo_password = server.sudoPassword;
@@ -469,6 +473,7 @@ export class ConfigLoader {
       lines.push(`SSH_SERVER_${upperName}_USER=${server.user}`);
       if (server.password) lines.push(`SSH_SERVER_${upperName}_PASSWORD="${server.password}"`);
       if (server.keyPath) lines.push(`SSH_SERVER_${upperName}_KEYPATH=${server.keyPath}`);
+      if (server.certPath) lines.push(`SSH_SERVER_${upperName}_CERTPATH=${server.certPath}`);
       if (server.passphrase) lines.push(`SSH_SERVER_${upperName}_PASSPHRASE="${server.passphrase}"`);
       lines.push(`SSH_SERVER_${upperName}_PORT=${server.port || 22}`);
       if (server.defaultDir) lines.push(`SSH_SERVER_${upperName}_DEFAULT_DIR=${server.defaultDir}`);

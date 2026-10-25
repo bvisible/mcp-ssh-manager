@@ -21,6 +21,7 @@ function ok(label) { console.log(`\x1b[32m✓\x1b[0m ${passed + 1}. ${label}`); 
 // Field names the loader must expose on resolved server configs.
 const EXPECTED_CAMEL_FIELDS = {
   keyPath: '~/.ssh/fieldcheck_key',
+  certPath: '~/.ssh/fieldcheck_key-cert.pub',
   defaultDir: '/opt/fieldcheck',
   sudoPassword: 'sudo-secret',
   proxyJump: 'bastion',
@@ -32,7 +33,7 @@ const EXPECTED_CAMEL_FIELDS = {
 
 // Stale names that must NOT exist on resolved server configs (pre-v3.0.0 shape).
 const FORBIDDEN_SNAKE_FIELDS = [
-  'sudo_password', 'default_dir', 'key_path', 'keypath',
+  'sudo_password', 'default_dir', 'key_path', 'keypath', 'cert_path',
   'proxy_jump', 'proxy_command', 'audit_log'
 ];
 
@@ -60,6 +61,7 @@ async function testEnvFieldNames() {
     'SSH_SERVER_FIELDCHECK_ENV_USER=demo',
     'SSH_SERVER_FIELDCHECK_ENV_PASSWORD=pw-secret',
     'SSH_SERVER_FIELDCHECK_ENV_KEYPATH=~/.ssh/fieldcheck_key',
+    'SSH_SERVER_FIELDCHECK_ENV_CERTPATH=~/.ssh/fieldcheck_key-cert.pub',
     'SSH_SERVER_FIELDCHECK_ENV_PASSPHRASE=key-passphrase',
     'SSH_SERVER_FIELDCHECK_ENV_PORT=2222',
     'SSH_SERVER_FIELDCHECK_ENV_DEFAULT_DIR=/opt/fieldcheck',
@@ -97,6 +99,7 @@ async function testTomlFieldNames() {
     'user = "demo"',
     'password = "pw-secret"',
     'key_path = "~/.ssh/fieldcheck_key"',
+    'cert_path = "~/.ssh/fieldcheck_key-cert.pub"',
     'passphrase = "key-passphrase"',
     'port = 2222',
     'default_dir = "/opt/fieldcheck"',

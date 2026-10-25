@@ -188,6 +188,14 @@ class SSHManager {
       if (keyPath) {
         const resolvedKeyPath = expandHomePath(keyPath);
         connConfig.privateKey = fs.readFileSync(resolvedKeyPath);
+        // OpenSSH user certificate (<key>-cert.pub): sent to the server as the
+        // identity while privateKey signs. Read on every connect, so a renewed
+        // short-lived certificate is picked up without restarting the server.
+        // Requires an ssh2 release with certificate support (mscdex/ssh2#1495);
+        // older ssh2 ignores the unknown option and authenticates with the key.
+        if (this.config.certPath) {
+          connConfig.publicKey = fs.readFileSync(expandHomePath(this.config.certPath));
+        }
         if (this.config.passphrase) {
           connConfig.passphrase = this.config.passphrase;
         }
