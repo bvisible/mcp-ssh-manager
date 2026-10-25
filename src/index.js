@@ -92,6 +92,9 @@ import {
   generateBackupId,
   getBackupMetadataPath,
   getBackupFilePath,
+  assertSafeBackupId,
+  buildReadMetadataCommand,
+  buildEnsureBackupDirCommand,
   buildMySQLDumpCommand,
   buildPostgreSQLDumpCommand,
   buildMongoDBDumpCommand,
@@ -3454,7 +3457,7 @@ registerToolConditional(
       const metadataPath = getBackupMetadataPath(backupId, backupDirectory);
 
       // Ensure backup directory exists with proper error handling
-      const mkdirResult = await ssh.execCommand(`mkdir -p "${backupDirectory}"`);
+      const mkdirResult = await ssh.execCommand(buildEnsureBackupDirCommand(backupDirectory));
       if (mkdirResult.code !== 0) {
         throw new Error(`Failed to create backup directory: ${mkdirResult.stderr || mkdirResult.stdout}`);
       }
@@ -3723,12 +3726,14 @@ registerToolConditional(
   async ({ server: serverName, backupId, database, dbUser, dbPassword, dbHost, dbPort, targetPath, backupDir }) => {
 
     try {
+      // Checked before anything connects: an ID that is not a plain file name
+      // is refused outright, and the one that passes is still quoted.
+      assertSafeBackupId(backupId);
       const ssh = await getConnection(serverName);
       const backupDirectory = backupDir || DEFAULT_BACKUP_DIR;
-      const metadataPath = getBackupMetadataPath(backupId, backupDirectory);
 
       // Read backup metadata
-      const metadataResult = await ssh.execCommand(`cat "${metadataPath}"`);
+      const metadataResult = await ssh.execCommand(buildReadMetadataCommand(backupId, backupDirectory));
       if (metadataResult.code !== 0) {
         throw new Error(`Backup not found: ${backupId}`);
       }

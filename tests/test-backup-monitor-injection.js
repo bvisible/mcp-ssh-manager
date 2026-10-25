@@ -1,9 +1,12 @@
-// Security regression test for three advisories, all the same class of bug:
+// Security regression test for four advisories, all the same class of bug:
 //
 //   GHSA-qwwm-vrm9-4mw8 (high)     — every builder in backup-manager.js
 //   GHSA-796j-h5q5-jx6p (critical) — ssh_db_dump's follow-up stat, MongoDB dump
 //   GHSA-m793-whw6-f537 (critical) — buildServiceStatusCommand and ssh_tail,
 //                                    which bypassed readonly/restricted mode
+//   GHSA-2wjh-xm9c-7qf9 (high)     — ssh_backup_restore's backupId and
+//                                    ssh_backup_create's mkdir, two inline
+//                                    commands in index.js the first fix missed
 //
 // The v3.6.7 fix (CVE-2026-77383) introduced shellQuote() but applied it to
 // database-manager.js only. The parallel builders for backups and monitoring
@@ -30,7 +33,11 @@ import {
   buildListBackupsCommand,
   buildCleanupCommand,
   buildCronScheduleCommand,
-  isCronSchedule
+  isCronSchedule,
+  assertSafeBackupId,
+  buildReadMetadataCommand,
+  buildEnsureBackupDirCommand,
+  generateBackupId
 } from '../src/backup-manager.js';
 import { buildDeploymentStrategy, getTempFilename } from '../src/deploy-helper.js';
 import {
@@ -137,6 +144,12 @@ function buildCases(payload) {
     ['list backups / dir', () => buildListBackupsCommand(payload)],
     ['list backups / type', () => buildListBackupsCommand(workRoot, payload)],
     ['cleanup / dir', () => buildCleanupCommand(payload, 7)],
+    // GHSA-2wjh: ssh_backup_restore reading the metadata, ssh_backup_create
+    // making the directory. A refused ID counts as a defence, like any builder
+    // that throws; the directory has no such check and must be quoted.
+    ['restore metadata / backupId', () => buildReadMetadataCommand(payload, workRoot)],
+    ['restore metadata / backupDir', () => buildReadMetadataCommand('mysql_app_x', payload)],
+    ['create / backupDir', () => buildEnsureBackupDirCommand(path.join(workRoot, payload))],
     ['cron schedule / schedule', () => buildCronScheduleCommand(payload, 'echo hi', 'c')],
     ['cron schedule / comment', () => buildCronScheduleCommand('0 2 * * *', 'echo hi', payload)],
     // ssh_deploy: the remote path sat in double quotes, owner and permissions
@@ -234,6 +247,30 @@ function testCronLineCannotCarryAJob() {
   ok('a cron schedule must be a schedule: no command, no second job');
 }
 
+function testBackupIdIsAFileName() {
+  // GHSA-2wjh-xm9c-7qf9. The report's own payload first: it has no separator,
+  // so it passes the ID check — and must still not run, because it is quoted.
+  const reported = 'x$(touch CANARY).meta';
+  assert.equal(assertSafeBackupId(reported), reported);
+  assert.ok(!canaryFired(buildReadMetadataCommand(reported, workRoot)), 'the reported payload executed');
+
+  for (const bad of ['', '..', '.', '../../etc/passwd', 'a/b', 'a\\b', 'x\ntouch CANARY', 'x\u0000y', null, undefined]) {
+    assert.throws(() => assertSafeBackupId(bad), `backupId ${JSON.stringify(bad)} must be refused`);
+  }
+  // What ssh_backup_create generates, and an ID made from an older backup name
+  // with a space in it, still restore.
+  for (const good of [generateBackupId('mysql', 'production'), 'files_my site_2026-10-25T13-00-00-000Z_ab12cd34']) {
+    assert.equal(assertSafeBackupId(good), good);
+  }
+
+  // The class, not the instance: no remote command in index.js may splice a
+  // value inside double quotes, where $(...) and backticks still run.
+  const index = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  const raw = index.split('\n').filter(line => /execCommand\(`[^`]*"\$\{/.test(line));
+  assert.deepStrictEqual(raw, [], `raw double-quoted interpolation in a remote command:\n${raw.join('\n')}`);
+  ok('a backup ID is a plain file name, and no remote command splices a value inside double quotes');
+}
+
 function testBenignValuesStillWork() {
   // Quoting must not break ordinary use — a fix nobody can use is not a fix.
   const cmd = buildMySQLDumpCommand({
@@ -257,6 +294,7 @@ function main() {
     testProcessInfoRejectsNonNumericPid();
     testHostKeyRemovalIsNotAShellCommand();
     testCronLineCannotCarryAJob();
+    testBackupIdIsAFileName();
     testBenignValuesStillWork();
     console.log(`\n✅ backup/monitor injection tests passed (${passed} checks)`);
   } finally {
