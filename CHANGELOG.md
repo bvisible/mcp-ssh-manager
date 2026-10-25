@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing file fails the connection. Needs an `ssh2` release with certificate
   support (mscdex/ssh2#1495); with `ssh2` 1.17.0 the option has no effect.
 
+### Security
+
+- Dependencies: the advisories published since beta.2 — `zod` 4.6.7 (memory
+  exhaustion on oversized constrained collections), `body-parser` 2.4.0,
+  `hono`, `fast-uri` and `ip-address` in the engine; `electron` 44.9.3 and
+  `undici` in the desktop application; `vite` 6.4.5 for the interface build,
+  whose output is unchanged. `npm audit` is clean in all three packages,
+  development dependencies included.
+
 ## [4.0.0-beta.2] - 2026-10-08
 
 **A second preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2).

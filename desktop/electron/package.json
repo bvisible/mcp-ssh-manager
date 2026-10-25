@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "app-builder-lib": "26.17.0",
-    "electron": "^44.0.0",
+    "electron": "^44.9.3",
     "electron-builder": "^26.15.3",
     "js-yaml": "^4.3.2"
   },
