@@ -9,9 +9,12 @@ const entry = fileURLToPath(new URL('./control-plane.mjs', import.meta.url));
 export const legacyConfig = 'SSH_SERVER_LEGACY_HOST=127.0.0.1\nSSH_SERVER_LEGACY_PORT=9\nSSH_SERVER_LEGACY_USER=fixture\nSSH_SERVER_LEGACY_PASSWORD=fixture-only-secret\nSSH_SERVER_LEGACY_PROXYJUMP=bastion\nSSH_SERVER_LEGACY_MODE=restricted\nSSH_SERVER_LEGACY_ALLOW_PATTERNS=^uptime$\n';
 
 type App = { url: string; home: string; restart: () => Promise<void>; stop: () => Promise<void> };
-export const test = base.extend<{ app: App; legacy: boolean }>({
+export const test = base.extend<{ app: App; legacy: boolean; offerDesktop: boolean }>({
   legacy: [false, { option: true }],
-  app: async ({ legacy }, use) => {
+  // A control plane started as `ssh-manager control` starts it: offering the
+  // desktop application, here a stand-in that installs nothing.
+  offerDesktop: [false, { option: true }],
+  app: async ({ legacy, offerDesktop }, use) => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-v4-'));
     // Windows's default named pipe is global, even when HOME is isolated.
     // Give concurrent workers their own approval pipe and derived stream pipe.
@@ -38,6 +41,7 @@ export const test = base.extend<{ app: App; legacy: boolean }>({
           SSH_MANAGER_APPROVAL_SOCKET: approvalSocket,
           SSH_ENV_PATH: path.join(home, '.env'), SSH_CONFIG_PATH: path.join(home, 'absent.toml'),
           SSH_LOG_FILE: path.join(home, 'test.log'), SSH_GROUPS_FILE: path.join(home, 'groups.json'),
+          ...(offerDesktop ? { UI_TEST_OFFER_DESKTOP: '1' } : {}),
         },
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       });

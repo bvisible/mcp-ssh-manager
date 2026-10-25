@@ -5,15 +5,20 @@
  * you what happened; this one is the moment you can still change it, so the
  * command is shown in full, unwrapped and monospaced, and the two buttons say
  * what they do rather than "OK" and "Cancel".
+ *
+ * A destructive request says so in words across the card, and its approve
+ * button is red and reads "Approve and run": the decision that cannot be undone
+ * should not look like the one that can.
  */
-import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, Clock, ShieldCheck, X } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Check, Clock, Copy, ShieldCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { state, QUEUE_EVENTS, type PendingRequest } from '@/lib/api';
+import { state } from '@/lib/api';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
 import { useWorkspace } from '@/stores/workspace';
+import { usePendingRequests } from '@/lib/use-pending';
+import { cn } from '@/lib/utils';
 
 /** Seconds up to a minute, then minutes — nobody needs "waiting 143 s". */
 function formatWait(ms: number): string {
@@ -23,28 +28,31 @@ function formatWait(ms: number): string {
   return minutes < 60 ? `${minutes}m ${seconds % 60}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+const MODE_LABEL = { readonly: 'read only', restricted: 'restricted', unrestricted: 'unrestricted' } as const;
+
 export function WaitingPage() {
   const setView = useWorkspace(state => state.setView);
-  const [pending, setPending] = useState<PendingRequest[]>([]);
+  const { pending, drop } = usePendingRequests();
   const [deciding, setDeciding] = useState<string | null>(null);
-
-  useEffect(() => {
-    const refresh = () => state.get().then(s => setPending(s.pending)).catch(() => {});
-    void refresh();
-    // Pushed rather than polled: a request that waits on a timer is a request
-    // whose answer arrives late, and the agent is blocked meanwhile.
-    return state.subscribe(event => {
-      if ((QUEUE_EVENTS as readonly string[]).includes(event.type)) void refresh();
-    });
-  }, []);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const decide = async (id: string, approved: boolean) => {
     setDeciding(id);
     try {
       await state.decide(id, approved);
-      setPending(current => current.filter(r => r.id !== id));
+      drop(id);
     } finally {
       setDeciding(null);
+    }
+  };
+
+  const copy = async (id: string, command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(id);
+      setTimeout(() => setCopied(current => (current === id ? null : current)), 1500);
+    } catch {
+      /* the command is on screen in full; a failed copy costs nothing */
     }
   };
 
@@ -56,7 +64,7 @@ export function WaitingPage() {
       <PageHeader
         title="Waiting"
         count={pending.length}
-        hint="Commands an agent has paused on, until you decide."
+        hint="An agent paused on these commands. Nothing runs until you decide."
       />
 
       {pending.length === 0 ? (
@@ -75,56 +83,82 @@ export function WaitingPage() {
           }
         />
       ) : (
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10 pt-6">
+        <div className="flex max-w-5xl flex-col gap-4">
         {pending.map(request => (
-          <article key={request.id} className="rounded-lg border border-border bg-card shadow-card">
-            <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle px-4 py-2.5">
-              <span className="text-sm font-medium">{request.server}</span>
-              <span className="text-xs text-muted-foreground">
+          <article key={request.id} className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-3.5">
+              <h2 className="text-base font-bold">{request.server}</h2>
+              <span className="font-mono text-[12.5px] text-muted-foreground">
                 {request.user}@{request.host}
               </span>
-              <Badge variant="outline" className="ml-1">{request.tool}</Badge>
-              {request.mode !== 'unrestricted' && <Badge variant="secondary">{request.mode}</Badge>}
-              {request.destructive && (
-                <Badge variant="destructive" className="gap-1">
-                  <AlertTriangle className="h-3 w-3" />
-                  destructive
-                </Badge>
+              <span className="inline-flex h-6 items-center rounded-md border border-border px-2 font-mono text-xs text-muted-foreground">
+                {request.tool}
+              </span>
+              {request.mode !== 'unrestricted' && (
+                <span className="inline-flex h-6 items-center rounded-md bg-secondary px-2 text-xs text-secondary-foreground">
+                  {MODE_LABEL[request.mode]}
+                </span>
               )}
               {/* How long an agent has been blocked is the number that decides
                   whether you answer now or finish your sentence first. */}
-              <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+              <span className="ml-auto inline-flex items-center gap-1.5 text-[13px] text-muted-foreground tabular-nums">
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                 waiting {formatWait(request.waitingMs)}
               </span>
             </div>
 
+            {request.destructive && (
+              <div className="flex items-start gap-2.5 bg-destructive-light px-5 py-3 text-sm text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <p><b>Destructive.</b> This command can delete or overwrite data, and nothing on the server will undo it.</p>
+              </div>
+            )}
+
             {/* Wrapped, not truncated: half a command is how you approve the
                 wrong thing. */}
-            <pre className="overflow-x-auto px-4 py-3 font-mono text-xs whitespace-pre-wrap">
-              {request.command || '(no command)'}
-            </pre>
+            <div className="px-5 py-4">
+              <div className="flex items-start gap-2 rounded-lg border border-border bg-secondary py-3 pl-4 pr-2">
+                <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[14.5px] leading-relaxed">
+                  {request.command || '(no command)'}
+                </pre>
+                {request.command && (
+                  <button
+                    type="button"
+                    aria-label={copied === request.id ? 'Copied' : 'Copy the command'}
+                    title={copied === request.id ? 'Copied' : 'Copy the command'}
+                    onClick={() => void copy(request.id, request.command!)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                  >
+                    {copied === request.id ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </button>
+                )}
+              </div>
+            </div>
 
-            <div className="flex justify-end gap-2 border-t border-border-subtle px-4 py-2.5">
+            <div className="flex flex-wrap justify-end gap-2.5 px-5 pb-4">
               <Button
                 variant="outline"
-                size="sm"
+                className="h-11 px-5 font-bold"
                 disabled={deciding === request.id}
                 onClick={() => void decide(request.id, false)}
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-4 w-4" />
                 Refuse
               </Button>
               <Button
-                size="sm"
+                variant={request.destructive ? 'destructive' : 'default'}
+                className={cn('h-11 px-5 font-bold')}
                 disabled={deciding === request.id}
                 onClick={() => void decide(request.id, true)}
               >
-                <Check className="h-3.5 w-3.5" />
-                Approve
+                <Check className="h-4 w-4" />
+                {request.destructive ? 'Approve and run' : 'Approve'}
               </Button>
             </div>
           </article>
         ))}
+        </div>
       </div>
       )}
     </div>

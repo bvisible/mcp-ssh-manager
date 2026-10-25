@@ -32,8 +32,8 @@ export function ServerGrid({
   if (servers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-accent/10 mb-4">
-          <Monitor className="h-8 w-8 text-accent" />
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-accent">
+          <Monitor className="h-8 w-8 text-accent-foreground" />
         </div>
         <h3 className="text-lg font-semibold">{t('servers.emptyTitle')}</h3>
         <p className="mt-1 text-sm text-muted-foreground max-w-sm">
@@ -67,7 +67,7 @@ export function ServerGrid({
   }
 
   return (
-    <div className="space-y-2">
+    <div>
       {Array.from(categories.entries()).map(([categoryName, servers]) => (
         <CategoryGroup
           key={categoryName}

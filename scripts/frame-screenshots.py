@@ -10,9 +10,10 @@ same to the person using it:
            --ui` gives you
   app      the packaged desktop build, whose window is `titleBarStyle:
            'hiddenInset'`: no title bar at all, traffic lights floating over the
-           sidebar at (14, 14). Those numbers are read off
-           desktop/electron/main.js rather than invented, so the picture keeps
-           matching the product when the product moves.
+           sidebar's top row at (18, 18). Those numbers are read off
+           desktop/electron/main.js (`trafficLightPosition`) rather than
+           invented, so the picture keeps matching the product when the product
+           moves.
 
 Composited with Pillow rather than rendered through headless Chrome: Chrome 152
 does not return from --headless on this machine, and a compositor we control is
@@ -114,8 +115,9 @@ def frame(src: pathlib.Path, kind: str, out: pathlib.Path) -> pathlib.Path:
         window.paste(browser_bar(w), (0, 0))
     window.paste(shot, (0, bar_h))
     if kind == 'app':
-        # hiddenInset puts the lights over the content itself, at (14, 14).
-        draw_lights(window, 14 * SCALE, 14 * SCALE)
+        # hiddenInset puts the lights over the content itself, at (18, 18):
+        # centred in the rail's 48px top row, which `?shell=macos` keeps clear.
+        draw_lights(window, 18 * SCALE, 18 * SCALE)
 
     window.putalpha(rounded_mask(window.size, radius))
 
@@ -149,8 +151,8 @@ def main():
     """Frame each raw capture with the chrome it was captured for.
 
     The pairing is not cosmetic: a capture taken with `?shell=macos` already
-    leaves 28px clear at the top of the rail for the window buttons, and one
-    taken without it does not. Framing an app capture as a browser (or the
+    leaves the rail's top row clear for the window buttons, and one taken
+    without it does not. Framing an app capture as a browser (or the
     reverse) puts the traffic lights on top of the sidebar's own controls.
     """
     raws = RAW.glob('*.png')

@@ -47,116 +47,84 @@ show_version() {
 }
 
 # Show help
+#
+# In sections, with the commands aligned. Every command this help has ever
+# listed is still here; `app` is new.
 show_help() {
+    local H="${ACCENT}${BOLD}" N="$NC"
     cat <<EOF
-${BOLD}SSH Manager CLI${NC} - Simple and powerful SSH server management
 
-${BOLD}USAGE:${NC}
-    ssh-manager              # Interactive mode (menu)
-    ssh-manager -i           # Interactive mode (menu)
-    ssh-manager <command>    # Direct command mode
+  ${H}▲ SSH Manager ${VERSION}${N}  ${GRAY}servers, files and agent approvals${N}
 
-${BOLD}COMMANDS:${NC}
-    ${CYAN}server${NC}      Server management
-        add         Add a new server
-        list        List all servers
-        test        Test server connection
-        remove      Remove a server
-        edit        Edit server configuration
-        show        Show server details
-    
-    ${CYAN}sync${NC}        File synchronization (rsync)
-        push        Push files to server
-        pull        Pull files from server
-    
-    ${CYAN}tunnel${NC}      SSH tunnel management
-        create      Create a new tunnel
-        list        List active tunnels
-        close       Close a tunnel
-    
-    ${CYAN}monitor${NC}     System monitoring
-        cpu         Monitor CPU usage
-        memory      Monitor memory usage
-        disk        Monitor disk usage
-        network     Monitor network
-    
-    ${CYAN}session${NC}     SSH session management
-        start       Start interactive session
-        list        List active sessions
-        close       Close a session
-    
-    ${CYAN}exec${NC}        Execute commands
-        run         Run command on server
-        group       Run on server group
-    
-    ${CYAN}config${NC}      Configuration
-        edit        Edit configuration
-        show        Show configuration
-        init        Initialize configuration
+  ${H}USAGE${N}
+    ssh-manager                   The menu (also: -i, --interactive)
+    ssh-manager <command> ...     One command, for scripts and pipes
 
-    ${CYAN}tools${NC}       Tool activation/deactivation
-        list        Show all tools and their status
-        configure   Interactive configuration wizard
-        enable      Enable a tool group
-        disable     Disable a tool group
-        reset       Reset to default (all tools enabled)
-        export      Export Claude Code auto-approval config
+  ${H}SERVERS${N}
+    server add                    Add a server, step by step
+    server list                   List configured servers
+    server test <name>            Test a connection
+    server show <name>            Show a server's settings
+    server edit <name>            Edit a server
+    server remove <name>          Remove a server
+    ssh <name>                    Open an SSH session (also: connect)
+    exec <name> <command>         Run a command on a server
+    exec group <group> <command>  Run it on a server group
+    monitor <name> <what>         cpu · memory · disk · network
+    session start|list|close      SSH sessions
 
-    ${CYAN}vault${NC}       Encrypted credential store
-        import      Take the servers already in .env / TOML, encrypted
-        list        Show what is stored, without printing a secret
-        add         Add one server interactively
-        remove      Drop one from the vault
-        status      Where the vault and its key live
-        backup      Write a copy encrypted under a passphrase
-        restore     Read one back
+  ${H}FILES${N}
+    sync push <name> <src> <dest> Send files with rsync
+    sync pull <name> <src> <dest> Fetch files with rsync
+    tunnel create <name> <type> <ports>
+                                  <type>: local, remote or dynamic (SOCKS)
+    tunnel list                   Active tunnels
+    tunnel close                  Close a tunnel
 
-    ${CYAN}control${NC}     Run the control plane — watch what your agents do,
-                and decide on commands before they run
+  ${H}AGENTS AND THE INTERFACE${N}
+    control                       Watch what your agents run, and decide
+                                  before it runs, in your browser
+    app                           The desktop app: installs it if needed
+                                  (checked against the release), then opens it
+    app --status                  Whether it is installed, in one line
 
-    ${CYAN}import${NC}      Bring servers in from somewhere else
-        <file>      A spreadsheet, CSV, ~/.ssh/config, FileZilla, PuTTY,
-                    Termius or MobaXterm export — the format is detected
-        --from      Read where a tool keeps its own list:
-                    ssh-config · filezilla · transmit
-        --template  Write a spreadsheet to fill in and import back
+  ${H}SETTINGS${N}
+    config edit|show|init         The CLI's own settings
+    tools list|configure          Which MCP tools your agents see
+    tools enable|disable <group>  Turn a tool group on or off
+    tools reset                   Every tool back on
+    tools export                  Claude Code auto-approval config
+    vault import                  Take the servers in .env / TOML, encrypted
+    vault list                    What it holds, never a secret
+    vault status                  Where it and its key live
+    vault add|remove <name>       One server in or out
+    vault backup|restore <file>   A recovery file, under a passphrase
+    import <file>                 A spreadsheet, CSV, ~/.ssh/config, FileZilla,
+                                  PuTTY, Termius or MobaXterm export (detected)
+    import --from <tool>          ssh-config · filezilla · transmit
+    import --template             A spreadsheet to fill in and import back
+    export <file>                 .xlsx, .csv, .env or .toml
+                                  (never with passwords)
 
-    ${CYAN}export${NC}      Write your servers out as .xlsx, .csv, .env or .toml
-                (never with passwords)
+  ${H}OPTIONS${N}
+    -h, --help                    Show this help
+    -v, --version                 Show the version
+    -q, --quiet                   Quiet mode
+    -d, --debug                   Debug mode
 
-${BOLD}OPTIONS:${NC}
-    -h, --help      Show this help message
-    -v, --version   Show version
-    -q, --quiet     Quiet mode
-    -d, --debug     Debug mode
-
-${BOLD}EXAMPLES:${NC}
-    # Add a new server
+  ${H}EXAMPLES${N}
     ssh-manager server add
-    
-    # List all servers
-    ssh-manager server list
-    
-    # Test connection to prod1
     ssh-manager server test prod1
-    
-    # Sync files to server
     ssh-manager sync push prod1 ./app /var/www/app
-    
-    # Create SSH tunnel
     ssh-manager tunnel create prod1 local 3307:localhost:3306
-    
-    # Monitor server
-    ssh-manager monitor prod1 cpu
-    
-    # Watch what your agents are doing
     ssh-manager control
+    ssh-manager app
 
-${BOLD}CONFIGURATION:${NC}
-    Config directory: ${SSH_MANAGER_HOME:-~/.ssh-manager}
-    Server config:    ${SSH_MANAGER_ENV:-.env}
+  ${H}CONFIGURATION${N}
+    Config directory              ${SSH_MANAGER_HOME:-~/.ssh-manager}
+    Server config                 ${SSH_MANAGER_ENV:-.env}
 
-${BOLD}DOCUMENTATION:${NC}
+  ${H}DOCUMENTATION${N}
     https://github.com/bvisible/mcp-ssh-manager
 
 EOF
@@ -402,6 +370,12 @@ main() {
             # v4 control plane: approval socket + local page.
             node "$SCRIPT_DIR/control.js" "$@"
             ;;
+        app)
+            # The desktop application: installed if needed, checked against
+            # the release, then opened. Node, like control, so it shares the
+            # engine's code and works the same without Bash.
+            node "$SCRIPT_DIR/app.js" "$@"
+            ;;
         import|export)
             # Bringing servers in from other tools, and taking them out again.
             # Node, because it writes through the same SecretStore the engine
@@ -452,6 +426,8 @@ interactive_mode() {
         exit 1
     fi
     
+    refresh_desktop_status
+
     while true; do
         show_main_menu
         read choice
@@ -530,15 +506,15 @@ interactive_mode() {
             5)
                 # System Monitoring
                 if select_server_menu "System Monitoring"; then
-                    echo
-                    print_subheader "Monitor Type"
-                    echo "  1) Overview"
-                    echo "  2) CPU"
-                    echo "  3) Memory"
-                    echo "  4) Disk"
-                    echo "  5) Network"
-                    echo
-                    read -p "Choose [1-5]: " monitor_type
+                    clear
+                    print_menu_header "Health of $selected_server"
+                    menu_item 1 "Overview"
+                    menu_item 2 "CPU"
+                    menu_item 3 "Memory"
+                    menu_item 4 "Disk"
+                    menu_item 5 "Network"
+                    menu_prompt "Choose [1-5]:"
+                    read monitor_type
                     
                     case "$monitor_type" in
                         1) cmd_exec "$selected_server" "uptime && free -h && df -h" ;;
@@ -566,13 +542,13 @@ interactive_mode() {
             7)
                 # Configuration
                 clear
-                print_header "Configuration"
-                echo "  1) Edit CLI config"
-                echo "  2) Show CLI config"
-                echo "  3) Edit server config (.env)"
-                echo "  0) Back"
-                echo
-                read -p "Choose [0-3]: " config_choice
+                print_menu_header "Configuration"
+                menu_item 1 "Edit CLI config"
+                menu_item 2 "Show CLI config"
+                menu_item 3 "Edit server config (.env)"
+                menu_item 0 "Back"
+                menu_prompt "Choose [0-3]:"
+                read config_choice
                 
                 case "$config_choice" in
                     1) ${EDITOR:-nano} "$SSH_MANAGER_CONFIG" ;;
@@ -580,9 +556,10 @@ interactive_mode() {
                     3) cmd_server_edit ;;
                 esac
                 ;;
-            8)
-                # Help
-                show_help | less
+            8|'?')
+                # Help. 8 since 3.1; the home screen shows ?. -R keeps the
+                # palette instead of printing its escape codes.
+                show_help | less -R
                 ;;
             9)
                 # The control plane runs in the foreground and holds the approval
@@ -599,6 +576,77 @@ interactive_mode() {
                 case "$start_control" in
                     n|N) ;;
                     *) node "$SCRIPT_DIR/control.js" ;;
+                esac
+                ;;
+            a|A)
+                # The desktop application. Downloads only now, on this key,
+                # and only after the release has vouched for the file.
+                node "$SCRIPT_DIR/app.js" || true
+                refresh_desktop_status
+                read -p "Press Enter to continue..."
+                ;;
+            t|T)
+                # MCP tools: which of them agents see.
+                clear
+                print_menu_header "MCP tools"
+                menu_item 1 "Show what is enabled" "ssh-manager tools list"
+                menu_item 2 "Choose which tools agents see" "ssh-manager tools configure"
+                menu_item 0 "Back"
+                menu_prompt "Choose [0-2]:"
+                read tools_choice
+                case "$tools_choice" in
+                    1) cmd_tools list || true; echo; read -p "Press Enter to continue..." ;;
+                    2) cmd_tools configure || true ;;
+                esac
+                ;;
+            v|V)
+                # The encrypted vault, through the same Node command as
+                # `ssh-manager vault`.
+                clear
+                print_menu_header "Encrypted vault"
+                menu_item 1 "What it holds" "ssh-manager vault list (never prints a secret)"
+                menu_item 2 "Where it and its key live" "ssh-manager vault status"
+                menu_item 3 "Take the servers in .env / TOML" "ssh-manager vault import"
+                menu_item 0 "Back"
+                echo
+                echo "     ${GRAY}More, including recovery files: ssh-manager vault --help${NC}"
+                menu_prompt "Choose [0-3]:"
+                read vault_choice
+                case "$vault_choice" in
+                    1) node "$SCRIPT_DIR/vault.js" list || true ;;
+                    2) node "$SCRIPT_DIR/vault.js" status || true ;;
+                    3) node "$SCRIPT_DIR/vault.js" import || true ;;
+                esac
+                case "$vault_choice" in
+                    1|2|3) echo; read -p "Press Enter to continue..." ;;
+                esac
+                ;;
+            i|I)
+                # Servers from somewhere else, through `ssh-manager import`.
+                clear
+                print_menu_header "Import servers"
+                menu_item 1 "From ~/.ssh/config"
+                menu_item 2 "From FileZilla"
+                menu_item 3 "From Transmit"
+                menu_item 4 "From a file" "A spreadsheet, CSV, PuTTY, Termius or MobaXterm export"
+                menu_item 5 "Write a spreadsheet to fill in"
+                menu_item 0 "Back"
+                menu_prompt "Choose [0-5]:"
+                read import_choice
+                case "$import_choice" in
+                    1) node "$SCRIPT_DIR/portability.js" import --from ssh-config || true ;;
+                    2) node "$SCRIPT_DIR/portability.js" import --from filezilla || true ;;
+                    3) node "$SCRIPT_DIR/portability.js" import --from transmit || true ;;
+                    4)
+                        read -r -p "  File to import: " import_file
+                        if [ -n "$import_file" ]; then
+                            node "$SCRIPT_DIR/portability.js" import "${import_file/#\~/$HOME}" || true
+                        fi
+                        ;;
+                    5) node "$SCRIPT_DIR/portability.js" import --template || true ;;
+                esac
+                case "$import_choice" in
+                    1|2|3|4|5) echo; read -p "Press Enter to continue..." ;;
                 esac
                 ;;
             0|q|Q)

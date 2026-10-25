@@ -154,8 +154,8 @@ async function main() {
   await cdp.send('Emulation.setDeviceMetricsOverride',
     { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false });
 
-  // Deliberately *not* `?shell=macos`. That mode reserves 28px at the top of
-  // the rail for window buttons the desktop app draws over the content — right
+  // Deliberately *not* `?shell=macos`. That mode keeps the rail's top row empty
+  // for window buttons the desktop app draws over the content — right
   // for a screenshot that gets a window frame composited around it, wrong here,
   // where the video is shown edge to edge and the reserved strip reads as a
   // layout bug with nothing in it.

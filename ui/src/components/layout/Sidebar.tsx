@@ -1,10 +1,15 @@
 /**
  * The rail, carried over from TransHub with the AI-chat parts removed.
  *
- * Kept verbatim: the layout, the class names, the active accent bar, the
- * collapse animation, rename-on-double-click, the initials shown when collapsed.
- * Those are the design; rewriting them from a screenshot is how a port stops
- * looking like the thing it was ported from.
+ * Kept: the collapse toggle and its persisted state, rename-on-double-click,
+ * the initials shown when collapsed.
+ *
+ * Changed for 4.0: the product's mark at the top, and the destinations grouped
+ * by what they are about — your machines, what agents are doing, the state of
+ * the fleet, what you have open. A flat list of seven grey icons gave "Waiting",
+ * the one screen that can block an agent, the same weight as "Activity". The
+ * connection status lives at the foot of the rail now instead of in a strip
+ * across every page: when it is fine it is a dot, not a row of content.
  *
  * Removed: Home, the local terminal, the AI chat, the web browser, plugins and
  * settings — none of which exist here — along with the streaming ring and the
@@ -14,16 +19,33 @@ import { useState, useRef, useEffect } from 'react'
 import { Server, Clock, HeartPulse, Radio, Activity, Settings, PanelLeftClose, PanelLeftOpen, FolderOpen, X, TerminalSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useWorkspace, type WorkspaceTab, type ViewId } from '@/stores/workspace'
+import { useServersStore } from '@/stores/servers.store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { needsTitleBarRoom, hasOverlayControls } from '@/lib/desktop'
+import { ConnectionBadge } from '@/components/layout/ConnectionStatus'
 
-/** The screens that always exist, in the order they earn attention. */
-const FIXED_VIEWS: { id: ViewId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'servers', label: 'Servers', icon: Server },
-  { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
-  { id: 'waiting', label: 'Waiting', icon: Clock },
-  { id: 'health', label: 'Health', icon: HeartPulse },
-  { id: 'live', label: 'Live', icon: Radio },
-  { id: 'activity', label: 'Activity', icon: Activity }
+type NavItem = { id: ViewId; label: string; icon: React.ComponentType<{ className?: string }> }
+
+/** The screens that always exist, grouped, in the order they earn attention. */
+const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
+  {
+    items: [
+      { id: 'servers', label: 'Servers', icon: Server },
+      { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
+    ],
+  },
+  {
+    label: 'Agents',
+    items: [
+      { id: 'waiting', label: 'Waiting', icon: Clock },
+      { id: 'live', label: 'Live', icon: Radio },
+      { id: 'activity', label: 'Activity', icon: Activity },
+    ],
+  },
+  {
+    label: 'Fleet',
+    items: [{ id: 'health', label: 'Health', icon: HeartPulse }],
+  },
 ]
 
 function getInitials(name: string): string {
@@ -32,6 +54,18 @@ function getInitials(name: string): string {
   return name.slice(0, 2).charAt(0).toUpperCase() + name.slice(1, 2).toLowerCase()
 }
 
+/** The application icon, drawn rather than loaded: it has to be crisp at 24px. */
+function BrandMark() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 28 28" aria-hidden="true" className="shrink-0 text-foreground">
+      {/* The ring is the text colour at low opacity: invisible on the light
+          rail, and what keeps the black tile from vanishing into the dark one. */}
+      <rect x="0.5" y="0.5" width="27" height="27" rx="6.5" fill="#141413" stroke="currentColor" strokeOpacity="0.18" />
+      <polyline points="8.5 9 13.5 14 8.5 19" fill="none" stroke="#E0611A" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="15.5" y1="19.5" x2="20.5" y2="19.5" stroke="#FFFFFF" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 export function Sidebar() {
   const {
@@ -46,50 +80,95 @@ export function Sidebar() {
     updateTab,
     toggleExpanded
   } = useWorkspace()
+  const serverCount = useServersStore(s => s.servers.length)
+
+  // A panel icon, which is what this button does. It used to be a cross, and a
+  // cross means close — people read it as "close the application" or "close
+  // the panel for good", not "make the rail narrower". The two states are the
+  // same glyph mirrored, so the direction it will move in is visible before you
+  // press it.
+  const toggle = (
+    <button
+      onClick={toggleExpanded}
+      aria-label={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
+      title={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
+      className="no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    >
+      {sidebarExpanded
+        ? <PanelLeftClose className="h-4 w-4" />
+        : <PanelLeftOpen className="h-4 w-4" />}
+    </button>
+  )
 
   return (
     <div
       className={cn(
-        'sidebar-nav flex h-full flex-col border-r border-border bg-sidebar transition-[width] duration-200',
-        sidebarExpanded ? 'w-48' : 'w-12'
+        'sidebar-nav flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200',
+        // macOS draws its three window buttons over the top-left corner, about
+        // 70px of it. Collapsed to 56px the rail would put them on the page
+        // title, so in the app it stays wide enough to hold them.
+        sidebarExpanded ? 'w-56' : needsTitleBarRoom ? 'w-[76px]' : 'w-14'
       )}
     >
-      {/* A panel icon, which is what this button does. It used to be a cross,
-          and a cross means close — people read it as "close the application"
-          or "close the panel for good", not "make the rail narrower". The two
-          states are the same glyph mirrored, so the direction it will move in
-          is visible before you press it. */}
-      <button
-        onClick={toggleExpanded}
-        aria-label={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
-        title={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
-        className="no-drag mt-2 mb-3 ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      {/* The row the macOS window buttons sit in, level with the page header
+          beside it. Draggable, like the title bar it replaces. */}
+      {needsTitleBarRoom && (
+        <div className="drag-region flex h-12 shrink-0 items-center justify-end px-3">
+          {sidebarExpanded && toggle}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          'flex h-12 shrink-0 items-center gap-2.5',
+          sidebarExpanded ? 'px-4' : 'justify-center',
+          // Windows and Linux draw their buttons on the right, over the page
+          // header; the rail's top row is still part of the bar you drag.
+          hasOverlayControls && 'drag-region'
+        )}
       >
-        {sidebarExpanded
-          ? <PanelLeftClose className="h-4 w-4" />
-          : <PanelLeftOpen className="h-4 w-4" />}
-      </button>
+        {sidebarExpanded ? (
+          <>
+            <BrandMark />
+            {/* One line, always: the name wrapping onto two lines read as two
+                words that happen to be near each other. */}
+            <span className="whitespace-nowrap text-[17px] tracking-[-0.01em]">
+              <b className="font-bold">ssh</b> manager
+            </span>
+            {!needsTitleBarRoom && <span className="ml-auto">{toggle}</span>}
+          </>
+        ) : (
+          toggle
+        )}
+      </div>
 
-      {/* Fixed navigation */}
-      <nav className="flex flex-col items-center gap-1 px-1">
-        {FIXED_VIEWS.map((item) => (
-          <SidebarItem
-            key={item.id}
-            icon={item.icon}
-            label={item.label}
-            active={activeTabId === null && view === item.id}
-            expanded={sidebarExpanded}
-            badge={item.id === 'waiting' && pendingCount > 0 ? pendingCount : undefined}
-            onClick={() => setView(item.id)}
-          />
+      <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 scrollbar-none" aria-label="Main">
+        {NAV_GROUPS.map((group, index) => (
+          <div key={group.label ?? index} className="flex flex-col gap-0.5">
+            {group.label && (sidebarExpanded
+              ? <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{group.label}</div>
+              : <div className="mx-2 mb-1 border-t border-sidebar-border" />)}
+            {group.items.map(item => (
+              <SidebarItem
+                key={item.id}
+                icon={item.icon}
+                label={item.label}
+                active={activeTabId === null && view === item.id}
+                expanded={sidebarExpanded}
+                badge={item.id === 'waiting' && pendingCount > 0 ? pendingCount : undefined}
+                meta={item.id === 'servers' && serverCount > 0 ? String(serverCount) : undefined}
+                onClick={() => setView(item.id)}
+              />
+            ))}
+          </div>
         ))}
-      </nav>
 
-      {/* Dynamic sessions */}
-      {tabs.length > 0 && (
-        <>
-          <div className="mx-2 my-2 border-t border-border" />
-          <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-1 scrollbar-none">
+        {/* Dynamic sessions */}
+        {tabs.length > 0 && (
+          <div className="flex flex-col gap-0.5">
+            {sidebarExpanded
+              ? <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Open</div>
+              : <div className="mx-2 mb-1 border-t border-sidebar-border" />}
             {tabs.map((tab) => (
               <SessionItem
                 key={tab.id}
@@ -102,22 +181,14 @@ export function Sidebar() {
               />
             ))}
           </div>
-        </>
-      )}
-
-      {tabs.length === 0 && <div className="flex-1" />}
+        )}
+      </nav>
 
       {/* Pinned to the bottom, where settings belong — the places you configure
-          once are not the places you work.
-          
-          With a rule above it. Measured at six window heights, with and without
-          open shells, this button is always rendered and always on screen — and
-          it was still being missed, because a lone unlabelled grey gear at the
-          far end of a 48px rail reads as decoration rather than a destination.
-          The rule says "this is a different kind of thing", which is the part
-          the eye was missing. */}
-      <div className="mt-auto px-1 pb-2 pt-2">
-        <div className="mx-2 mb-2 border-t border-border" />
+          once are not the places you work. The connection sits with them: it
+          only needs a look when it is not fine, and then it says so loudly at
+          the top of the page as well. */}
+      <div className="flex flex-col gap-1.5 px-2 pb-3 pt-2">
         <SidebarItem
           icon={Settings}
           label="Options"
@@ -125,6 +196,7 @@ export function Sidebar() {
           expanded={sidebarExpanded}
           onClick={() => setView('options')}
         />
+        <ConnectionBadge expanded={sidebarExpanded} />
       </div>
     </div>
   )
@@ -136,46 +208,52 @@ function SidebarItem({
   active,
   expanded,
   onClick,
-  badge
+  badge,
+  meta
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
   active: boolean
   expanded: boolean
   onClick: () => void
+  /** Something waiting on you: drawn solid, in the accent. */
   badge?: number
+  /** A quiet count, for orientation only. */
+  meta?: string
 }) {
   const button = (
     <button
-      // Collapsed — which is now the default — these are icon-only buttons.
-      // Without a name they are invisible to a screen reader and unreachable
-      // by anything that looks elements up by their label.
+      // Collapsed, these are icon-only buttons. Without a name they are
+      // invisible to a screen reader and unreachable by anything that looks
+      // elements up by their label.
       aria-label={label}
+      aria-current={active ? 'page' : undefined}
       title={label}
       onClick={onClick}
       className={cn(
-        'no-drag relative flex h-9 items-center gap-2.5 rounded-lg transition-colors w-full pl-[11px]',
+        'no-drag relative flex h-10 w-full items-center gap-2.5 rounded-lg transition-colors',
+        expanded ? 'px-2.5' : 'justify-center',
         active
-          ? 'bg-accent text-primary'
-          : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
+          ? 'bg-sidebar-accent font-bold text-sidebar-accent-foreground'
+          : 'font-medium text-sidebar-foreground hover:bg-accent/50'
       )}
     >
-      {active && (
-        <div className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
-      )}
       <span className="relative shrink-0">
         <Icon className="h-[18px] w-[18px]" />
         {!expanded && badge !== undefined && (
-          <span className="absolute -right-1 -top-0.5 flex h-3 min-w-3 items-center justify-center rounded-full bg-destructive px-0.5 text-[7px] font-bold leading-none text-destructive-foreground">
+          <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-bold leading-none text-primary-foreground">
             {badge}
           </span>
         )}
       </span>
-      {expanded && <span className="flex-1 truncate text-left text-xs font-medium">{label}</span>}
+      {expanded && <span className="flex-1 truncate text-left text-sm">{label}</span>}
       {expanded && badge !== undefined && (
-        <span className="mr-2 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive/15 px-1 text-[10px] font-medium text-destructive">
+        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground tabular-nums">
           {badge}
         </span>
+      )}
+      {expanded && badge === undefined && meta !== undefined && (
+        <span className="shrink-0 text-xs font-medium text-muted-foreground tabular-nums">{meta}</span>
       )}
     </button>
   )
@@ -244,6 +322,7 @@ function SessionItem({
   }
 
   const Icon = session.type === 'dual-browser' ? FolderOpen : TerminalSquare
+  const kind = session.type === 'dual-browser' ? 'files' : 'shell'
   const initials = getInitials(session.title)
 
   const button = (
@@ -251,23 +330,21 @@ function SessionItem({
       // Same reason as the fixed rail items: collapsed, this is an icon and a
       // pair of initials, with no name unless one is given.
       aria-label={session.title}
+      aria-current={active ? 'page' : undefined}
       title={session.title}
       onClick={onActivate}
       className={cn(
-        'no-drag group relative flex h-9 items-center gap-2 rounded-lg transition-colors w-full pl-[11px]',
-        expanded && 'pr-1',
+        'no-drag group relative flex h-10 w-full items-center gap-2.5 rounded-lg transition-colors',
+        expanded ? 'pl-2.5 pr-1' : 'justify-center',
         active
-          ? 'bg-accent text-primary'
-          : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
+          ? 'bg-sidebar-accent font-bold text-sidebar-accent-foreground'
+          : 'font-medium text-sidebar-foreground hover:bg-accent/50'
       )}
     >
-      {active && (
-        <div className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
-      )}
       <span className="relative shrink-0">
         <Icon className="h-[18px] w-[18px]" />
         {!expanded && session.badge && session.badge > 1 && (
-          <span className="absolute -right-1 -top-0.5 flex h-3 min-w-3 items-center justify-center rounded-full bg-primary px-0.5 text-[7px] font-bold leading-none text-primary-foreground">
+          <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-bold leading-none text-primary-foreground">
             {session.badge}
           </span>
         )}
@@ -283,24 +360,26 @@ function SessionItem({
               onBlur={commitRename}
               onKeyDown={handleKeyDown}
               onClick={(e) => e.stopPropagation()}
-              className="flex-1 min-w-0 bg-transparent text-xs font-medium outline-none border-b border-primary"
+              className="flex-1 min-w-0 bg-transparent text-sm font-medium outline-none border-b border-primary"
             />
           ) : (
             <span
-              className="flex-1 truncate text-left text-xs font-medium"
+              className="flex-1 truncate text-left text-sm"
               onDoubleClick={handleDoubleClick}
             >
               {session.title}
             </span>
           )}
           {session.badge && session.badge > 1 && (
-            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-medium text-primary">
+            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 px-1 text-xs font-medium text-primary">
               {session.badge}
             </span>
           )}
+          <span className="text-xs font-medium text-muted-foreground group-hover:hidden">{kind}</span>
           <span
             role="button"
             tabIndex={0}
+            aria-label={`Close ${session.title}`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
@@ -312,9 +391,9 @@ function SessionItem({
               e.stopPropagation()
               onClose()
             }}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-accent/30 transition-all cursor-pointer"
+            className="hidden h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-accent group-hover:flex focus-visible:flex cursor-pointer"
           >
-            <X className="h-3 w-3" />
+            <X className="h-3.5 w-3.5" />
           </span>
         </>
       ) : (

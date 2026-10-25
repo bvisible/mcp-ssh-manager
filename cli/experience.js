@@ -15,9 +15,8 @@ export function suggestDesktop(args, { stdin = process.stdin, stderr = process.s
     return false;
   }
   stderr.write('\nNew in v4: a workspace for your servers, files and agent approvals.\n'
-    + 'Try the interface: ssh-manager control\n'
-    + 'Get the desktop app (no separate Node.js or npm install):\n'
-    + 'https://github.com/bvisible/mcp-ssh-manager/releases\n'
+    + 'In your browser: ssh-manager control\n'
+    + 'As a desktop app (menu bar, notifications, updates itself): ssh-manager app\n'
     + 'Your npm/CLI setup stays supported. The interface is optional.\n\n');
   return true;
 }

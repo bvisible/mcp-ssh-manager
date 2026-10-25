@@ -20,12 +20,7 @@ import { SecretStore, defaultVaultPath, SECRET_FIELDS } from '../src/secret-stor
 import { defaultSocketPath, isControlPlaneListening, VALID_APPROVAL_MODES } from '../src/approval.js';
 import { ConfigLoader } from '../src/config-loader.js';
 import { resolveEnvFilePath } from '../src/config-paths.js';
-
-const GREEN = '\x1b[32m';
-const YELLOW = '\x1b[33m';
-const RED = '\x1b[31m';
-const DIM = '\x1b[2m';
-const RESET = '\x1b[0m';
+import { GREEN, YELLOW, RED, DIM, RESET } from './style.js';
 
 /**
  * Ask a question on the terminal.

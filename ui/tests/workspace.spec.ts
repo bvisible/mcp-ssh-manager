@@ -10,6 +10,9 @@ test('welcome is accessible, finishes into a working form, and stays dismissed',
   const welcome = page.getByRole('dialog');
   await expect(welcome).toHaveAccessibleName('Your servers. Your workspace.');
   await expect(welcome.locator('svg')).not.toHaveCount(0);
+  // Measured at rest: the copy fades in over 250 ms, and axe reading a colour
+  // halfway through that fade reports the fade, not the design.
+  await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
   const accessibility = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   expect(accessibility.violations).toEqual([]);
   for (let i = 0; i < 12; i++) {

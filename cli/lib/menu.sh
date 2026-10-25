@@ -1,74 +1,135 @@
 #!/bin/bash
 # Interactive menu library for ssh-manager CLI
 
+# --- the home screen ---------------------------------------------------------
+# Where things stand, then every action one key away, in the desktop app's
+# orange and without emoji. The numbers keep the meaning they have had since
+# 3.1 (0 still quits and 8 still opens the help, though the screen shows q and
+# ?); the letters are new.
+
+# The desktop app's state, from `ssh-manager app --status`. Read when the menu
+# opens and after the app key, not on every redraw; nothing when it cannot be.
+refresh_desktop_status() {
+    MENU_DESKTOP_STATUS=""
+    if [ -n "${SCRIPT_DIR:-}" ] && [ -f "$SCRIPT_DIR/app.js" ] && command -v node >/dev/null 2>&1; then
+        MENU_DESKTOP_STATUS="$(node "$SCRIPT_DIR/app.js" --status 2>/dev/null || true)"
+    fi
+}
+
+# "63 servers · ~/.ssh-manager/.env · desktop app 4.0.0 installed", wrapped
+# between parts to fit $1 columns. Each part is left out rather than slowing
+# or breaking the menu.
+menu_status_line() {
+    local width="${1:-80}" parts=() count line="" part tilde='~'
+    if [ -f "$SSH_MANAGER_ENV" ]; then
+        count="$(load_servers 2>/dev/null | grep -c . || true)"
+        if [ "${count:-0}" = "1" ]; then parts+=("1 server"); else parts+=("${count:-0} servers"); fi
+        parts+=("${SSH_MANAGER_ENV/#"$HOME"/$tilde}")
+    else
+        parts+=("no servers yet")
+    fi
+    if [ -n "${MENU_DESKTOP_STATUS:-}" ]; then parts+=("$MENU_DESKTOP_STATUS"); fi
+    for part in "${parts[@]}"; do
+        if [ -n "$line" ] && [ $(( ${#line} + 3 + ${#part} )) -gt "$width" ]; then
+            printf '%s\n' "$line"
+            line="$part"
+        else
+            line="${line:+$line · }$part"
+        fi
+    done
+    printf '%s' "$line"
+}
+
+# One cell of the home screen: "#TITLE" a heading, "k|Label" a key, "@" the
+# help and quit pair, "" nothing. $2, when given, pads it to that width.
+menu_cell() {
+    local cell="$1" width="${2:-0}" plain="" text=""
+    case "$cell" in
+        '#'*) plain="${cell#\#}"; text="${ACCENT}${BOLD}${plain}${NC}" ;;
+        '@') plain="?  Help        q  Quit"; text="${ACCENT}${BOLD}?${NC}  Help        ${ACCENT}${BOLD}q${NC}  Quit" ;;
+        ?'|'*) plain="${cell%%|*}  ${cell#*|}"; text="${ACCENT}${BOLD}${cell%%|*}${NC}  ${cell#*|}" ;;
+    esac
+    printf '%s' "$text"
+    if [ "$width" -gt "${#plain}" ]; then printf '%*s' "$((width - ${#plain}))" ''; fi
+}
+
 # Display main menu
 show_main_menu() {
-    clear
-    print_header "SSH Manager CLI v$VERSION"
+    # Kept once: the invitation printed just before would otherwise vanish.
+    if [ -n "${SSH_MANAGER_KEEP_SCREEN:-}" ]; then
+        unset SSH_MANAGER_KEEP_SCREEN
+    else
+        clear
+    fi
+    local cols="${COLUMNS:-}" status line cell i
+    [ -n "$cols" ] || cols="$(tput cols 2>/dev/null || true)"
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    status="$(menu_status_line "$((cols - 2))")"
+
     echo
-    echo -e "  ${CYAN}1)${NC} ${SERVER} Server Management"
-    echo "     Add, list, test, and manage SSH servers"
+    echo "  ${ACCENT}${BOLD}▲ SSH Manager ${VERSION}${NC}"
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then echo "  ${GRAY}${line}${NC}"; fi
+    done <<< "$status"
     echo
-    echo -e "  ${CYAN}2)${NC} ${SESSION} Quick Connect"
-    echo "     Connect to a server via SSH"
+
+    local left=("#SERVERS" "1|List, test, add, edit" "2|Connect (SSH session)" "6|Run a command" "5|Health" ""
+        "#SETTINGS" "7|Configuration" "t|MCP tools" "v|Encrypted vault" "i|Import servers")
+    local right=("#FILES" "3|Sync (rsync)" "4|Tunnels" "" "#AGENTS" "9|Watch what they run"
+        "a|Desktop app (open / install)" "" "" "" "@")
+    if [ "$cols" -ge 72 ]; then
+        for i in "${!left[@]}"; do
+            printf '  '
+            if [ -n "${right[$i]}" ]; then
+                menu_cell "${left[$i]}" 33
+                menu_cell "${right[$i]}"
+            else
+                menu_cell "${left[$i]}"
+            fi
+            echo
+        done
+    else
+        for cell in "${left[@]:0:6}" "${right[@]:0:4}" "${right[@]:4:3}" "" "${left[@]:6}" "" "@"; do
+            if [ -n "$cell" ]; then printf '  '; menu_cell "$cell"; fi
+            echo
+        done
+    fi
     echo
-    echo -e "  ${CYAN}3)${NC} ${SYNC} File Synchronization"
-    echo "     Push/pull files with rsync"
+    printf '  %s›%s ' "$ACCENT" "$NC"
+}
+
+# A sub-menu's heading, in the home screen's palette.
+print_menu_header() {
     echo
-    echo -e "  ${CYAN}4)${NC} ${TUNNEL} SSH Tunnels"
-    echo "     Create and manage SSH tunnels"
+    echo "  ${ACCENT}${BOLD}▲ SSH Manager${NC} ${GRAY}›${NC} ${BOLD}$1${NC}"
     echo
-    echo -e "  ${CYAN}5)${NC} ${MONITOR} System Monitoring"
-    echo "     Monitor server resources"
+}
+
+# One sub-menu entry: its key, its label, and a dimmed line under it.
+menu_item() {
+    echo "  ${ACCENT}${BOLD}$1${NC}  $2"
+    if [ -n "${3:-}" ]; then echo "     ${GRAY}$3${NC}"; fi
+}
+
+# A sub-menu's prompt, after its entries.
+menu_prompt() {
     echo
-    echo -e "  ${CYAN}6)${NC} ${ROCKET} Execute Commands"
-    echo "     Run commands on servers"
-    echo
-    echo -e "  ${CYAN}7)${NC} ${GEAR} Configuration"
-    echo "     Edit settings and preferences"
-    echo
-    echo -e "  ${CYAN}8)${NC} ${INFO} Help & Documentation"
-    echo "     View help and examples"
-    echo
-    echo -e "  ${CYAN}9)${NC} ${EYES} Control Plane"
-    echo "     Watch what your agents run, and decide before they do"
-    echo
-    echo -e "  ${CYAN}0)${NC} Exit"
-    echo
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -n "Choose an option [0-9]: "
+    printf '  %s›%s %s ' "$ACCENT" "$NC" "$1"
 }
 
 # Server management submenu
 show_server_menu() {
     clear
-    print_header "Server Management"
-    echo
-    echo -e "  ${CYAN}1)${NC} ${CHECK} Add New Server"
-    echo "     Configure a new SSH server"
-    echo
-    echo -e "  ${CYAN}2)${NC} ${CLIPBOARD} List All Servers"
-    echo "     Show configured servers"
-    echo
-    echo -e "  ${CYAN}3)${NC} ${WRENCH} Test Connection"
-    echo "     Test server connectivity"
-    echo
-    echo -e "  ${CYAN}4)${NC} ${INFO}  Show Server Details"
-    echo "     Display server configuration"
-    echo
-    echo -e "  ${CYAN}5)${NC} ${PENCIL}  Edit Server"
-    echo "     Modify server settings"
-    echo
-    echo -e "  ${CYAN}6)${NC} ${CROSS} Remove Server"
-    echo "     Delete server configuration"
-    echo
-    echo -e "  ${CYAN}7)${NC} ${NOTE} Edit Config File"
-    echo "     Directly edit .env file"
-    echo
-    echo -e "  ${CYAN}0)${NC} ← Back to Main Menu"
-    echo
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -n "Choose an option [0-7]: "
+    print_menu_header "Servers"
+    menu_item 1 "Add New Server" "Configure a new SSH server"
+    menu_item 2 "List All Servers" "Show configured servers"
+    menu_item 3 "Test Connection" "Test server connectivity"
+    menu_item 4 "Show Server Details" "Display server configuration"
+    menu_item 5 "Edit Server" "Modify server settings"
+    menu_item 6 "Remove Server" "Delete server configuration"
+    menu_item 7 "Edit Config File" "Directly edit .env file"
+    menu_item 0 "Back to the home screen"
+    menu_prompt "Choose an option [0-7]:"
 }
 
 # Enhanced server add wizard
@@ -406,28 +467,21 @@ select_server_menu() {
     fi
     
     clear
-    print_header "$prompt_text"
-    echo
-    
+    print_menu_header "$prompt_text"
+
     local i=1
     for server in "${servers[@]}"; do
         local host=$(get_server_config "$server" "HOST")
         local user=$(get_server_config "$server" "USER")
         local desc=$(get_server_config "$server" "DESCRIPTION")
-        
-        echo -e "  ${CYAN}$i)${NC} ${SERVER}$server"
-        echo "     $user@$host"
-        if [ -n "$desc" ]; then
-            echo "     ${GRAY}$desc${NC}"
-        fi
-        echo
+
+        menu_item "$i" "$server  ${GRAY}$user@$host${NC}" "$desc"
         ((i++))
     done
-    
-    echo -e "  ${CYAN}0)${NC} Cancel"
+
     echo
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -n "Choose server [0-${#servers[@]}]: "
+    menu_item 0 "Cancel"
+    menu_prompt "Choose server [0-${#servers[@]}]:"
     
     read choice
     if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#servers[@]} ]; then
@@ -449,17 +503,13 @@ show_sync_menu() {
     
     local server="$selected_server"
     
-    echo
-    print_subheader "Sync Direction"
-    echo -e "  ${CYAN}1)${NC} ${ARROW} Push (Local → Remote)"
-    echo "     Upload files to $server"
-    echo
-    echo -e "  ${CYAN}2)${NC} ${ARROW} Pull (Remote → Local)"
-    echo "     Download files from $server"
-    echo
-    echo -e "  ${CYAN}0)${NC} Cancel"
-    echo
-    read -p "Choose direction [0-2]: " direction
+    clear
+    print_menu_header "Sync with $server"
+    menu_item 1 "Push (Local → Remote)" "Upload files to $server"
+    menu_item 2 "Pull (Remote → Local)" "Download files from $server"
+    menu_item 0 "Cancel"
+    menu_prompt "Choose direction [0-2]:"
+    read direction
     
     case "$direction" in
         1)
@@ -513,23 +563,14 @@ wizard_create_tunnel() {
     
     local server="$selected_server"
     
-    echo
-    print_subheader "Tunnel Type"
-    echo -e "  ${CYAN}1)${NC} Local Port Forwarding"
-    echo "     Access remote service through local port"
-    echo "     Example: Access remote MySQL on local port 3307"
-    echo
-    echo -e "  ${CYAN}2)${NC} Remote Port Forwarding"
-    echo "     Expose local service to remote server"
-    echo "     Example: Let remote access your local web server"
-    echo
-    echo -e "  ${CYAN}3)${NC} Dynamic (SOCKS Proxy)"
-    echo "     Create SOCKS5 proxy for secure browsing"
-    echo "     Example: Route browser through SSH server"
-    echo
-    echo -e "  ${CYAN}0)${NC} Cancel"
-    echo
-    read -p "Choose type [0-3]: " tunnel_type
+    clear
+    print_menu_header "Tunnel through $server"
+    menu_item 1 "Local Port Forwarding" "Access a remote service on a local port, e.g. MySQL on 3307"
+    menu_item 2 "Remote Port Forwarding" "Expose a local service to the server, e.g. your web server"
+    menu_item 3 "Dynamic (SOCKS Proxy)" "A SOCKS5 proxy to route a browser through the server"
+    menu_item 0 "Cancel"
+    menu_prompt "Choose type [0-3]:"
+    read tunnel_type
     
     case "$tunnel_type" in
         1)

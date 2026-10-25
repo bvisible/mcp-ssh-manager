@@ -5,7 +5,76 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.0.0-beta.3] - 2026-10-25
+
+**A third preview, published on GitHub only** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.3).
+npm serves [3.8.6](#386---2026-10-08) until the stable 4.0.0. Installed beta
+desktop builds update to this one by themselves.
+
+### Added — from npm to the desktop application in one step
+
+- **`ssh-manager app`** installs the desktop application of the engine's own
+  version and opens it — or only opens it when it is already installed. The
+  file is chosen from the release for this platform and architecture, its size
+  and SHA-256 are checked against the release manifest while it downloads into
+  a private temporary directory, and on macOS the unpacked application must
+  pass `codesign --verify --deep --strict`, be signed by our Developer ID team
+  and be accepted by Gatekeeper. Any failure installs nothing. Windows installs
+  per user, silently; Linux uses the `.deb` (in the terminal, for `sudo`) or the
+  AppImage. `ssh-manager app --status` answers in one line. Exit codes: 0
+  opened, 1 failed, 2 not available here.
+- **The browser interface offers it**: under `ssh-manager control`, a banner
+  says the application exists, installs and opens it in one click with its
+  progress drawn from the event stream, then hands the approval socket over
+  and stops ("Continued in the desktop app — you can close this tab"). Never
+  inside the application; "Not now" is remembered.
+- **The CLI opens on a status screen**: version, server count, configuration
+  file and desktop application state, in the application's orange, two
+  columns when the terminal is wide enough. Every menu number keeps its
+  meaning; letters are added (`a` desktop app, `t` tools, `v` vault, `i` import,
+  `?` help, `q` quit). `--help` is rewritten in sections. `NO_COLOR` is
+  honoured by every command.
+
+### Fixed
+
+- **Stopping a control plane deleted the socket of the one that replaced it.**
+  When a Unix-socket server closes, libuv unlinks whatever file is at its path
+  by then — after a takeover, the desktop application's socket. `stop()` now
+  removes only the files it created itself.
+- **The desktop application could run twice** (a second launch on Windows or
+  Linux started a second copy fighting the first for the approval socket). It
+  now brings the running window forward instead.
+
+### Changed — the interface
+
+- **The application's own colours.** The accent is the orange of the icon's
+  chevron (`#C04500`, brighter in dark mode) instead of the amber carried over
+  from TransHub, on warm neutrals, with Karla as a variable font so bold labels
+  are drawn, not synthesised. Every text colour was checked for WCAG AA on its
+  ground, in both themes.
+- **The rail** shows the product's name and groups its screens — your
+  machines, what agents are doing, the fleet, what you have open. "Waiting"
+  carries a solid orange count. The connection status moved from a strip
+  across every page to the foot of the rail; the strip comes back, as a
+  warning, only when the connection is lost.
+- **Servers** fill the width: cards in a grid instead of one narrow column per
+  group, labelled Files and Shell buttons instead of glyphs that appeared on
+  hover, a coloured chip for each departure from the defaults (read only,
+  restricted, approval), filters by group, and a banner naming the server and
+  command an agent is waiting on.
+- **Waiting**: a destructive request says so across the card, and its button
+  is red and reads "Approve and run". The command can be copied.
+- **Health**: gauges are graphite below their threshold, amber at it, red ten
+  points past it, under a summary of reachable, over-threshold and unreachable
+  servers. The track behind each gauge was invisible (an undefined colour).
+- **Window buttons.** The desktop application no longer has a system title bar
+  on Windows and Linux: minimise, maximise and close are drawn over the right
+  end of the page header in the page's colours (Window Controls Overlay), and
+  the header reserves exactly their width. On macOS the three buttons sit in
+  the rail's top row instead of a strip across the whole window. The header is
+  what you drag the window by.
+- Outlined buttons and inputs had near-black borders (Tailwind 4 draws a bare
+  `border` in the text colour); they use the theme's border colour.
 
 ### Added
 
@@ -15,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every connection (renewed short-lived certificates need no restart), and a
   missing file fails the connection. Needs an `ssh2` release with certificate
   support (mscdex/ssh2#1495); with `ssh2` 1.17.0 the option has no effect.
+- **Windows code signing in the release pipeline**, through Azure Artifact
+  Signing: when the `ARTIFACT_SIGNING_*` secrets are set, electron-builder
+  signs every executable and the installer. Without them the Windows build is
+  unsigned, as before, which a prerelease accepts and a stable release refuses.
 
 ### Security
 

@@ -13,10 +13,14 @@
   font-style: normal;
 }
 
+/* Variable, 200 to 800. The static regular cut it replaces left every bold
+   label to the browser's synthetic bold, smeared on a 1x screen. Latin subset
+   (U+0000-00FF covers French and German accents), from @fontsource-variable/karla
+   5.3.0, SIL Open Font License 1.1. */
 @font-face {
   font-family: 'Karla';
-  src: url('./assets/fonts/Karla-Regular.woff2') format('woff2');
-  font-weight: 400;
+  src: url('./assets/fonts/Karla-Variable.woff2') format('woff2');
+  font-weight: 200 800;
   font-style: normal;
 }
 
@@ -47,52 +51,57 @@
   --radius-xl: 12px;
   --radius: 0.375rem;
 
-  /* Core colors */
-  --color-background: oklch(0.99 0 0);
-  --color-foreground: oklch(0.14 0 0);
+  /* Core colors.
+     The accent is the orange of the application icon's chevron, #C04500. The
+     amber this replaced came with the TransHub port and matched nothing the
+     product ships with: not the icon, not the menu-bar glyph, not the CLI.
+     Every pair below was measured for WCAG AA (4.5:1) as text on its ground. */
+  --color-background: #fafaf7;
+  --color-foreground: #1a1917;
 
-  --color-card: oklch(0.985 0 0);
-  --color-card-foreground: oklch(0.14 0 0);
-  --color-card-hover: oklch(0.97 0 0);
+  --color-card: #ffffff;
+  --color-card-foreground: #1a1917;
+  --color-card-hover: #f4f3ef;
 
-  --color-popover: oklch(0.985 0 0);
-  --color-popover-foreground: oklch(0.14 0 0);
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1a1917;
 
-  /* Primary = main action color (coral orange #ff7f50) */
-  --color-primary: oklch(0.767 0.16 70);
-  --color-primary-foreground: oklch(0.24 0.03 70);
+  /* Primary = the main action. White on #C04500 is 5.1:1. */
+  --color-primary: #c04500;
+  --color-primary-foreground: #ffffff;
 
   /* Secondary = subtle background */
-  --color-secondary: oklch(0.97 0 0);
-  --color-secondary-foreground: oklch(0.14 0 0);
+  --color-secondary: #f4f3ef;
+  --color-secondary-foreground: #1a1917;
 
-  /* Muted = muted background + foreground for grey text */
-  --color-muted: oklch(0.97 0 0);
-  --color-muted-foreground: oklch(0.45 0 0);
+  /* Muted = muted background + foreground for grey text (5.3:1 on the ground) */
+  --color-muted: #f4f3ef;
+  --color-muted-foreground: #6b6862;
 
-  /* Accent = subtle interactive hover (tinted) */
-  --color-accent: oklch(0.92 0.04 70);
-  --color-accent-foreground: oklch(0.14 0 0);
+  /* Accent = the tinted ground of what is selected or hovered, with the
+     darker orange that reads on it (6.3:1). */
+  --color-accent: #fbede4;
+  --color-accent-foreground: #9a3600;
 
   /* Destructive = danger/error actions */
-  --color-destructive: oklch(0.55 0.22 25);
-  --color-destructive-foreground: oklch(0.98 0 0);
-  --color-destructive-light: oklch(0.92 0.05 25);
+  --color-destructive: #b42318;
+  --color-destructive-foreground: #ffffff;
+  --color-destructive-light: #fdecea;
 
-  --color-border: oklch(0.9 0 0);
-  --color-border-subtle: oklch(0.93 0 0);
-  --color-input: oklch(0.96 0 0);
-  --color-ring: oklch(0.767 0.16 70);
+  --color-border: #e6e4de;
+  --color-border-subtle: #efede8;
+  --color-input: #ecebe6;
+  --color-ring: #c04500;
 
   /* Sidebar */
-  --color-sidebar: oklch(0.975 0.004 70);
-  --color-sidebar-foreground: oklch(0.14 0 0);
-  --color-sidebar-border: oklch(0.9 0 0);
-  --color-sidebar-ring: oklch(0.767 0.16 70);
-  --color-sidebar-accent: oklch(0.92 0.04 70);
-  --color-sidebar-accent-foreground: oklch(0.14 0 0);
-  --color-sidebar-primary: oklch(0.767 0.16 70);
-  --color-sidebar-primary-foreground: oklch(0.24 0.03 70);
+  --color-sidebar: #f3f2ee;
+  --color-sidebar-foreground: #1a1917;
+  --color-sidebar-border: #e6e4de;
+  --color-sidebar-ring: #c04500;
+  --color-sidebar-accent: #fbede4;
+  --color-sidebar-accent-foreground: #9a3600;
+  --color-sidebar-primary: #c04500;
+  --color-sidebar-primary-foreground: #ffffff;
 
   /* Custom TransHub tokens */
   /* Terminal output follows the theme like everything else. A dark panel in a
@@ -100,12 +109,20 @@
   --color-terminal: oklch(0.985 0.003 70);
   --color-terminal-foreground: oklch(0.22 0.008 250);
 
-  --color-success: oklch(0.55 0.17 145);
-  --color-success-light: oklch(0.92 0.05 145);
-  --color-warning: oklch(0.65 0.17 70);
-  --color-warning-light: oklch(0.92 0.05 70);
-  --color-pro: oklch(0.767 0.16 70);
-  --color-pro-light: oklch(0.92 0.04 70);
+  /* Status colours, each a text colour that passes on its own light ground. */
+  --color-success: #276b3f;
+  --color-success-light: #e5f2ea;
+  --color-warning: #9a6200;
+  --color-warning-light: #fdf3dc;
+  --color-info: #1f5fa8;
+  --color-info-light: #e6eef8;
+  --color-pro: #c04500;
+  --color-pro-light: #fbede4;
+
+  /* A gauge below its threshold is graphite, not green: a page of green bars
+     says "fine" so loudly that the one amber bar is the thing you miss. */
+  --color-meter: #3a3936;
+  --color-sunk: #ecebe6;
 
   /* Shadows */
   --shadow-card: 0 1px 3px oklch(0 0 0 / 0.04), 0 0 0 1px oklch(0 0 0 / 0.05);
@@ -120,46 +137,58 @@
 
 /* Dark theme */
 .dark {
-  --color-background: oklch(0.13 0 0);
-  --color-foreground: oklch(0.93 0 0);
+  --color-background: #121211;
+  --color-foreground: #edebe6;
 
-  --color-card: oklch(0.19 0.003 70);
-  --color-card-foreground: oklch(0.93 0 0);
-  --color-card-hover: oklch(0.22 0.003 70);
+  --color-card: #1b1a18;
+  --color-card-foreground: #edebe6;
+  --color-card-hover: #232220;
 
-  --color-popover: oklch(0.19 0.003 70);
-  --color-popover-foreground: oklch(0.93 0 0);
+  --color-popover: #1f1e1c;
+  --color-popover-foreground: #edebe6;
 
-  --color-primary: oklch(0.767 0.16 70);
+  /* Brighter orange on dark, with dark text on it: white on this orange is
+     3.5:1, near-black is 5.6:1. */
+  --color-primary: #e8671f;
+  --color-primary-foreground: #141312;
 
-  --color-secondary: oklch(0.17 0 0);
-  --color-secondary-foreground: oklch(0.93 0 0);
+  --color-secondary: #232220;
+  --color-secondary-foreground: #edebe6;
 
-  --color-muted: oklch(0.17 0 0);
-  --color-muted-foreground: oklch(0.65 0 0);
+  --color-muted: #232220;
+  --color-muted-foreground: #a39f97;
 
-  --color-accent: oklch(0.25 0.06 70);
-  --color-accent-foreground: oklch(0.93 0 0);
+  --color-accent: #3a2416;
+  --color-accent-foreground: #f4a26f;
 
-  --color-destructive-foreground: oklch(0.98 0 0);
-  --color-destructive-light: oklch(0.25 0.06 25);
+  --color-destructive: #e5534b;
+  --color-destructive-foreground: #141312;
+  --color-destructive-light: #3a1e1b;
 
-  --color-border: oklch(0.26 0 0);
-  --color-border-subtle: oklch(0.22 0 0);
-  --color-input: oklch(0.2 0 0);
-  --color-ring: oklch(0.767 0.16 70);
+  --color-border: #2d2b28;
+  --color-border-subtle: #252422;
+  --color-input: #2d2b28;
+  --color-ring: #e8671f;
 
-  --color-sidebar: oklch(0.15 0.005 70);
-  --color-sidebar-foreground: oklch(0.93 0 0);
-  --color-sidebar-border: oklch(0.26 0 0);
-  --color-sidebar-ring: oklch(0.767 0.16 70);
-  --color-sidebar-accent: oklch(0.25 0.06 70);
-  --color-sidebar-accent-foreground: oklch(0.93 0 0);
-  --color-sidebar-primary: oklch(0.767 0.16 70);
-  --color-sidebar-primary-foreground: oklch(0.24 0.03 70);
+  --color-sidebar: #161514;
+  --color-sidebar-foreground: #edebe6;
+  --color-sidebar-border: #2d2b28;
+  --color-sidebar-ring: #e8671f;
+  --color-sidebar-accent: #3a2416;
+  --color-sidebar-accent-foreground: #f4a26f;
+  --color-sidebar-primary: #e8671f;
+  --color-sidebar-primary-foreground: #141312;
 
-  --color-success-light: oklch(0.25 0.06 145);
-  --color-warning-light: oklch(0.25 0.06 70);
+  --color-success: #5fbf83;
+  --color-success-light: #1c2e22;
+  --color-warning: #e3a93b;
+  --color-warning-light: #33281a;
+  --color-info: #7fb0ea;
+  --color-info-light: #1a2636;
+  --color-pro: #e8671f;
+  --color-pro-light: #3a2416;
+  --color-meter: #cfcbc3;
+  --color-sunk: #2d2b28;
 
   --shadow-card: 0 1px 3px oklch(0 0 0 / 0.2), 0 0 0 1px oklch(1 0 0 / 0.05);
   --shadow-card-hover: 0 2px 8px oklch(0 0 0 / 0.3), 0 0 0 1px oklch(1 0 0 / 0.06);
@@ -175,6 +204,16 @@
 * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tailwind 4 draws a bare `border` in the text colour, which made every
+   outlined button and input near-black. The theme's border colour is the
+   default instead, as shadcn/ui sets it; a component that wants another still
+   names it. In the base layer so any utility wins over it. */
+@layer base {
+  *, ::before, ::after, ::backdrop {
+    border-color: var(--color-border);
+  }
 }
 
 body {
@@ -195,9 +234,38 @@ body {
   .sidebar-nav { transition: none; }
 }
 
-/* macOS title bar drag region */
+/* Title bar drag region, for the desktop application's hidden title bar */
 .drag-region {
   -webkit-app-region: drag;
+}
+
+/* Anything you can press inside a draggable bar has to opt back out, or the
+   click moves the window instead. Listed here once rather than remembered on
+   every button a header happens to hold. */
+.drag-region :is(button, a, input, select, textarea, label, [role='button'], [role='tab'], [role='tablist']) {
+  -webkit-app-region: no-drag;
+}
+
+/* Windows and Linux draw minimise, maximise and close over the right end of
+   the page header (Window Controls Overlay). The titlebar-area variables say
+   where the free part of the bar is; whatever lies right of it belongs to the
+   system. Outside the overlay the fallbacks make the reservation zero. */
+:root {
+  --titlebar-controls: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+.page-header {
+  padding-right: calc(2rem + var(--titlebar-controls));
+}
+
+/* Under the session tabs the header is no longer the top row: the tabs are,
+   and they make the room instead. */
+.page-header.under-tabs {
+  padding-right: 2rem;
+}
+
+.titlebar-safe {
+  padding-right: var(--titlebar-controls);
 }
 
 .no-drag {

@@ -7,12 +7,8 @@
 import { ControlPlane } from '../src/control-plane.js';
 import { defaultSocketPath } from '../src/approval.js';
 import { ConfigLoader } from '../src/config-loader.js';
-
-const GREEN = '\x1b[32m';
-const YELLOW = '\x1b[33m';
-const DIM = '\x1b[2m';
-const BOLD = '\x1b[1m';
-const RESET = '\x1b[0m';
+import { desktopStatus } from '../src/desktop-install.js';
+import { GREEN, YELLOW, DIM, BOLD, RESET } from './style.js';
 
 /**
  * Audit logs to follow: whatever the configured servers write.
@@ -36,7 +32,21 @@ async function main() {
   const socketPath = defaultSocketPath();
   const auditPaths = await discoverAuditPaths();
 
-  const plane = new ControlPlane({ socketPath, port, auditPaths });
+  // A host that starts this command for its own window (it sets
+  // SSH_MANAGER_PARENT_WATCH, below) is a desktop shell already: nothing to offer.
+  const offerDesktop = !process.env.SSH_MANAGER_PARENT_WATCH;
+  const plane = new ControlPlane({
+    socketPath,
+    port,
+    auditPaths,
+    offerDesktop,
+    // The page said "continued in the desktop app" and the plane has stopped,
+    // leaving the approval socket to the application.
+    onHandover: () => {
+      console.log('\nContinued in the desktop app — this control plane has stopped.');
+      process.exit(0);
+    },
+  });
   const { url } = await plane.start();
 
   console.log(`
@@ -52,6 +62,13 @@ servers, so treat it like a password: do not paste it anywhere.
 Servers configured to require approval in the vault pause here for a decision.
 Run this process while using approval; stop it with Ctrl-C.${RESET}
 `);
+
+  if (offerDesktop) {
+    const app = desktopStatus();
+    if (app.installed || app.supported) {
+      console.log(`Prefer a window? ${BOLD}ssh-manager app${RESET} ${app.installed ? 'opens' : 'installs and opens'} the desktop app.\n`);
+    }
+  }
 
   if (auditPaths.length === 0) {
     console.log(`${YELLOW}Tip:${RESET} set ${BOLD}SSH_SERVER_<NAME>_AUDIT_LOG=/path/to/audit.jsonl${RESET} to see everything, not just approvals.\n`);

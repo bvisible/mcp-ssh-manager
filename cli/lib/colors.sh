@@ -13,6 +13,20 @@ export GRAY=$'\033[0;90m'
 export BOLD=$'\033[1m'
 export NC=$'\033[0m' # No Color
 
+# NO_COLOR (https://no-color.org): set and not empty means no colour. Bold
+# stays — it is emphasis, not colour — and is what the accent falls back to.
+if [ -n "${NO_COLOR:-}" ]; then
+    RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN='' WHITE='' GRAY=''
+fi
+
+# The application's orange (#c04500, 256-colour 166), for the menu's headings
+# and keys and the help's section titles. Bold where colours are off.
+if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-}" = "dumb" ]; then
+    export ACCENT="$BOLD"
+else
+    export ACCENT=$'\033[38;5;166m'
+fi
+
 # Unicode symbols
 export CHECK="✅"
 export CROSS="❌"

@@ -14,6 +14,7 @@
 import { X, Plus, TerminalSquare, FolderOpen, Monitor } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace, type WorkspaceTab } from '@/stores/workspace';
+import { headerIsTitleBar } from '@/lib/desktop';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const ICONS = {
@@ -27,7 +28,13 @@ export function SessionTabs() {
   if (tabs.length === 0) return null;
 
   return (
-    <div className="flex shrink-0 items-stretch border-b border-border bg-sidebar">
+    // When tabs are open they are the top row of the window, so in the desktop
+    // application they are the bar you drag and the row the window buttons sit
+    // in: as tall as the rail's top row, and clear of them on the right.
+    <div className={cn(
+      'titlebar-safe flex shrink-0 items-stretch border-b border-border bg-sidebar',
+      headerIsTitleBar && 'drag-region h-12',
+    )}>
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto scrollbar-none">
         {tabs.map(tab => (
           <SessionTab

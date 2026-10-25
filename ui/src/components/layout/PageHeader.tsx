@@ -9,9 +9,16 @@
  * people actually do.
  *
  * One component, so that stops being possible.
+ *
+ * In the desktop application it is also the window's title bar: you drag the
+ * window by it, and on Windows and Linux the system's own buttons are drawn
+ * over its right end. `.page-header` reserves exactly their width (see
+ * globals.css); in a browser tab that reservation is zero.
  */
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { headerIsTitleBar } from '@/lib/desktop';
+import { useWorkspace } from '@/stores/workspace';
 
 export interface PageHeaderProps {
   /** The screen's name. Kept short — it is a label, not a sentence. */
@@ -28,29 +35,29 @@ export interface PageHeaderProps {
 }
 
 export function PageHeader({ title, count, hint, children, actions, className }: PageHeaderProps) {
+  const underTabs = useWorkspace(state => state.tabs.length > 0);
   return (
     <header
       className={cn(
-        'flex h-12 shrink-0 items-center gap-3 border-b border-border px-6',
+        'page-header flex min-h-[72px] shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border py-3 pl-8',
+        underTabs && 'under-tabs',
+        headerIsTitleBar && !underTabs && 'drag-region',
         className,
       )}
     >
-      <h1 className="flex shrink-0 items-baseline gap-1.5 text-sm font-medium">
-        {title}
-        {count !== undefined && count > 0 && (
-          <span className="text-xs font-normal text-muted-foreground tabular-nums">{count}</span>
-        )}
-      </h1>
-
-      {hint && (
-        // Dropped on a narrow window before the controls are: it is the least
-        // important thing in the bar and the first that can go.
-        <p className="hidden truncate text-xs text-muted-foreground lg:block">{hint}</p>
-      )}
+      <div className="min-w-0">
+        <h1 className="flex items-baseline gap-2 text-xl font-bold tracking-[-0.01em]">
+          {title}
+          {count !== undefined && count > 0 && (
+            <span className="text-sm font-medium text-muted-foreground tabular-nums">{count}</span>
+          )}
+        </h1>
+        {hint && <p className="mt-0.5 truncate text-sm text-muted-foreground">{hint}</p>}
+      </div>
 
       {children}
 
-      {actions && <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>}
+      {actions && <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
 }

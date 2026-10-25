@@ -1,4 +1,3 @@
-import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ServersPage } from '@/pages/ServersPage';
@@ -13,10 +12,10 @@ import { TerminalPage } from '@/pages/TerminalPage';
 import { useWorkspace } from '@/stores/workspace';
 import { useServersStore } from '@/stores/servers.store';
 import { state, migration, QUEUE_EVENTS } from '@/lib/api';
-import { ConnectionStatus } from '@/components/layout/ConnectionStatus';
+import { ConnectionBanner } from '@/components/layout/ConnectionStatus';
 import { ensurePermission, notifyApproval, clearApproval, clearAll } from '@/lib/notify';
-import { needsTitleBarRoom } from '@/lib/desktop';
 import { DroppedFilesDialog } from '@/components/DroppedFilesDialog';
+import { DesktopBanner } from '@/components/DesktopBanner';
 import { Wizard, wizardSeen } from '@/components/Wizard';
 import { SessionTabs } from '@/components/layout/SessionTabs';
 
@@ -106,24 +105,17 @@ export function App() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-      {/* A strip the whole width of the window, kept clear for the macOS window
-          buttons and draggable so it behaves like the title bar it replaces.
-          
-          The rail used to reserve this space on its own, which worked only
-          while the rail was wide. Collapsed it is 48px and the buttons run to
-          about 70, so they landed on top of each page's title. Reserving the
-          strip once, above everything, cannot go wrong that way. */}
-      {needsTitleBarRoom && (
-        <div
-          className="h-7 shrink-0 border-b border-border-subtle bg-sidebar"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        />
-      )}
-
+      {/* No strip across the window for the title bar any more. It cost every
+          screen a band of nothing; the window buttons now sit in rows that
+          exist anyway — the rail's top row on macOS, the right end of the page
+          header on Windows and Linux — and the header is what you drag. The
+          rail stays wide enough for the macOS buttons when collapsed, which is
+          what the strip was originally guarding against. */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <ConnectionStatus />
+        <ConnectionBanner />
+        <DesktopBanner />
         <SessionTabs />
         <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Sessions stay mounted and are hidden rather than unmounted. Two

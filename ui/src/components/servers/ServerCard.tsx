@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Monitor, FolderOpen, Terminal, Pencil, Trash2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   AlertDialog,
@@ -114,37 +115,42 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
     </AlertDialog>
   )
 
+  // What is open on this machine, in words: two green glyphs in a corner
+  // said the same thing to somebody who already knew what they meant.
+  const openLabel = hasBrowser && hasTerminal ? 'files and shell open' : hasBrowser ? 'files open' : 'shell open'
+  const address = `${server.username}@${server.host}`
+
   if (viewMode === 'list') {
     return (
       <>
         <div
           className={cn(
-            'group flex items-center gap-3 rounded-lg px-3 py-2 transition-colors',
-            'hover:bg-accent/30',
-            editMode && 'ring-1 ring-destructive/30'
+            'group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 transition-colors last:border-b-0',
+            'hover:bg-card-hover',
+            editMode && 'bg-destructive-light/40'
           )}
         >
-          <div className="flex flex-1 items-center gap-3">
-            <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="w-[140px] truncate text-sm font-medium text-foreground">
-              {server.name}
-            </span>
-            <span className="w-[200px] truncate text-xs text-muted-foreground">
-              {server.username}@{server.host}
-            </span>
-            <span className="flex-1 truncate text-xs text-muted-foreground/70">
-              {server.defaultDirectory || ''}
-            </span>
-          </div>
+          <span
+            aria-hidden="true"
+            className={cn('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-success' : 'bg-border')}
+          />
+          <span className="w-[160px] shrink-0 truncate text-sm font-bold text-foreground">
+            {server.name}
+          </span>
+          <span className="w-[220px] shrink-0 truncate font-mono text-xs text-muted-foreground">
+            {address}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+            {server.defaultDirectory || ''}
+          </span>
 
           <ServerProtection server={server} />
-          {/* Connection status indicator */}
           {!editMode && isConnected && (
-            <ConnectionIndicator hasBrowser={hasBrowser} hasTerminal={hasTerminal} />
+            <span className="shrink-0 text-xs font-bold text-success">{openLabel}</span>
           )}
 
           {/* Actions */}
-          <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             {editMode ? (
               <>
                 <ActionButton
@@ -180,115 +186,93 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
     )
   }
 
-  // Grid mode (default)
+  // Grid mode (default). The actions are labelled buttons, always visible:
+  // two unlabelled glyphs that appeared on hover were the main thing a card is
+  // for, and the least discoverable thing on it.
   return (
     <>
-      <div
+      <article
         className={cn(
-          'group relative flex w-[200px] flex-col rounded-lg bg-card shadow-card transition-all',
-          'hover:shadow-card-hover hover:ring-1 hover:ring-primary/30',
-          editMode && 'ring-1 ring-destructive/30'
+          'flex min-w-0 flex-col gap-2.5 rounded-xl border border-border bg-card p-4 transition-shadow',
+          'hover:shadow-card-hover',
+          editMode && 'border-destructive/30'
         )}
       >
-        {/* Connection status indicator - top right */}
-        {!editMode && isConnected && (
-          <div className="absolute right-2 top-2 z-10">
-            <ConnectionIndicator hasBrowser={hasBrowser} hasTerminal={hasTerminal} />
-          </div>
-        )}
-
-        <div>
-          <div className="flex items-start gap-2.5 p-3 pb-2">
-            <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">{server.name}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {server.username}@{server.host}
-              </p>
-              {server.defaultDirectory && (
-                <p className="truncate text-xs text-muted-foreground/70">
-                  {server.defaultDirectory}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="px-3 pb-2"><ServerProtection server={server} /></div>
-          <div className="flex items-center justify-end gap-0.5 px-2 pb-2">
-            {editMode ? (
-              <>
-                <ActionButton
-                  icon={Pencil}
-                  tooltip={t('actions.edit')}
-                  onClick={() => onEdit(server)}
-                />
-                <ActionButton
-                  icon={Trash2}
-                  tooltip={t('actions.delete')}
-                  onClick={() => onDelete(server)}
-                  variant="destructive"
-                />
-              </>
-            ) : (
-              <>
-                <ActionButton
-                  icon={FolderOpen}
-                  tooltip={t('actions.browse')}
-                  onClick={openFileBrowser}
-                />
-                <ActionButton
-                  icon={Terminal}
-                  tooltip={t('actions.connect')}
-                  onClick={openSshTerminal}
-                />
-              </>
-            )}
-          </div>
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={cn('h-2 w-2 shrink-0 rounded-full', isConnected ? 'bg-success' : 'bg-border')}
+          />
+          <h3 className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">{server.name}</h3>
+          {!editMode && isConnected && (
+            <span className="shrink-0 text-xs font-bold text-success">{openLabel}</span>
+          )}
         </div>
-      </div>
+        <p className="truncate font-mono text-[12.5px] text-muted-foreground" title={address}>
+          {address}
+          {server.defaultDirectory && <> · {server.defaultDirectory}</>}
+        </p>
+
+        <ServerProtection server={server} />
+
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          {editMode ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => onEdit(server)}>
+                <Pencil className="h-3.5 w-3.5" />
+                {t('actions.edit')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:bg-destructive-light hover:text-destructive"
+                onClick={() => onDelete(server)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t('actions.delete')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" aria-label={t('actions.browse')} onClick={openFileBrowser}>
+                <FolderOpen className="h-3.5 w-3.5" />
+                Files
+              </Button>
+              <Button variant="outline" size="sm" aria-label="Open a shell" onClick={openSshTerminal}>
+                <Terminal className="h-3.5 w-3.5" />
+                Shell
+              </Button>
+            </>
+          )}
+        </div>
+      </article>
       {dialogEl}
     </>
   )
 }
 
+/**
+ * How far an agent may go on this machine. The neutral case looks neutral and
+ * every departure from it has its own colour — read-only in blue, restricted
+ * in amber, approval in the accent — so a production box that asks before it
+ * acts is recognisable across the room.
+ */
 function ServerProtection({ server }: { server: ServerConfig }) {
   const approval = server.approval ?? 'never';
-  return <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-    <span className="rounded border border-border px-1.5 py-0.5">{server.mode === 'readonly' ? 'Read only' : server.mode === 'restricted' ? 'Restricted' : 'Unrestricted'}</span>
-    <span className={cn('flex items-center gap-1 rounded border px-1.5 py-0.5', approval === 'never' ? 'border-border' : 'border-primary/30 bg-primary/10 text-foreground')}>
-      <ShieldCheck className="h-3 w-3" />{approval === 'always' ? 'Approval: every request' : approval === 'destructive' ? 'Approval: destructive' : 'Approval off'}
-    </span>
+  const chip = 'inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs'
+  return <div className="flex flex-wrap items-center gap-1.5">
+    {server.mode === 'readonly'
+      ? <span className={cn(chip, 'bg-info-light font-bold text-info')}>Read only</span>
+      : server.mode === 'restricted'
+        ? <span className={cn(chip, 'bg-warning-light font-bold text-warning')}>Restricted</span>
+        : <span className={cn(chip, 'border border-border text-muted-foreground')}>Unrestricted</span>}
+    {approval === 'never'
+      ? <span className={cn(chip, 'border border-border text-muted-foreground')}>Approval off</span>
+      : <span className={cn(chip, 'bg-accent font-bold text-accent-foreground')}>
+        <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+        {approval === 'always' ? 'Approval: every request' : 'Approval: destructive'}
+      </span>}
   </div>;
-}
-
-// Connection status indicator
-function ConnectionIndicator({
-  hasBrowser,
-  hasTerminal
-}: {
-  hasBrowser: boolean
-  hasTerminal: boolean
-}) {
-  const { t } = useTranslation()
-
-  const tooltipText =
-    hasBrowser && hasTerminal
-      ? t('servers.status.browserAndTerminal')
-      : hasBrowser
-        ? t('servers.status.browserActive')
-        : t('servers.status.terminalActive')
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="flex items-center gap-1">
-          {hasBrowser && <FolderOpen className="h-3 w-3 text-green-500" />}
-          {hasTerminal && <Terminal className="h-3 w-3 text-green-500" />}
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>{tooltipText}</TooltipContent>
-    </Tooltip>
-  )
 }
 
 // Shared action button component
@@ -316,13 +300,13 @@ function ActionButton({
             onClick()
           }}
           className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+            'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
             variant === 'destructive'
               ? 'text-destructive hover:bg-destructive/10'
-              : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground'
+              : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
           )}
         >
-          <Icon className="h-3.5 w-3.5" />
+          <Icon className="h-4 w-4" />
         </button>
       </TooltipTrigger>
       <TooltipContent>{tooltip}</TooltipContent>

@@ -7,9 +7,8 @@
  * sessions nobody asked for. The button is the whole scheduling policy.
  */
 import { useEffect, useState } from 'react';
-import { AlertTriangle, HeartPulse, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, HeartPulse, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { health, thresholds as thresholdsApi, type HealthResult, type Thresholds } from '@/lib/api';
 import { ensurePermission } from '@/lib/notify';
@@ -17,31 +16,41 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
 
 /**
- * Amber at the threshold, red ten points past it. The threshold is the
- * operator's, not a constant baked into a gauge — a disk that is meant to sit
- * at 88% should not be permanently amber.
+ * Amber at the threshold, red ten points past it, and graphite below: a card of
+ * green bars said "fine" so loudly that the one amber bar was what you missed.
+ * The threshold is the operator's, not a constant baked into a gauge — a disk
+ * that is meant to sit at 88% should not be permanently amber.
  */
-function severity(percent: number, threshold: number): string {
-  if (percent >= threshold + 10) return 'bg-destructive';
-  if (percent >= threshold) return 'bg-warning';
-  return 'bg-success';
+function severity(percent: number, threshold: number): 'over' | 'near' | 'ok' {
+  if (percent >= threshold + 10) return 'over';
+  if (percent >= threshold) return 'near';
+  return 'ok';
 }
 
-function Gauge({ label, percent, detail, threshold }:
-  { label: string; percent?: number; detail?: string; threshold: number }) {
+const BAR = { over: 'bg-destructive', near: 'bg-warning', ok: 'bg-meter' } as const;
+const TEXT = { over: 'text-destructive', near: 'text-warning', ok: '' } as const;
+
+function Gauge({ label, percent, detail, threshold, mono }:
+  { label: string; percent?: number; detail?: string; threshold: number; mono?: boolean }) {
   if (percent === undefined) return null;
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const level = severity(clamped, threshold);
   return (
-    <div className="grid gap-1">
-      <div className="flex items-baseline justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium tabular-nums">{clamped}%</span>
+    <div className="grid gap-1.5">
+      <div className={cn('flex items-baseline justify-between gap-3 text-[13px]', TEXT[level])}>
+        <span className={cn('min-w-0 truncate', mono && 'font-mono', level !== 'ok' && 'font-bold')}>{label}</span>
+        <span className="font-bold tabular-nums">{clamped}%</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-sunk">
-        <div className={cn('h-full rounded-full transition-[width]', severity(clamped, threshold))}
+        <div className={cn('h-full rounded-full transition-[width]', BAR[level])}
           style={{ width: `${clamped}%` }} />
       </div>
-      {detail && <p className="text-[10px] text-muted-foreground">{detail}</p>}
+      {detail && (
+        <p className="text-xs text-muted-foreground">
+          {detail}
+          {level !== 'ok' && ` · over the ${threshold}% threshold`}
+        </p>
+      )}
     </div>
   );
 }
@@ -82,21 +91,47 @@ export function HealthPage() {
     }
   };
 
+  const reachable = results?.filter(r => r.reachable).length ?? 0;
+  const warned = results?.filter(r => r.reachable && (r.alerts?.length ?? 0) > 0).length ?? 0;
+  const unreachable = (results?.length ?? 0) - reachable;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Health"
         count={results?.length}
-        hint="Probed on demand — nothing runs in the background."
+        hint="Probed when you ask. Nothing runs in the background."
         actions={
-          <Button size="sm" disabled={probing} onClick={() => void probe()}>
-            {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          <Button className="font-bold" disabled={probing} onClick={() => void probe()}>
+            {probing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Check every server
           </Button>
         }
       />
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pb-10 pt-5">
+        {/* The verdict before the detail: three counts you can read from the
+            door, then the cards that explain them. */}
+        {results !== null && results.length > 0 && (
+          <div className="mb-5 flex flex-wrap gap-2" aria-label="Summary">
+            <span className="inline-flex h-8 items-center gap-2 rounded-full bg-success-light px-3 text-[13px] font-bold text-success">
+              <span className="h-2 w-2 rounded-full bg-success" aria-hidden="true" />
+              {reachable} reachable
+            </span>
+            {warned > 0 && (
+              <span className="inline-flex h-8 items-center gap-2 rounded-full bg-warning-light px-3 text-[13px] font-bold text-warning">
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                {warned} over a threshold
+              </span>
+            )}
+            {unreachable > 0 && (
+              <span className="inline-flex h-8 items-center gap-2 rounded-full bg-destructive-light px-3 text-[13px] font-bold text-destructive">
+                <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
+                {unreachable} unreachable
+              </span>
+            )}
+          </div>
+        )}
         {results === null ? (
           // Centred like every other empty screen. This one used to sit at the
           // top under a `py-20`, which read as a different page.
@@ -106,29 +141,36 @@ export function HealthPage() {
             hint="Each check opens one SSH connection and closes it. Press the button when you want to know."
           />
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
             {results.map(result => (
-              <article key={result.server} className="rounded-lg border border-border bg-card p-4 shadow-card">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="text-sm font-medium">{result.server}</span>
-                  <Badge variant={result.reachable ? 'secondary' : 'destructive'}>
-                    {result.reachable ? 'reachable' : 'unreachable'}
-                  </Badge>
+              <article key={result.server} className="flex flex-col rounded-xl border border-border bg-card">
+                <div className="flex items-center gap-2.5 px-4 pb-3 pt-3.5">
+                  <h2 className="min-w-0 truncate text-base font-bold">{result.server}</h2>
+                  <span className={cn(
+                    'inline-flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-bold',
+                    result.reachable ? 'bg-success-light text-success' : 'bg-destructive-light text-destructive'
+                  )}>
+                    {result.reachable ? 'Reachable' : 'Unreachable'}
+                  </span>
                   <button
-                    className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                    type="button"
+                    aria-label={`Recheck ${result.server}`}
+                    title="Recheck"
+                    disabled={probing}
+                    className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
                     onClick={() => void probe(result.server)}
                   >
-                    recheck
+                    <RefreshCw className="h-4 w-4" />
                   </button>
                 </div>
 
                 {result.reachable ? (
-                  <div className="grid gap-3">
+                  <div className="grid gap-3.5 px-4 pb-4">
                     {(result.alerts?.length ?? 0) > 0 && (
-                      <div className="rounded-md border border-warning/40 bg-warning-light px-2 py-1.5">
+                      <div className="rounded-lg bg-warning-light px-3 py-2 text-warning">
                         {result.alerts!.map(alert => (
-                          <p key={alert.type} className="flex items-start gap-1.5 text-[11px]">
-                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
+                          <p key={alert.type} className="flex items-start gap-1.5 text-xs font-medium">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                             {alert.message}
                           </p>
                         ))}
@@ -143,23 +185,30 @@ export function HealthPage() {
                     {/* Every mount, not the first two: the one that fills up is
                         never the one you were watching. */}
                     {result.disks?.map(disk => (
-                      <Gauge key={disk.mount} label={disk.mount} percent={disk.percent} threshold={limits.disk}
+                      <Gauge key={disk.mount} label={disk.mount} mono percent={disk.percent} threshold={limits.disk}
                         detail={`${disk.used} of ${disk.size}, ${disk.avail} free`} />
                     ))}
-                    <p className="text-[10px] text-muted-foreground">
-                      {/* uptime already reads "up 42 days" — prefixing it again
-                          is how you get "up up 42 days". */}
-                      {result.uptime}
-                      {` · answered in ${result.tookMs} ms`}
-                    </p>
                   </div>
                 ) : (
                   // Unreachable is a legitimate answer, not an error: it is
                   // exactly what the operator wants to see.
-                  <p className="text-xs text-muted-foreground">
-                    {result.error ?? 'No answer'} — {result.host}, gave up after {result.tookMs} ms
-                  </p>
+                  <div className="px-4 pb-4">
+                    <div className="rounded-lg border border-border bg-secondary px-3.5 py-3">
+                      <p className="text-sm font-bold">{result.error ?? 'No answer'}</p>
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">
+                        {result.host} · gave up after {result.tookMs} ms
+                      </p>
+                    </div>
+                  </div>
                 )}
+
+                <p className="mt-auto border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+                  {/* uptime already reads "up 42 days" — prefixing it again is
+                      how you get "up up 42 days". */}
+                  {result.reachable
+                    ? <>{result.uptime}{` · answered in ${result.tookMs} ms`}</>
+                    : 'Recheck once the host or the network is back.'}
+                </p>
               </article>
             ))}
           </div>

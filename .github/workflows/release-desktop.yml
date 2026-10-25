@@ -84,15 +84,48 @@ jobs:
       # Deliberately no GitHub token here: builders cannot publish artifacts.
       - name: Build without publishing
         working-directory: desktop/electron
-        run: ${{ matrix.build }} -- --publish never
+        shell: bash
+        run: |
+          signing=()
+          # Windows: Azure Artifact Signing, the maintainer's signing account,
+          # once its secrets exist. electron-builder signs every executable and
+          # the installer through the Azure API; the certificate never leaves
+          # Azure. Without the secrets the build is exactly what it was —
+          # unsigned, which a prerelease accepts and a stable publish refuses
+          # (Verify Windows distribution, below).
+          if [ "${{ matrix.platform }}" = win32 ] && [ -n "$ARTIFACT_SIGNING_ENDPOINT" ]; then
+            signing+=(
+              "-c.win.azureSignOptions.endpoint=$ARTIFACT_SIGNING_ENDPOINT"
+              "-c.win.azureSignOptions.codeSigningAccountName=$ARTIFACT_SIGNING_ACCOUNT"
+              "-c.win.azureSignOptions.certificateProfileName=$ARTIFACT_SIGNING_PROFILE"
+              "-c.win.azureSignOptions.publisherName=$ARTIFACT_SIGNING_PUBLISHER"
+            )
+          fi
+          ${{ matrix.build }} -- --publish never "${signing[@]}"
         env:
           APPLE_API_KEY: ${{ matrix.platform == 'darwin' && secrets.APPLE_API_KEY != '' && format('{0}/AuthKey.p8', runner.temp) || '' }}
           APPLE_API_KEY_ID: ${{ matrix.platform == 'darwin' && secrets.APPLE_API_KEY_ID || '' }}
           APPLE_API_ISSUER: ${{ matrix.platform == 'darwin' && secrets.APPLE_API_ISSUER || '' }}
           # Optional signing credentials supplied by the maintainer. A missing
           # credential is allowed in dry runs; Authenticode is checked below.
+          # Either a certificate file (WIN_CSC_*) or the Azure account
+          # (ARTIFACT_SIGNING_*), never both.
           WIN_CSC_LINK: ${{ matrix.platform == 'win32' && secrets.WIN_CSC_LINK || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ matrix.platform == 'win32' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          # The regional endpoint (https://swn.codesigning.azure.net for
+          # Switzerland North), the account, the Public Trust certificate
+          # profile, and the publisher exactly as the certificate names it —
+          # electron-updater refuses an update signed by any other name.
+          ARTIFACT_SIGNING_ENDPOINT: ${{ matrix.platform == 'win32' && secrets.ARTIFACT_SIGNING_ENDPOINT || '' }}
+          ARTIFACT_SIGNING_ACCOUNT: ${{ matrix.platform == 'win32' && secrets.ARTIFACT_SIGNING_ACCOUNT || '' }}
+          ARTIFACT_SIGNING_PROFILE: ${{ matrix.platform == 'win32' && secrets.ARTIFACT_SIGNING_PROFILE || '' }}
+          ARTIFACT_SIGNING_PUBLISHER: ${{ matrix.platform == 'win32' && secrets.ARTIFACT_SIGNING_PUBLISHER || '' }}
+          # An Entra ID app registration holding the "Artifact Signing
+          # Certificate Profile Signer" role, under the names the Azure SDK
+          # reads, so the secret never appears on a command line.
+          AZURE_TENANT_ID: ${{ matrix.platform == 'win32' && secrets.ARTIFACT_SIGNING_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.platform == 'win32' && secrets.ARTIFACT_SIGNING_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.platform == 'win32' && secrets.ARTIFACT_SIGNING_CLIENT_SECRET || '' }}
       - name: Notarize and staple each DMG
         if: matrix.platform == 'darwin' && env.NOTARY_KEY_ID != ''
         working-directory: desktop/electron

@@ -682,7 +682,44 @@ export const state = {
   },
 };
 
-export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys };
+/**
+ * The desktop application, as `ssh-manager control` offers it to a browser
+ * tab: whether it exists for this machine, whether it is installed, and the
+ * two things you can ask for. Absent (404) inside the application itself and
+ * from an engine older than 4.0, which is what `status` returning null means.
+ */
+export interface DesktopStatus {
+  supported: boolean;
+  installed: boolean;
+  path?: string | null;
+  version?: string | null;
+  /** `terminal` where installing needs a password typed in a terminal (Linux .deb). */
+  method?: 'auto' | 'terminal' | null;
+  /** The version this engine would install: its own. */
+  engineVersion?: string;
+  /** Where to pick a file by hand when nothing can be installed here. */
+  releases?: string;
+  installing?: boolean;
+  /** Installed and opened; this control plane is about to stop for it. */
+  handingOver?: boolean;
+  phase?: string | null;
+  received?: number;
+  total?: number;
+  error?: string | null;
+}
+
+export const desktop = {
+  status: async (): Promise<DesktopStatus | null> => {
+    const response = await fetch(url('/api/desktop'));
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? response.statusText);
+    return response.json() as Promise<DesktopStatus>;
+  },
+  install: () => post<unknown>('/api/desktop/install'),
+  open: () => post<unknown>('/api/desktop/open'),
+};
+
+export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys, desktop };
 export type Api = typeof api;
 
 export interface VaultStatus {

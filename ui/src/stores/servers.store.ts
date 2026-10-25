@@ -16,12 +16,16 @@ interface ServersState {
   error: string | null;
 
   searchQuery: string;
+  /** One group shown on its own, or null for all of them. Not persisted: a
+   *  filter left on from last week is a list that looks short for no reason. */
+  categoryFilter: string | null;
   viewMode: 'grid' | 'list';
   editMode: boolean;
   sortBy: 'name' | 'host';
   sortDirection: 'asc' | 'desc';
 
   setSearchQuery: (query: string) => void;
+  setCategoryFilter: (category: string | null) => void;
   setViewMode: (mode: 'grid' | 'list') => void;
   setEditMode: (edit: boolean) => void;
   setSortBy: (field: 'name' | 'host') => void;
@@ -41,12 +45,14 @@ export const useServersStore = create<ServersState>((set, get) => ({
   error: null,
 
   searchQuery: '',
+  categoryFilter: null,
   viewMode: 'grid',
   editMode: false,
   sortBy: 'name',
   sortDirection: 'asc',
 
   setSearchQuery: searchQuery => set({ searchQuery }),
+  setCategoryFilter: categoryFilter => set({ categoryFilter }),
   setViewMode: viewMode => {
     useSettingsStore.getState().updateSetting('serverViewMode', viewMode);
     set({ viewMode });
@@ -95,9 +101,11 @@ export const useServersStore = create<ServersState>((set, get) => ({
   },
 
   getServersByCategory: () => {
+    const { categoryFilter } = get();
     const map = new Map<string, ServerConfig[]>();
     for (const server of get().getFilteredServers()) {
       const category = server.category || 'Uncategorized';
+      if (categoryFilter !== null && category !== categoryFilter) continue;
       if (!map.has(category)) map.set(category, []);
       map.get(category)!.push(server);
     }

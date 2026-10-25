@@ -174,7 +174,19 @@ async function startControlPlane() {
   return plane.start();
 }
 
+/**
+ * The colours the Windows and Linux window buttons are drawn in: the page's
+ * own ground and text, so the three buttons look like part of the header they
+ * sit on rather than a grey patch pasted over its corner. Follows the system
+ * theme, as the page does unless the user forced one in Options.
+ */
+function titleBarOverlay() {
+  const dark = nativeTheme.shouldUseDarkColors;
+  return { color: dark ? '#121211' : '#fafaf7', symbolColor: dark ? '#edebe6' : '#1a1917', height: 48 };
+}
+
 function createWindow(url) {
+  const mac = process.platform === 'darwin';
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -183,11 +195,17 @@ function createWindow(url) {
     // The page's own ground, in whichever theme it will resolve to. A fixed
     // light colour here flashes white for a beat before a dark page paints —
     // the one moment of the launch anybody actually watches.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#111418' : '#f6f7f9',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    // Moved down and in, so the buttons sit level with the sidebar's own
-    // controls rather than on top of them.
-    trafficLightPosition: { x: 14, y: 14 },
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#121211' : '#fafaf7',
+    // No title bar of the system's own on any platform. On macOS the three
+    // buttons float over the rail's top row; on Windows and Linux the system
+    // draws minimise, maximise and close over the right end of the page
+    // header (Window Controls Overlay), and the page reserves their width from
+    // the `env(titlebar-area-*)` CSS variables. Before 4.0 Windows and Linux
+    // kept a native title bar above a header that repeated what it said.
+    titleBarStyle: mac ? 'hiddenInset' : 'hidden',
+    ...(mac ? {} : { titleBarOverlay: titleBarOverlay() }),
+    // Centred in the rail's 48px top row: the buttons are 12px tall.
+    trafficLightPosition: { x: 18, y: 18 },
     show: false,
     webPreferences: {
       // The page is served over HTTP by our own process and needs nothing from
@@ -228,8 +246,16 @@ function createWindow(url) {
   // The page has to reserve room for the window buttons, which a hidden title
   // bar draws *over* the content. It cannot know that on its own — the same
   // page is served to an ordinary browser tab, where there is nothing to avoid.
-  const inset = process.platform === 'darwin' ? 'macos' : 'plain';
+  // `plain`, what this sent before 4.0, still means "a system title bar" to the
+  // page, so an older application showing a newer engine's page stays right.
+  const inset = mac ? 'macos' : 'overlay';
   void mainWindow.loadURL(`${url}&shell=${inset}`);
+
+  if (!mac) {
+    const recolour = () => mainWindow?.setTitleBarOverlay(titleBarOverlay());
+    nativeTheme.on('updated', recolour);
+    mainWindow.on('closed', () => nativeTheme.removeListener('updated', recolour));
+  }
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -580,7 +606,29 @@ app.on('open-file', (event, filePath) => {
   setTimeout(flushDroppedFiles, 120);
 });
 
+// One copy at a time. A second launch — a double-click on the icon, or
+// `ssh-manager app` on Windows and Linux, where opening an application starts
+// another process — would bind the approval socket again and fight the first
+// copy for it. It brings the running window forward instead. Not for a smoke
+// test or a preview, which run beside a real copy on purpose, in a home of
+// their own.
+const soleCopy = smokeTest || previewHome || app.requestSingleInstanceLock();
+if (!soleCopy) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (plane) {
+      createWindow(plane.url);
+    }
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!soleCopy) return;
   try {
     const { url } = await startControlPlane();
     if (smokeTest) {

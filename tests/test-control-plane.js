@@ -647,6 +647,243 @@ async function testPreferencesSurviveARestart() {
   ok('preferences require the token and refuse anything that is not an object');
 }
 
+/**
+ * A stand-in for desktop-install.js: an installer that reports progress, waits
+ * for the test to let it finish, and an `open` that records what it opened.
+ *
+ * @param {{installed?: boolean, supported?: boolean, method?: string|null, platform?: string, failWith?: string}} [options]
+ */
+function fakeDesktop({ installed = false, supported = true, method = 'auto', platform = 'darwin', failWith = '' } = {}) {
+  const app = '/Applications/SSH Manager.app';
+  let state = { supported, installed, path: installed ? app : null, version: installed ? '4.0.0' : null, method };
+  /** @type {() => void} */
+  let release = () => {};
+  const gate = new Promise(resolve => { release = () => resolve(undefined); });
+  const calls = { install: 0, /** @type {{path: string, planeListening: boolean}[]} */ open: [] };
+  /** @type {ControlPlane|null} */
+  let plane = null;
+  return {
+    calls,
+    release: () => release(),
+    watch: (/** @type {ControlPlane} */ p) => { plane = p; },
+    hooks: {
+      status: () => ({ ...state }),
+      install: async ({ onProgress }) => {
+        calls.install++;
+        onProgress({ phase: 'manifest', received: 0, total: 0 });
+        onProgress({ phase: 'download', received: 0, total: 1000, file: 'SSH-Manager-4.0.0-arm64.zip' });
+        await gate;
+        if (failWith) throw new Error(failWith);
+        onProgress({ phase: 'download', received: 1000, total: 1000, file: 'SSH-Manager-4.0.0-arm64.zip' });
+        onProgress({ phase: 'verify', received: 1000, total: 1000, passed: 'sha256' });
+        onProgress({ phase: 'install', received: 1000, total: 1000 });
+        state = { ...state, installed: true, path: app, version: '4.0.0' };
+        return { path: app, version: '4.0.0' };
+      },
+      open: async ({ path: target }) => {
+        calls.open.push({ path: target, planeListening: Boolean(plane?.httpServer?.listening) });
+      },
+      running: async () => false,
+      platform,
+    },
+  };
+}
+
+/** Resolve once a page's event stream is attached, so nothing is missed. */
+async function subscribed(plane) {
+  for (let i = 0; i < 100 && plane.subscribers.size === 0; i++) await new Promise(resolve => setTimeout(resolve, 10));
+}
+
+async function testDesktopEndpointsAbsentUnlessOffered() {
+  const { plane, base } = await startPlane();
+  const q = `token=${plane.token}`;
+  for (const [method, route] of [['GET', '/api/desktop'], ['POST', '/api/desktop/install'], ['POST', '/api/desktop/open']]) {
+    const response = await call(base, `${route}?${q}`, { method });
+    assert.strictEqual(response.status, 404, `${method} ${route} must not exist unless the plane offers the app`);
+  }
+  const options = await (await call(base, `/api/options?${q}`)).json();
+  assert.strictEqual(options.offerDesktop, false, 'the page must be told there is nothing to offer');
+  ok('without offerDesktop (the desktop app itself, any embedder) the desktop endpoints do not exist');
+}
+
+async function testDesktopInstallStreamsProgressThenHandsOver() {
+  const fake = fakeDesktop();
+  /** @type {() => void} */
+  let handedOver = () => {};
+  const stopped = new Promise(resolve => { handedOver = () => resolve(undefined); });
+  const { plane, base, url } = await startPlane({ offerDesktop: true, desktop: fake.hooks, handoverMs: 50, onHandover: () => handedOver() });
+  fake.watch(plane);
+  const port = Number(new URL(url).port);
+  const q = `token=${plane.token}`;
+
+  const options = await (await call(base, `/api/options?${q}`)).json();
+  assert.strictEqual(options.offerDesktop, true);
+  const before = await (await call(base, `/api/desktop?${q}`)).json();
+  assert.deepStrictEqual(
+    { supported: before.supported, installed: before.installed, method: before.method, installing: before.installing, phase: before.phase, error: before.error },
+    { supported: true, installed: false, method: 'auto', installing: false, phase: null, error: null }
+  );
+  assert.strictEqual(before.engineVersion, JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
+  ok('GET /api/desktop: the status, the engine version, and no installation running');
+
+  for (const route of ['/api/desktop', '/api/desktop/install', '/api/desktop/open']) {
+    const response = await call(base, route, { method: route === '/api/desktop' ? 'GET' : 'POST' });
+    assert.strictEqual(response.status, 401, `${route} must require the token like everything else`);
+  }
+  ok('the desktop endpoints require the token');
+
+  const stream = openEventStream(port, plane.token, 7, 5000);
+  await subscribed(plane);
+  const accepted = await call(base, `/api/desktop/install?${q}`, { method: 'POST' });
+  assert.strictEqual(accepted.status, 202, 'the install starts in the background');
+  const again = await call(base, `/api/desktop/install?${q}`, { method: 'POST' });
+  assert.strictEqual(again.status, 409, 'one installation at a time');
+  const opening = await call(base, `/api/desktop/open?${q}`, { method: 'POST' });
+  assert.strictEqual(opening.status, 409, 'nothing to open while it installs');
+  const during = await (await call(base, `/api/desktop?${q}`)).json();
+  assert.strictEqual(during.installing, true);
+  assert.strictEqual(during.phase, 'download');
+  assert.strictEqual(during.total, 1000, 'a page opened mid-download can draw the bar');
+  assert.strictEqual(fake.calls.install, 1);
+  ok('POST /api/desktop/install answers 202, and a second one while it runs is a 409');
+
+  fake.release();
+  const { events } = await stream;
+  const desktop = events.filter(event => event.type === 'desktop');
+  assert.deepStrictEqual(desktop.map(event => event.phase),
+    ['manifest', 'download', 'download', 'verify', 'install', 'open', 'handover']);
+  for (const event of desktop) {
+    assert.strictEqual(typeof event.received, 'number');
+    assert.strictEqual(typeof event.total, 'number');
+  }
+  assert.deepStrictEqual(desktop[2], { phase: 'download', received: 1000, total: 1000, file: 'SSH-Manager-4.0.0-arm64.zip', type: 'desktop' });
+  assert.strictEqual(desktop[3].passed, 'sha256');
+  assert.strictEqual(desktop[6].stopsInMs, 50);
+  assert.match(desktop[6].message, /Continued in the desktop app/);
+  ok('progress reaches the page as {type: "desktop", phase, received, total}, ending with the hand-over');
+
+  await stopped;
+  assert.deepStrictEqual(fake.calls.open, [{ path: '/Applications/SSH Manager.app', planeListening: true }],
+    'on macOS the app is opened first, while this plane still runs');
+  assert.strictEqual(plane.httpServer.listening, false, 'the plane stops itself after the hand-over');
+  ok('after installing, the app is opened and the browser control plane stops itself a moment later');
+}
+
+async function testDesktopInstallFailureIsReported() {
+  const fake = fakeDesktop({ failWith: 'SHA-256 does not match release v4.0.0: nothing was installed' });
+  const { plane, base, url } = await startPlane({ offerDesktop: true, desktop: fake.hooks, handoverMs: 50 });
+  const port = Number(new URL(url).port);
+  const q = `token=${plane.token}`;
+
+  const stream = openEventStream(port, plane.token, 3, 5000);
+  await subscribed(plane);
+  assert.strictEqual((await call(base, `/api/desktop/install?${q}`, { method: 'POST' })).status, 202);
+  fake.release();
+  const { events } = await stream;
+  assert.deepStrictEqual(events.at(-1), {
+    phase: 'error', error: 'SHA-256 does not match release v4.0.0: nothing was installed', type: 'desktop', received: 0, total: 1000,
+  });
+  const after = await (await call(base, `/api/desktop?${q}`)).json();
+  assert.strictEqual(after.installing, false);
+  assert.strictEqual(after.phase, 'error');
+  assert.match(after.error, /SHA-256/);
+  assert.deepStrictEqual(fake.calls.open, [], 'nothing is opened after a failure');
+  assert.strictEqual(plane.httpServer.listening, true, 'and the browser control plane keeps running');
+  assert.strictEqual((await call(base, `/api/desktop/install?${q}`, { method: 'POST' })).status, 202, 'a failure can be retried');
+  ok('a failed install is reported on the stream and in GET /api/desktop; the plane stays up and can retry');
+}
+
+async function testDesktopRefusalsWithoutAnInstaller() {
+  const terminal = fakeDesktop({ method: 'terminal' });
+  const deb = await startPlane({ offerDesktop: true, desktop: terminal.hooks });
+  const refused = await call(deb.base, `/api/desktop/install?token=${deb.plane.token}`, { method: 'POST' });
+  assert.strictEqual(refused.status, 400);
+  assert.deepStrictEqual(
+    (({ method, command }) => ({ method, command }))(await refused.json()),
+    { method: 'terminal', command: 'ssh-manager app' }
+  );
+  assert.strictEqual(terminal.calls.install, 0);
+  ok('the .deb route (sudo) is refused from the page and points to `ssh-manager app`');
+
+  const none = fakeDesktop({ supported: false, method: null });
+  const other = await startPlane({ offerDesktop: true, desktop: none.hooks });
+  const unsupported = await call(other.base, `/api/desktop/install?token=${other.plane.token}`, { method: 'POST' });
+  assert.strictEqual(unsupported.status, 400);
+  assert.match((await unsupported.json()).releases, /github\.com\/bvisible\/mcp-ssh-manager\/releases/);
+  const notInstalled = await call(other.base, `/api/desktop/open?token=${other.plane.token}`, { method: 'POST' });
+  assert.strictEqual(notInstalled.status, 409, 'nothing to open when nothing is installed');
+  ok('an unsupported platform gets the releases page, and opening an app that is not installed is a 409');
+}
+
+async function testDesktopOpenHandsOver() {
+  const fake = fakeDesktop({ installed: true });
+  /** @type {() => void} */
+  let handedOver = () => {};
+  const stopped = new Promise(resolve => { handedOver = () => resolve(undefined); });
+  const { plane, base } = await startPlane({ offerDesktop: true, desktop: fake.hooks, handoverMs: 400, onHandover: () => handedOver() });
+  fake.watch(plane);
+  const opened = await call(base, `/api/desktop/open?token=${plane.token}`, { method: 'POST' });
+  assert.strictEqual(opened.status, 200);
+  assert.deepStrictEqual(await opened.json(), { ok: true, stopsInMs: 400 });
+  // A page that asks again — or asks to open after an install that already
+  // hands over by itself — is told it is under way, and nothing opens twice.
+  const again = await call(base, `/api/desktop/open?token=${plane.token}`, { method: 'POST' });
+  assert.strictEqual(again.status, 200);
+  const { stopsInMs } = await again.json();
+  assert.ok(stopsInMs >= 0 && stopsInMs <= 400, 'the time left before the plane stops');
+  await stopped;
+  assert.strictEqual(fake.calls.install, 0, 'opening never downloads');
+  assert.deepStrictEqual(fake.calls.open, [{ path: '/Applications/SSH Manager.app', planeListening: true }]);
+  assert.strictEqual(plane.httpServer.listening, false);
+  ok('POST /api/desktop/open opens the installed app once, even when asked twice, then the plane stops itself');
+
+  // A Windows named pipe cannot be bound twice: the plane must let go first.
+  const windows = fakeDesktop({ installed: true, platform: 'win32' });
+  let windowsDone = () => {};
+  const windowsStopped = new Promise(resolve => { windowsDone = () => resolve(undefined); });
+  const second = await startPlane({ offerDesktop: true, desktop: windows.hooks, handoverMs: 50, onHandover: () => windowsDone() });
+  windows.watch(second.plane);
+  assert.strictEqual((await call(second.base, `/api/desktop/open?token=${second.plane.token}`, { method: 'POST' })).status, 200);
+  assert.deepStrictEqual(windows.calls.open, [], 'on Windows nothing is opened while the plane holds the pipe');
+  await windowsStopped;
+  assert.deepStrictEqual(windows.calls.open, [{ path: '/Applications/SSH Manager.app', planeListening: false }]);
+  ok('on Windows the plane stops first and opens the app after, freeing the pipe the app needs');
+}
+
+/**
+ * The hand-over in practice: the desktop application binds the approval socket
+ * while `ssh-manager control` still runs, then the browser control plane stops.
+ * stop() used to unlink whatever was at its socket path — by then the
+ * application's socket — leaving the application listening where no engine
+ * could find it.
+ */
+async function testStopLeavesAnotherPlanesSocket() {
+  const socketPath = path.join(scratch, 'shared.sock');
+  const browser = await startPlane({ socketPath });
+  const app = await startPlane({ socketPath });
+  await browser.plane.stop();
+  assert.ok(fs.statSync(socketPath).isSocket(), 'the second plane\'s approval socket must survive the first one stopping');
+  assert.ok(fs.statSync(streamSocketPath()).isSocket(), 'and so must its live-stream socket');
+
+  const enginePromise = requestDecision(
+    buildRequest({ name: 'prod' }, 'ssh_execute', {}, 'uptime'),
+    { socketPath, timeoutMs: 5000 }
+  );
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const state = await (await call(app.base, `/api/state?token=${app.plane.token}`)).json();
+  assert.strictEqual(state.pending.length, 1, 'an engine must still reach the plane that took over');
+  await call(app.base, `/api/decide?token=${app.plane.token}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: state.pending[0].id, decision: 'allow' }),
+  });
+  assert.strictEqual((await enginePromise).decision, 'allow');
+
+  await app.plane.stop();
+  assert.strictEqual(fs.existsSync(socketPath), false, 'a plane still removes its own socket when it stops');
+  ok('stopping a control plane leaves a socket another plane has since bound at the same path');
+}
+
 async function main() {
   try {
     await testTokenIsRequired();
@@ -666,6 +903,12 @@ async function main() {
     await testPublishedTunnels();
     await testAnnouncementSurvivesAColdStart();
     await testPreferencesSurviveARestart();
+    await testDesktopEndpointsAbsentUnlessOffered();
+    await testDesktopInstallStreamsProgressThenHandsOver();
+    await testDesktopInstallFailureIsReported();
+    await testDesktopRefusalsWithoutAnInstaller();
+    await testDesktopOpenHandsOver();
+    await testStopLeavesAnotherPlanesSocket();
     console.log(`\n✅ control plane tests passed (${passed} checks)`);
   } finally {
     for (const plane of planes) {

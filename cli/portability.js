@@ -12,13 +12,7 @@ import { SecretStore } from '../src/secret-store.js';
 import { ConfigLoader } from '../src/config-loader.js';
 import { READERS, WELL_KNOWN, importFile, readTransmit, plan } from '../src/server-import.js';
 import { toCsv, toXlsx, template } from '../src/server-export.js';
-
-const GREEN = '\x1b[32m';
-const YELLOW = '\x1b[33m';
-const RED = '\x1b[31m';
-const DIM = '\x1b[2m';
-const BOLD = '\x1b[1m';
-const RESET = '\x1b[0m';
+import { GREEN, YELLOW, RED, DIM, BOLD, RESET } from './style.js';
 
 const ask = question => new Promise(resolve => {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

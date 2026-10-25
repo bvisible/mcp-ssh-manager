@@ -39,6 +39,12 @@ interface WorkspaceState {
   activeTabId: string | null;
   expanded: boolean;
   pendingCount: number;
+  /**
+   * This tab's control plane handed over to the desktop application and is
+   * stopping on purpose. The connection it then loses is not news to report.
+   */
+  handedOver: boolean;
+  setHandedOver: (handedOver: boolean) => void;
 
   setView: (view: ViewId) => void;
 
@@ -76,6 +82,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   activeTabId: null,
   expanded: readExpanded(),
   pendingCount: 0,
+  handedOver: false,
+  setHandedOver: handedOver => set({ handedOver }),
 
   setView: view => set({ view, activeTabId: null }),
 

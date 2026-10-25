@@ -29,7 +29,7 @@ const isWindows = platform() === 'win32';
 const args = process.argv.slice(2);
 
 // These commands are native Node and also work on Windows without Git Bash.
-const nativeCommands = { control: 'control.js', vault: 'vault.js', import: 'portability.js', export: 'portability.js' };
+const nativeCommands = { control: 'control.js', vault: 'vault.js', import: 'portability.js', export: 'portability.js', app: 'app.js' };
 if (Object.hasOwn(nativeCommands, args[0])) {
   const commandArgs = ['import', 'export'].includes(args[0]) ? args : args.slice(1);
   const result = spawnSync(process.execPath, [join(__dirname, nativeCommands[args[0]]), ...commandArgs], { stdio: 'inherit' });
@@ -37,7 +37,9 @@ if (Object.hasOwn(nativeCommands, args[0])) {
   process.exit(result.status ?? 1);
 }
 
-suggestDesktop(args);
+// The menu clears the screen when it draws; told the invitation was just
+// printed, it keeps it above its first screen instead of wiping it at once.
+if (suggestDesktop(args)) process.env.SSH_MANAGER_KEEP_SCREEN = '1';
 
 /**
  * Convert a Windows-style path (C:\foo\bar) into a POSIX-style path

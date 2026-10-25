@@ -20,7 +20,7 @@
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/V4-preview_4.0.0--beta.2-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2)
+[![Version](https://img.shields.io/badge/V4-preview_4.0.0--beta.3-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.3)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -52,9 +52,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application — V4 preview (`4.0.0-beta.2`):** one installation with its
+**Desktop application — V4 preview (`4.0.0-beta.3`):** one installation with its
 own runtime, terminal, file browser and server settings. No separate Node.js or
-npm installation. [Download the preview](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.2):
+npm installation. [Download the preview](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0-beta.3):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -72,6 +72,14 @@ prompt unless you enable one per server. The one behaviour that tightens is
 
 To try the preview's engine and interface from npm without touching your
 current install, see [trying the preview](docs/MIGRATION.md#trying-the-preview).
+
+**From the engine to the application in one step.** With a V4 engine installed,
+`ssh-manager app` downloads the desktop application of the engine's own version,
+checks it against the release (size and SHA-256 from the release manifest, and
+on macOS Apple's signature and notarization), installs it and opens it — or just
+opens it when it is already there. The browser interface of `ssh-manager control`
+offers the same as one button. Your agents keep using the npm engine; the
+application is the window on top of it. Nothing is downloaded unless you ask.
 
 ## Up and running with npm
 

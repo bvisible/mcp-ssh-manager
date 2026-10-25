@@ -48,6 +48,7 @@ import { listSavedCommands, commandsForServer, saveCommand, deleteCommand as del
 import { READERS, WELL_KNOWN, importFile, readTransmit, plan } from './server-import.js';
 import { listGroups, getGroup, createGroup, updateGroup, deleteGroup, executeOnGroup, setServerConfigProvider } from './server-groups.js';
 import { readPublishedTunnels } from './tunnel-manager.js';
+import { desktopStatus, installDesktop, openDesktop, desktopRunning, engineVersion, RELEASES_PAGE } from './desktop-install.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -250,6 +251,22 @@ const PREFERENCES_LIMIT_BYTES = 64 * 1024;
 // nobody is asked about a file they dropped in another session.
 const ANNOUNCE_REPLAY_MS = 30 * 1000;
 
+// How long the page is told "continued in the desktop app" before this plane
+// stops: long enough to read, short enough that the socket is soon free.
+const HANDOVER_MS = 4000;
+
+/**
+ * Getting the desktop application, as the control plane uses it. The real
+ * functions of desktop-install.js by default; the tests stand in for them.
+ * @typedef {Object} DesktopHooks
+ * @property {() => import('./desktop-install.js').DesktopStatus} status
+ * @property {(options: {onProgress: (progress: import('./desktop-install.js').DesktopProgress) => void}) =>
+ *   Promise<{path: string, version: string|null}>} install
+ * @property {(options: {path: string}) => Promise<void>} open
+ * @property {() => Promise<boolean>} running - Is the application already running?
+ * @property {string} platform - Decides the hand-over order (see #handOver)
+ */
+
 export class ControlPlane {
   /**
    * @param {Object} options - Configuration
@@ -257,12 +274,38 @@ export class ControlPlane {
    * @param {number} [options.port] - HTTP port; 0 picks a free one
    * @param {string[]} [options.auditPaths] - JSONL audit logs to read
    * @param {string} [options.vaultPath] - Encrypted store to manage servers in
+   * @param {boolean} [options.offerDesktop] - Offer to install and open the desktop
+   *   application. Only `ssh-manager control` sets it; never the application itself
+   * @param {Partial<DesktopHooks>} [options.desktop] - Stand-ins for desktop-install.js (tests)
+   * @param {number} [options.handoverMs] - Delay between "continued in the app" and stopping
+   * @param {() => void} [options.onHandover] - Called once this plane has stopped for the app
    */
-  constructor({ socketPath, port = 0, auditPaths = [], vaultPath = defaultVaultPath() }) {
+  constructor({
+    socketPath, port = 0, auditPaths = [], vaultPath = defaultVaultPath(),
+    offerDesktop = false, desktop = {}, handoverMs = HANDOVER_MS, onHandover = null,
+  }) {
     this.socketPath = socketPath;
     this.port = port;
     this.auditPaths = auditPaths;
     this.store = new SecretStore(vaultPath);
+
+    // The desktop application, offered from a browser tab. Off unless asked
+    // for: inside the application there is nothing to offer, and an embedder
+    // that never heard of it must not grow new endpoints.
+    this.offerDesktop = offerDesktop;
+    /** @type {DesktopHooks} */
+    this.desktop = {
+      status: () => desktopStatus(),
+      install: ({ onProgress }) => installDesktop({ onProgress }),
+      open: ({ path: target }) => openDesktop({ path: target }),
+      running: () => desktopRunning(),
+      platform: process.platform,
+      ...desktop,
+    };
+    this.handoverMs = handoverMs;
+    this.onHandover = onHandover;
+    /** @type {{installing: boolean, handingOver: boolean, phase: string|null, received: number, total: number, error: string|null}} */
+    this.desktopState = { installing: false, handingOver: false, phase: null, received: 0, total: 0, error: null };
     // Live command output from the engine, kept with a bounded scrollback so a
     // window opened mid-command still shows what came before.
     this.streams = new StreamRegistry();
@@ -351,6 +394,7 @@ export class ControlPlane {
 
   async #startStreamServer() {
     this.streamServer = await listenForStreams(this.streams);
+    this.#rememberSocketFile(streamSocketPath());
     this.#trackConnections(this.streamServer);
 
     // Every command an agent runs passes through here, which is why the log can
@@ -377,6 +421,24 @@ export class ControlPlane {
   /** Stop everything and release the socket. */
   /** Every socket any of this plane's servers accepted, until it closes. */
   #connections = new Set();
+
+  /** @type {Map<string, {dev: number, ino: number}>} The socket files this plane bound, by path. */
+  #socketFiles = new Map();
+
+  /** When a hand-over to the desktop application stops this plane (epoch ms). */
+  #handoverDeadline = 0;
+
+  /**
+   * Remember which file a listener created, so stop() removes that file and
+   * not one another process has since put at the same path.
+   * @param {string} socketPath - A Unix socket this plane listens on
+   */
+  #rememberSocketFile(socketPath) {
+    try {
+      const { dev, ino } = fs.statSync(socketPath);
+      this.#socketFiles.set(socketPath, { dev, ino });
+    } catch { /* a Windows named pipe has no file to remember */ }
+  }
 
   /**
    * Remember each connection a server accepts, so stop() can end it.
@@ -406,11 +468,34 @@ export class ControlPlane {
     for (const id of [...this.terminals.keys()]) this.#disposeTerminal(id);
     for (const name of [...this.sftpPool.keys()]) this.#releaseSftp(name);
 
+    // A control plane started on the same path since — the desktop application
+    // taking over from `ssh-manager control` — has replaced our socket files
+    // with its own. libuv unlinks a Unix socket's *path* when its server
+    // closes, whatever file is there by then, which would leave the other plane
+    // listening where no engine can find it. So a file that is no longer ours
+    // is moved aside while our servers close (libuv does it inside close()),
+    // and put straight back.
+    /** @type {[string, string][]} */
+    const moved = [];
+    for (const [socket, identity] of this.#socketFiles) {
+      try {
+        const current = fs.statSync(socket);
+        if (current.dev === identity.dev && current.ino === identity.ino) continue;
+        const aside = `${socket}.${process.pid}.keep`;
+        fs.renameSync(socket, aside);
+        moved.push([aside, socket]);
+      } catch { /* nothing there: nothing to protect */ }
+    }
     const closed = Promise.all([
       new Promise(resolve => (this.socketServer ? this.socketServer.close(() => resolve(undefined)) : resolve(undefined))),
       new Promise(resolve => (this.httpServer ? this.httpServer.close(() => resolve(undefined)) : resolve(undefined))),
       new Promise(resolve => (this.streamServer ? this.streamServer.close(() => resolve(undefined)) : resolve(undefined))),
     ]);
+    for (const [aside, socket] of moved) {
+      try { fs.renameSync(aside, socket); } catch (error) {
+        logger.warn('Could not put back another control plane\'s socket', { socket, error: error.message });
+      }
+    }
     // close() only stops a server accepting; it then waits for every connection
     // it already has to end, and some never do on their own. An MCP engine stays
     // connected to the approval socket for as long as it runs, and a page's
@@ -421,9 +506,14 @@ export class ControlPlane {
     // fail-closed path it expects when the control plane goes away.
     for (const socket of this.#connections) socket.destroy();
     await closed;
-    for (const socket of [this.socketPath, streamSocketPath()]) {
-      try { fs.unlinkSync(socket); } catch { /* already gone */ }
+    // Our own files, should libuv have left any; never another plane's.
+    for (const [socket, identity] of this.#socketFiles) {
+      try {
+        const current = fs.statSync(socket);
+        if (current.dev === identity.dev && current.ino === identity.ino) fs.unlinkSync(socket);
+      } catch { /* already gone */ }
     }
+    this.#socketFiles.clear();
   }
 
   async #startSocketServer() {
@@ -443,6 +533,7 @@ export class ControlPlane {
     });
     // Only this user may ask us to decide.
     try { fs.chmodSync(this.socketPath, 0o600); } catch { /* best effort */ }
+    this.#rememberSocketFile(this.socketPath);
   }
 
   /**
@@ -596,6 +687,14 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/preferences') return this.#servePreferences(res);
     if (req.method === 'PUT' && url.pathname === '/api/preferences') return this.#savePreferences(req, res);
     if (req.method === 'GET' && url.pathname === '/api/options') return this.#serveOptions(res);
+
+    // The desktop application, offered from a browser tab. When the plane was
+    // not started to offer it these paths do not exist: a 404, like any other.
+    if (this.offerDesktop) {
+      if (req.method === 'GET' && url.pathname === '/api/desktop') return this.#serveDesktop(res);
+      if (req.method === 'POST' && url.pathname === '/api/desktop/install') return this.#installDesktopApp(req, res);
+      if (req.method === 'POST' && url.pathname === '/api/desktop/open') return this.#openDesktopApp(req, res);
+    }
     if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
       return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
     }
@@ -2171,7 +2270,171 @@ export class ControlPlane {
       // control plane served over the network, where it would be a stranger's
       // shell on somebody's laptop.
       localShell: Boolean(this.localShell),
+      // Whether /api/desktop exists: true only under `ssh-manager control`.
+      offerDesktop: Boolean(this.offerDesktop),
     });
+  }
+
+  /**
+   * Can the desktop application be installed here, is it already, and where
+   * is an installation that is running. Read by the page's banner.
+   *
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #serveDesktop(res) {
+    let status;
+    try {
+      status = this.desktop.status();
+    } catch (error) {
+      logger.warn('Cannot read the desktop application status', { error: error.message });
+      status = { supported: false, installed: false, path: null, version: null, method: null };
+    }
+    const { installing, handingOver, phase, received, total, error } = this.desktopState;
+    this.#json(res, 200, {
+      ...status,
+      engineVersion: engineVersion(),
+      releases: RELEASES_PAGE,
+      installing,
+      handingOver,
+      phase,
+      received,
+      total,
+      error,
+    });
+  }
+
+  /**
+   * Install the desktop application, then hand over to it. Answers 202 at
+   * once; progress goes out on the event stream as `{type: 'desktop', …}`.
+   * One at a time: a second click while it runs is a 409.
+   *
+   * @param {import('http').IncomingMessage} req - Request (its body is ignored)
+   * @param {import('http').ServerResponse} res - Response
+   */
+  #installDesktopApp(req, res) {
+    req.resume();
+    if (this.desktopState.installing || this.desktopState.handingOver) {
+      return this.#json(res, 409, { error: this.desktopState.installing
+        ? 'The desktop app is already being installed'
+        : 'Already handing over to the desktop app' });
+    }
+    const status = this.desktop.status();
+    if (!status.installed && !status.supported) {
+      return this.#json(res, 400, { error: 'There is no desktop build for this platform', releases: RELEASES_PAGE });
+    }
+    // A .deb needs sudo, and a click cannot type a password. The page shows
+    // the command instead; this is for a page that asked anyway.
+    if (!status.installed && status.method === 'terminal') {
+      return this.#json(res, 400, {
+        error: 'Installing the desktop app here asks for your password: run `ssh-manager app` in a terminal',
+        method: 'terminal',
+        command: 'ssh-manager app',
+      });
+    }
+    this.desktopState = { installing: true, handingOver: false, phase: null, received: 0, total: 0, error: null };
+    this.#json(res, 202, { ok: true });
+    this.#runDesktopInstall();
+  }
+
+  /** The install itself, after the 202. Failures end up on the event stream. */
+  async #runDesktopInstall() {
+    try {
+      const installed = await this.desktop.install({ onProgress: progress => this.#desktopEvent(progress) });
+      this.desktopState.installing = false;
+      await this.#handOver(installed.path);
+    } catch (error) {
+      logger.warn('The desktop application was not installed', { error: error.message });
+      this.desktopState.installing = false;
+      this.desktopState.handingOver = false;
+      this.#desktopEvent({ phase: 'error', error: error.message });
+    }
+  }
+
+  /**
+   * Open the installed desktop application, then hand over to it.
+   *
+   * @param {import('http').IncomingMessage} req - Request (its body is ignored)
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #openDesktopApp(req, res) {
+    req.resume();
+    // Already on its way — an install that finished hands over by itself, and
+    // a page that asks to open the app as well is asking for what is happening.
+    if (this.desktopState.handingOver) {
+      return this.#json(res, 200, { ok: true, stopsInMs: Math.max(0, this.#handoverDeadline - Date.now()) });
+    }
+    if (this.desktopState.installing) {
+      return this.#json(res, 409, { error: 'The desktop app is still being installed' });
+    }
+    const status = this.desktop.status();
+    if (!status.installed) return this.#json(res, 409, { error: 'The desktop app is not installed' });
+    try {
+      await this.#handOver(status.path);
+    } catch (error) {
+      this.desktopState.handingOver = false;
+      this.#desktopEvent({ phase: 'error', error: error.message });
+      return this.#json(res, 500, { error: `Could not open the desktop app: ${error.message}` });
+    }
+    return this.#json(res, 200, { ok: true, stopsInMs: this.handoverMs });
+  }
+
+  /**
+   * Leave the stage to the desktop application.
+   *
+   * The application binds the same approval socket when it starts. Left
+   * running, this plane would keep a page nobody needs and, on Windows, the
+   * very pipe the application needs. So it tells the page it continues in the
+   * application, waits a few seconds for that to be read, and stops.
+   *
+   * The order depends on the platform. A Windows named pipe cannot be bound
+   * twice, so there this plane stops first and opens the application after.
+   * Elsewhere the application opens first, so a failure to open is reported
+   * while the page can still show it; the application then replaces the
+   * socket files, and stop() leaves alone files that are no longer its own.
+   *
+   * @param {string} appPath - The installed application
+   */
+  async #handOver(appPath) {
+    this.desktopState.handingOver = true;
+    const opensFirst = this.desktop.platform !== 'win32';
+    const launch = async () => {
+      // macOS brings a running application forward; elsewhere a second launch
+      // would start a second copy competing for the socket.
+      if (this.desktop.platform !== 'darwin' && await this.desktop.running()) return;
+      await this.desktop.open({ path: appPath });
+    };
+    this.#desktopEvent({ phase: 'open' });
+    if (opensFirst) await launch();
+    this.#handoverDeadline = Date.now() + this.handoverMs;
+    this.#desktopEvent({
+      phase: 'handover',
+      stopsInMs: this.handoverMs,
+      message: 'Continued in the desktop app — you can close this tab',
+    });
+    setTimeout(async () => {
+      try {
+        await this.stop();
+        if (!opensFirst) await launch();
+      } catch (error) {
+        logger.error('Handing over to the desktop application failed', { error: error.message });
+      }
+      this.onHandover?.();
+    }, this.handoverMs);
+  }
+
+  /**
+   * Note where the desktop installation is and tell every open page. Every
+   * event carries the byte counts, so a page that joins late can draw the bar.
+   *
+   * @param {{phase: string} & Record<string, any>} update - From installDesktop or the hand-over
+   */
+  #desktopEvent(update) {
+    const state = this.desktopState;
+    state.phase = update.phase;
+    if (typeof update.received === 'number') state.received = update.received;
+    if (typeof update.total === 'number') state.total = update.total;
+    state.error = update.phase === 'error' ? update.error : null;
+    this.#broadcast({ ...update, type: 'desktop', received: state.received, total: state.total });
   }
 
   /**

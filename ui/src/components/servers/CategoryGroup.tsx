@@ -1,7 +1,6 @@
 import React from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 import { useSettingsStore } from '@/stores/settings.store'
 import type { ServerConfig } from '@/types/electron'
 import { ServerCard } from './ServerCard'
@@ -28,14 +27,13 @@ export const CategoryGroup = React.memo(function CategoryGroup({
   const collapsed = collapsedCategories.includes(name)
 
   return (
-    <div className="mb-6">
-      {/* Category header */}
+    <section className="mb-7">
+      {/* Category header. A quiet label with a count, not an orange pill: the
+          accent is kept for what needs you, and a group of servers does not. */}
       <button
         onClick={() => toggleCategoryCollapse(name)}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-lg px-3 py-1.5 transition-colors',
-          'hover:bg-accent/40'
-        )}
+        aria-expanded={!collapsed}
+        className="-ml-1.5 mb-3 flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-secondary"
       >
         <ChevronDown
           className={cn(
@@ -43,20 +41,22 @@ export const CategoryGroup = React.memo(function CategoryGroup({
             collapsed && '-rotate-90'
           )}
         />
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <span className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
           {name}
         </span>
-        <Badge variant="default" className="ml-1 text-[10px] px-1.5 py-0 h-4">
+        <span className="text-xs font-medium text-muted-foreground tabular-nums">
           {servers.length}
-        </Badge>
+        </span>
       </button>
 
-      {/* Server cards */}
+      {/* Server cards. A grid that fills the width: a fleet of sixty machines
+          laid out as one narrow column per group was a page of empty space. */}
       {!collapsed && (
         <div
           className={cn(
-            'mt-2',
-            viewMode === 'grid' ? 'flex flex-wrap gap-3' : 'flex flex-col gap-0.5'
+            viewMode === 'grid'
+              ? 'grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3'
+              : 'flex flex-col overflow-hidden rounded-xl border border-border bg-card'
           )}
         >
           {servers.map((server) => (
@@ -71,6 +71,6 @@ export const CategoryGroup = React.memo(function CategoryGroup({
           ))}
         </div>
       )}
-    </div>
+    </section>
   )
 })
