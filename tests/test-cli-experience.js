@@ -89,7 +89,9 @@ try {
     };
     const wide = draw(100);
     const wideText = plain(wide);
-    assert.match(wideText, new RegExp(`^  ▲ SSH Manager ${version.replace(/\./g, '\\.')}$`, 'm'));
+    // Every metacharacter, not only the dots: a version is data, not a pattern.
+    const literal = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(wideText, new RegExp(`^  ▲ SSH Manager ${literal}$`, 'm'));
     assert.match(wideText, /^ {2}3 servers · ~\/\.ssh-manager\/\.env · desktop app 4\.0\.0 installed$/m, 'status line: count, file, app');
     assert.match(wideText, /^ {2}SERVERS {26}FILES$/m, 'two columns at 100 columns');
     assert.match(wideText, /^ {2}1 {2}List, test, add, edit {9}3 {2}Sync \(rsync\)$/m);
