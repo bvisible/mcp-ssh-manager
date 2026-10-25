@@ -146,10 +146,15 @@ export async function runSmokeTest({ app, BrowserWindow, url, root, localShellPr
   if (process.platform === 'linux' && process.env.APPIMAGE) {
     assert.equal(agents.engines.app, null, 'an AppImage moves on every start: no engine is offered from it');
   } else {
+    // What it must offer, worked out here rather than taken from the answer:
+    // this very binary, running the engine the application carries.
+    const own = { command: process.execPath, args: [path.join(root, 'src', 'index.js')], env: { ELECTRON_RUN_AS_NODE: '1' } };
     assert.ok(agents.engines.app, 'the application offers its own engine to AI tools');
-    assert.equal(fs.realpathSync(agents.engines.app.command), fs.realpathSync(process.execPath));
+    assert.equal(fs.realpathSync(agents.engines.app.command), fs.realpathSync(own.command));
+    assert.deepEqual(agents.engines.app.args.map(file => fs.realpathSync(file)), own.args.map(file => fs.realpathSync(file)));
+    assert.deepEqual(agents.engines.app.env, own.env);
     assert.equal(agents.engines.app.version, app.getVersion());
-    await verifyEngineAnswers(agents.engines.app, { stage });
+    await verifyEngineAnswers(own, { stage });
   }
   const groups = await import(pathToFileURL(path.join(root, 'src/server-groups.js')).href);
   groups.createGroup('release_smoke', ['fixture']);

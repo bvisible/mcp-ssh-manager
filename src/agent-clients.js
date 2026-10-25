@@ -159,7 +159,7 @@ export function appEngine(context) {
   if (!status.installed || !status.path) return null;
   // Started from its disk image, or moved aside by macOS because it was never
   // copied to Applications: a path that is gone at the next start.
-  if (/^\/Volumes\/|\/AppTranslocation\//.test(status.path)) return null;
+  if (status.path.startsWith('/Volumes/') || status.path.includes('/AppTranslocation/')) return null;
   let command;
   let resources;
   if (context.platform === 'darwin') {
