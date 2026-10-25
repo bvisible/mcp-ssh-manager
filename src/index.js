@@ -1642,7 +1642,11 @@ registerToolConditional(
   async ({ server: serverName, name }) => {
     try {
       const ssh = await getConnection(serverName);
-      const session = await createSession(serverName, ssh);
+      // The session keeps the server's own name, not what the caller typed: a
+      // partial name or an alias resolved now must not resolve to another
+      // server, or to none, for every command sent later (GHSA-mq9f-5385-rjf4).
+      const canonical = resolveServerName(serverName, await loadServerConfig()) || serverName;
+      const session = await createSession(canonical, ssh);
 
       const sessionName = name || `Session on ${serverName}`;
 
