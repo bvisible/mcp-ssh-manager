@@ -151,7 +151,7 @@ No syntax to learn. Your assistant already knows how to use the 37 tools; you ta
 | *"Run `docker ps` on everything tagged production."* | One command, the whole group, sequential or parallel |
 
 <p align="center">
-  <img src="docs/images/ssh-manager-cli-menu.png" alt="The ssh-manager interactive CLI menu" width="820">
+  <img src="docs/images/ssh-manager-cli-menu.png" alt="The ssh-manager CLI home screen: version, server count, configuration file and desktop app state above the menu" width="760">
 </p>
 
 <p align="center">
