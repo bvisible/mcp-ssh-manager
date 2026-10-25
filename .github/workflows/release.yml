@@ -95,7 +95,10 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           URL="https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-${VERSION}.tgz"
-          curl --retry 12 --retry-all-errors --retry-delay 5 -fsL "$URL" -o "$RUNNER_TEMP/published.tgz"
+          # The registry answers `npm view` within seconds but serves the
+          # tarball minutes later: 4.0.0 was still a 404 after four minutes,
+          # and the former one-minute window failed the run after a good publish.
+          curl --retry 90 --retry-all-errors --retry-delay 10 --retry-max-time 900 -fsL "$URL" -o "$RUNNER_TEMP/published.tgz"
           SHA=$(shasum -a 256 "$RUNNER_TEMP/published.tgz" | cut -d' ' -f1)
           sed -i -E "s|url \"https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-[^\"]+\"|url \"$URL\"|" Formula/ssh-manager.rb
           sed -i -E "s|sha256 \"[a-f0-9]+\"|sha256 \"$SHA\"|" Formula/ssh-manager.rb
