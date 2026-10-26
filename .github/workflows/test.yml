@@ -142,7 +142,11 @@ jobs:
       - name: Nothing generated is tracked by git
         shell: bash
         run: test -z "$(git ls-files dist)" && test -z "$(git status --porcelain)"
+      # Unix sockets: this suite has never run on Windows (the engine matrix is
+      # Linux). The browser flows below serve and exercise the built interface
+      # there.
       - name: Engine test that serves the built interface
+        if: runner.os != 'Windows'
         run: npm run test:terminal
         env:
           REQUIRE_INTERFACE: '1'
