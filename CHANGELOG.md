@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shell is now started with `-l` on macOS and Linux (Windows is unchanged).
   `npm run test:local-shell` runs a real shell both ways.
 
+### Changed
+
+- **The desktop app's terminal on Windows is PowerShell.** It opened `cmd.exe`
+  (what `COMSPEC` names on every Windows machine), the old Command Prompt.
+  It now starts Windows PowerShell (`powershell.exe`, present on Windows 10 and
+  11), the shell Windows Terminal opens by default. `cmd.exe` is still one
+  `cmd` away inside it. macOS and Linux are unchanged by this entry.
+
 ## [4.0.1] - 2026-10-26
 
 **The application tells you about updates, and nothing changes in the engine.**

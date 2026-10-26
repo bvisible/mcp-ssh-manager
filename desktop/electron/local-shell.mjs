@@ -11,15 +11,20 @@ import path from 'node:path';
  * installers add live in ~/.zprofile or ~/.bash_profile, which only a login
  * shell reads. Without `-l`, `brew`, `node` or any tool installed outside
  * /usr/bin was "command not found" here and fine in Terminal.app or Warp,
- * which both start login shells. Windows shells have no such flag and read
- * their own profile.
+ * which both start login shells.
+ *
+ * On Windows it is PowerShell, the shell Windows Terminal opens by default and
+ * the one people use there today. COMSPEC is not consulted: it names cmd.exe on
+ * every Windows machine, so it says nothing about what the user chose. Windows
+ * PowerShell (powershell.exe) ships with Windows 10 and 11, unlike PowerShell 7.
+ * It has no `-l`; it reads its own profile.
  *
  * @param {{ platform?: string, env?: Record<string, string|undefined> }} [options]
  * @returns {{ file: string, args: string[], env: Record<string, string|undefined> }}
  */
 export function localShellLaunch({ platform = process.platform, env = process.env } = {}) {
   const file = platform === 'win32'
-    ? env.COMSPEC || 'powershell.exe'
+    ? 'powershell.exe'
     : env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
 
   const childEnv = { ...env, TERM: 'xterm-256color' };
