@@ -88,6 +88,9 @@ ui/
 # every `npm install` downloads and nothing at runtime reads. They live in the
 # repository and on the README, which is where people look at them.
 docs/images/
+# The social preview's source and its card capture: the image is built into the repository, not the package.
+brand/social-preview.html
+brand/approval-card.png
 desktop/build/
 desktop/electron/dist/
 desktop/electron/engine/

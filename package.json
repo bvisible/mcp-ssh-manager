@@ -55,6 +55,7 @@
     "test:terminal": "node tests/test-terminal.js",
     "test:files": "node tests/test-files.js",
     "build:ui": "node scripts/build-interface.mjs",
+    "brand:social": "node scripts/render-social-preview.mjs",
     "prepack": "node scripts/build-interface.mjs",
     "test:recovery": "node tests/test-vault-recovery.js",
     "test:upgrade": "node tests/test-upgrade.js",
