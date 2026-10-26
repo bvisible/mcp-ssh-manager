@@ -16,6 +16,7 @@ import { ConnectionBanner } from '@/components/layout/ConnectionStatus';
 import { ensurePermission, notifyApproval, clearApproval, clearAll } from '@/lib/notify';
 import { DroppedFilesDialog } from '@/components/DroppedFilesDialog';
 import { DesktopBanner } from '@/components/DesktopBanner';
+import { initAppUpdate } from '@/stores/appUpdate.store';
 import { Wizard, wizardSeen } from '@/components/Wizard';
 import { SessionTabs } from '@/components/layout/SessionTabs';
 
@@ -30,6 +31,10 @@ export function App() {
   // session pane need to resolve a serverId to a name, whichever screen the
   // page happened to open on.
   useEffect(() => { void loadServers(); }, [loadServers]);
+
+  // The desktop application's own updates; nothing happens in a browser tab,
+  // where the control plane has none to report.
+  useEffect(() => { initAppUpdate(); }, []);
 
   const setView = useWorkspace(s => s.setView);
 

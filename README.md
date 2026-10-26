@@ -89,7 +89,10 @@ variables, and takes effect when the tool next starts; switching back is the
 same click.
 
 **Updates.** The application checks for a new version at launch and every six
-hours, downloads it when you click *Update* and installs it when it quits. The
+hours and says so where you will see it: a mark on the sidebar, *Options →
+Updates* (the running version, the one on offer, a *Check now* button, release
+notes) and, once per version, a notification. Downloading is a click, and
+installing is a second one (*Restart to update*) or happens when you quit. The
 npm engine updates with npm, on its own schedule. A change to the interface
 reaches npm users with the next npm release and application users with the next
 application release.

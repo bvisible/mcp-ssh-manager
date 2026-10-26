@@ -16,10 +16,11 @@
  * profile dot they carried.
  */
 import { useState, useRef, useEffect } from 'react'
-import { Server, Clock, HeartPulse, Radio, Activity, Settings, PanelLeftClose, PanelLeftOpen, FolderOpen, X, TerminalSquare } from 'lucide-react'
+import { Server, Clock, HeartPulse, Radio, Activity, Settings, PanelLeftClose, PanelLeftOpen, FolderOpen, X, TerminalSquare, ArrowUpCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useWorkspace, type WorkspaceTab, type ViewId } from '@/stores/workspace'
 import { useServersStore } from '@/stores/servers.store'
+import { useAppUpdate } from '@/stores/appUpdate.store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { needsTitleBarRoom, hasOverlayControls } from '@/lib/desktop'
 import { ConnectionBadge } from '@/components/layout/ConnectionStatus'
@@ -81,6 +82,15 @@ export function Sidebar() {
     toggleExpanded
   } = useWorkspace()
   const serverCount = useServersStore(s => s.servers.length)
+
+  // A newer version of the application, or one downloaded and waiting for a
+  // restart. Only the desktop application has any (elsewhere `info` is null).
+  // Said here because an update only visible in a menu nobody opens is an
+  // update nobody installs; the details and the buttons are in Options → Updates.
+  const update = useAppUpdate(s => s.info)
+  const setOptionsTab = useWorkspace(s => s.setOptionsTab)
+  const updateStatus = update && ['available', 'downloading', 'ready'].includes(update.status) ? update.status : null
+  const openUpdates = () => { setOptionsTab('updates'); setView('options') }
 
   // A panel icon, which is what this button does. It used to be a cross, and a
   // cross means close — people read it as "close the application" or "close
@@ -189,9 +199,28 @@ export function Sidebar() {
           only needs a look when it is not fine, and then it says so loudly at
           the top of the page as well. */}
       <div className="flex flex-col gap-1.5 px-2 pb-3 pt-2">
+        {sidebarExpanded && update && updateStatus && (
+          <button
+            type="button"
+            onClick={openUpdates}
+            className="no-drag flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-2 text-left text-xs transition-colors hover:bg-primary/10"
+          >
+            <ArrowUpCircle className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-bold">
+                {updateStatus === 'ready' ? 'Restart to update' : updateStatus === 'downloading' ? 'Downloading update' : 'Update available'}
+              </span>
+              <span className="block truncate text-muted-foreground">
+                {updateStatus === 'downloading' ? `${update.percent ?? 0}%` : `Version ${update.version}`}
+              </span>
+            </span>
+          </button>
+        )}
         <SidebarItem
           icon={Settings}
           label="Options"
+          dot={updateStatus !== null}
+          dotLabel="update available"
           active={activeTabId === null && view === 'options'}
           expanded={sidebarExpanded}
           onClick={() => setView('options')}
@@ -209,7 +238,9 @@ function SidebarItem({
   expanded,
   onClick,
   badge,
-  meta
+  meta,
+  dot,
+  dotLabel
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
@@ -220,15 +251,20 @@ function SidebarItem({
   badge?: number
   /** A quiet count, for orientation only. */
   meta?: string
+  /** Something to know about, with no number: a small mark on the icon. */
+  dot?: boolean
+  /** What the mark means, for screen readers and the tooltip. */
+  dotLabel?: string
 }) {
+  const name = dot && dotLabel ? `${label} (${dotLabel})` : label
   const button = (
     <button
       // Collapsed, these are icon-only buttons. Without a name they are
       // invisible to a screen reader and unreachable by anything that looks
       // elements up by their label.
-      aria-label={label}
+      aria-label={name}
       aria-current={active ? 'page' : undefined}
-      title={label}
+      title={name}
       onClick={onClick}
       className={cn(
         'no-drag relative flex h-10 w-full items-center gap-2.5 rounded-lg transition-colors',
@@ -240,6 +276,7 @@ function SidebarItem({
     >
       <span className="relative shrink-0">
         <Icon className="h-[18px] w-[18px]" />
+        {dot && <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-sidebar" />}
         {!expanded && badge !== undefined && (
           <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-bold leading-none text-primary-foreground">
             {badge}
@@ -263,7 +300,7 @@ function SidebarItem({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+      <TooltipContent side="right">{name}</TooltipContent>
     </Tooltip>
   )
 }

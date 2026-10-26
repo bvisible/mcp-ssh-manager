@@ -156,6 +156,16 @@ export async function runSmokeTest({ app, BrowserWindow, url, root, localShellPr
     assert.equal(agents.engines.app.version, app.getVersion());
     await verifyEngineAnswers(own, { stage });
   }
+  // The window's own updates (Options → Updates, the mark on the rail): the
+  // packaged application hands the control plane its updater, which reports the
+  // version that is running. The updater itself stays off in a smoke test.
+  const updates = await fetch(`${base.origin}/api/app-update${base.search}`);
+  assert.equal(updates.status, 200, 'the packaged application reports its updates');
+  const snapshot = await updates.json();
+  assert.equal(snapshot.currentVersion, app.getVersion());
+  assert.equal(snapshot.status, 'idle');
+  assert.equal(snapshot.channel, app.getVersion().includes('-') ? 'preview' : 'stable');
+  stage(`application updates reported (running ${snapshot.currentVersion}, ${snapshot.channel})`);
   const groups = await import(pathToFileURL(path.join(root, 'src/server-groups.js')).href);
   groups.createGroup('release_smoke', ['fixture']);
   assert.equal(fs.existsSync(path.join(root, '.server-groups.json')), false, 'groups must not write inside the application');

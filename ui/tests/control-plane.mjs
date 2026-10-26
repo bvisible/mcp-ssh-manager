@@ -70,12 +70,39 @@ function fakeAgents() {
   };
 }
 
+/**
+ * The desktop application's updater, stood in for when a test asks for it. It
+ * walks the same states the real one does, slowly enough for a page to draw
+ * them; "restarting" leaves a file behind instead of quitting anything.
+ */
+function fakeAppUpdates() {
+  let state = { currentVersion: '4.0.0-beta.3', status: 'idle', channel: 'preview' };
+  const listeners = new Set();
+  const set = patch => { state = { ...state, ...patch }; for (const listener of listeners) listener(state); };
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  return {
+    snapshot: () => state,
+    check: async () => {
+      set({ status: 'checking' });
+      await pause(300);
+      set({ status: 'available', version: '4.1.0', checkedAt: new Date().toISOString() });
+    },
+    download: async () => {
+      for (const percent of [0, 40, 80, 100]) { set({ status: 'downloading', version: '4.1.0', percent }); await pause(250); }
+      set({ status: 'ready', percent: 100 });
+    },
+    install: () => fs.writeFileSync(path.join(process.env.HOME, 'update-installed.flag'), '1'),
+    subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+  };
+}
+
 const offerDesktop = process.env.UI_TEST_OFFER_DESKTOP === '1';
 const plane = new ControlPlane({
   socketPath: defaultSocketPath(),
   port: 0,
   auditPaths: [],
   agents: fakeAgents(),
+  ...(process.env.UI_TEST_APP_UPDATES === '1' ? { appUpdates: fakeAppUpdates() } : {}),
   ...(offerDesktop ? { offerDesktop, desktop: fakeDesktop(), handoverMs: 60_000 } : {}),
 });
 const { url } = await plane.start();

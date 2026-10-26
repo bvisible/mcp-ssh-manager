@@ -168,8 +168,46 @@ let tray = null;
 let trayState = '';
 /** Requests already announced, so a queue that stays full is not announced twice. */
 const announced = new Set();
-/** What the updater is doing, for the menu bar to show. */
-let update = { status: 'idle', version: null, percent: 0 };
+/**
+ * What the updater is doing. Shown in the menu bar, and handed to the control
+ * plane so the window can show it too (Options → Updates, the sidebar), because
+ * an update that is only visible in a menu most people never open is not an
+ * update anyone ever installs.
+ * @type {{status: 'idle'|'checking'|'available'|'downloading'|'ready'|'error', version: string|null, percent: number, checkedAt: string|null, error: string|null}}
+ */
+let update = { status: 'idle', version: null, percent: 0, checkedAt: null, error: null };
+/** Whether the updater was started: a packaged build, and not a candidate preview. */
+let updaterActive = false;
+/** Who is told when `update` changes: the control plane, which tells the window. */
+const updateListeners = new Set();
+
+function updateSnapshot() {
+  return {
+    currentVersion: app.getVersion(),
+    status: update.status,
+    ...(update.version ? { version: update.version } : {}),
+    ...(update.status === 'downloading' || update.status === 'ready' ? { percent: update.percent } : {}),
+    ...(update.checkedAt ? { checkedAt: update.checkedAt } : {}),
+    ...(update.error ? { error: update.error } : {}),
+    // A preview build is offered newer previews as well as the stable release.
+    channel: app.getVersion().includes('-') ? 'preview' : 'stable',
+  };
+}
+
+/** What the control plane offers the window: see AppUpdates in control-plane.js. */
+const appUpdates = {
+  snapshot: updateSnapshot,
+  check: async () => {
+    if (!updaterActive) throw new Error('Updates are turned off in this build');
+    await electronUpdater.autoUpdater.checkForUpdates();
+  },
+  download: async () => { await electronUpdater.autoUpdater.downloadUpdate(); },
+  install: () => electronUpdater.autoUpdater.quitAndInstall(),
+  subscribe: listener => {
+    updateListeners.add(listener);
+    return () => updateListeners.delete(listener);
+  },
+};
 
 async function startControlPlane() {
   const root = engineRoot();
@@ -183,6 +221,9 @@ async function startControlPlane() {
     // tree; the control plane resolves it relative to its own file, so nothing
     // extra is needed here.
     agents: ownInstallation(),
+    // Only a packaged build has a feed and a version to compare; a checkout run
+    // from source has nothing to update.
+    appUpdates: app.isPackaged ? appUpdates : null,
   });
   plane.setLocalShellProvider(localShellProvider());
   return plane.start();
@@ -308,6 +349,10 @@ function buildMenu(url) {
       ],
     },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [{ label: 'Check for Updates…', click: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }) }],
+    },
   ]));
 }
 
@@ -490,9 +535,10 @@ function refreshTray() {
  * release happened, or restarting under them while a transfer is running, are
  * both worse than being a version behind for an afternoon.
  *
- * So: it checks, and it says so in the menu bar. Downloading is a click.
- * Installing happens when the application is closed anyway — never in the
- * middle of something.
+ * So: it checks, and says so — in the window (Options → Updates, and a mark on
+ * the sidebar), in the menu bar, and once per version in a notification.
+ * Downloading is a click. Installing happens when the application is closed
+ * anyway, or when you choose to restart — never in the middle of something.
  */
 function setupUpdater() {
   // A candidate preview must keep the artifact the operator chose to test.
@@ -503,21 +549,32 @@ function setupUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = null;
+  updaterActive = true;
 
   const move = (status, extra = {}) => {
     update = { ...update, status, ...extra };
     trayState = '';                     // force the menu to rebuild
     refreshTray();
+    const snapshot = updateSnapshot();
+    for (const listener of updateListeners) listener(snapshot);
   };
+  const now = () => new Date().toISOString();
 
-  autoUpdater.on('update-available', info => move('available', { version: info.version }));
-  autoUpdater.on('update-not-available', () => move('idle'));
+  autoUpdater.on('checking-for-update', () => move('checking', { error: null }));
+  autoUpdater.on('update-available', info => {
+    move('available', { version: info.version, percent: 0, checkedAt: now(), error: null });
+    announceUpdate(info.version);
+  });
+  autoUpdater.on('update-not-available', () => move('idle', { version: null, checkedAt: now(), error: null }));
   autoUpdater.on('download-progress', p => move('downloading', { percent: Math.round(p.percent) }));
-  autoUpdater.on('update-downloaded', info => move('ready', { version: info.version }));
-  autoUpdater.on('error', () => {
-    // A failed check is not worth telling anybody about: the network is down,
-    // or GitHub is. It will try again.
-    move('idle');
+  autoUpdater.on('update-downloaded', info => move('ready', { version: info.version, percent: 100 }));
+  autoUpdater.on('error', error => {
+    // A failed background check is not worth an alert: the network is down, or
+    // GitHub is, and it will try again. The reason is kept for Options → Updates,
+    // where someone who asked to check can read it. A failed download goes back
+    // to "available", so it can be tried again.
+    const message = String(error?.message || error).split('\n')[0].slice(0, 200);
+    move(update.status === 'downloading' || update.status === 'ready' ? 'available' : 'idle', { checkedAt: now(), error: message });
   });
 
   const check = () => autoUpdater.checkForUpdates().catch(() => { /* see above */ });
@@ -526,10 +583,45 @@ function setupUpdater() {
   timer.unref();
 }
 
+/**
+ * Say, once per version, that an update is on offer.
+ *
+ * The version is remembered on disk: a notification at every launch for an
+ * update somebody has already decided to leave for later is nagging, and
+ * the sidebar and the menu bar keep showing it anyway.
+ *
+ * @param {string} version
+ */
+function announceUpdate(version) {
+  const marker = path.join(app.getPath('userData'), 'last-update-notice');
+  try {
+    if (fs.readFileSync(marker, 'utf8').trim() === version) return;
+  } catch { /* nothing recorded yet */ }
+  try { fs.writeFileSync(marker, `${version}\n`); } catch { /* it will say it again next time; harmless */ }
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({
+    title: `SSH Manager ${version} is available`,
+    body: 'Open Options → Updates to download it. Nothing is installed until you restart.',
+    silent: true,
+  });
+  notification.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (plane) {
+      createWindow(plane.url);
+    }
+  });
+  notification.show();
+}
+
 /** The menu-bar entry for whatever the updater is up to, or nothing. */
 function updateMenuItems() {
   const { autoUpdater } = electronUpdater;
   switch (update.status) {
+  case 'checking':
+    return [{ label: 'Checking for updates…', enabled: false }, { type: 'separator' }];
   case 'available':
     return [{
       label: `Update to ${update.version}`,
@@ -544,7 +636,10 @@ function updateMenuItems() {
       click: () => autoUpdater.quitAndInstall(),
     }, { type: 'separator' }];
   default:
-    return [];
+    return updaterActive
+      ? [{ label: 'Check for Updates…', click: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }) },
+        { type: 'separator' }]
+      : [];
   }
 }
 

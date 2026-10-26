@@ -744,7 +744,40 @@ export const agents = {
     post<{ client: AgentClient }>('/api/agents/use', { client, engine }),
 };
 
-export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys, desktop, agents };
+/**
+ * The desktop application's own updates, as it reports them: what is running,
+ * what is on offer, and how far a download has got.
+ */
+export interface AppUpdate {
+  currentVersion: string;
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error';
+  /** The version on offer (available, downloading, ready). */
+  version?: string;
+  /** Download progress, 0 to 100. */
+  percent?: number;
+  /** ISO time of the last completed check. */
+  checkedAt?: string;
+  /** Why the last check or download failed. */
+  error?: string;
+  /** A preview build is offered newer previews as well as the stable release. */
+  channel: 'stable' | 'preview';
+}
+
+export const appUpdate = {
+  /** null outside the desktop application, where /api/app-update is a 404. */
+  status: async (): Promise<AppUpdate | null> => {
+    const response = await fetch(url('/api/app-update'));
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? response.statusText);
+    return response.json() as Promise<AppUpdate>;
+  },
+  check: () => post<AppUpdate>('/api/app-update/check'),
+  download: () => post<AppUpdate>('/api/app-update/download'),
+  /** The application quits and installs; the page loses its connection on purpose. */
+  install: () => post<{ ok: true; restarting: true }>('/api/app-update/install'),
+};
+
+export const api = { servers, groups, commands, thresholds, history, migration, files, local, transfers, shells, ssh, health, state, hostKeys, desktop, agents, appUpdate };
 export type Api = typeof api;
 
 export interface VaultStatus {

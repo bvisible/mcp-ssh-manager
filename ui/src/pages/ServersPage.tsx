@@ -125,17 +125,48 @@ export function ServersPage() {
         {pending.length > 0 && <WaitingBanner pending={pending} onOpen={() => setView('waiting')} />}
 
         {servers.length > 0 && (
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            <div className="relative min-w-[220px] max-w-md flex-1">
-              <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input
-                type="search"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search a name, host or user"
-                aria-label="Search servers"
-                className="h-10 bg-card pl-9 text-sm"
-              />
+          // Two rows, always: the search with the layout switch on the right, then
+          // the groups. The switch used to come after the chips, and with seven
+          // groups the chips filled the row and left it alone on a third line, a
+          // band of empty space between the filters and the list.
+          <div className="mb-6 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <div className="relative min-w-0 max-w-md flex-1">
+                <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <Input
+                  type="search"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search a name, host or user"
+                  aria-label="Search servers"
+                  className="h-10 bg-card pl-9 text-sm"
+                />
+              </div>
+
+              <div role="group" aria-label="Layout" className="ml-auto flex shrink-0 overflow-hidden rounded-lg border border-border bg-card">
+                <button
+                  type="button"
+                  aria-label="Show as a grid"
+                  aria-pressed={viewMode === 'grid'}
+                  title="Cards"
+                  onClick={() => setViewMode('grid')}
+                  className={cn('flex h-[38px] w-10 items-center justify-center transition-colors',
+                    viewMode === 'grid' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Show as a list"
+                  aria-pressed={viewMode === 'list'}
+                  title="List"
+                  onClick={() => setViewMode('list')}
+                  className={cn('flex h-[38px] w-10 items-center justify-center border-l border-border transition-colors',
+                    viewMode === 'list' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {/* Only worth showing with more than one group to choose from. */}
@@ -160,31 +191,6 @@ export function ServersPage() {
                 ))}
               </div>
             )}
-
-            <div role="group" aria-label="Layout" className="ml-auto flex overflow-hidden rounded-lg border border-border bg-card">
-              <button
-                type="button"
-                aria-label="Show as a grid"
-                aria-pressed={viewMode === 'grid'}
-                title="Cards"
-                onClick={() => setViewMode('grid')}
-                className={cn('flex h-[38px] w-10 items-center justify-center transition-colors',
-                  viewMode === 'grid' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Show as a list"
-                aria-pressed={viewMode === 'list'}
-                title="List"
-                onClick={() => setViewMode('list')}
-                className={cn('flex h-[38px] w-10 items-center justify-center border-l border-border transition-colors',
-                  viewMode === 'list' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
           </div>
         )}
 

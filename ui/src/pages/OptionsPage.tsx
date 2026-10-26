@@ -20,6 +20,8 @@ import { useTheme, type ThemeMode } from '@/stores/theme';
 import { cn } from '@/lib/utils';
 import { VaultPanel } from '@/components/VaultPanel';
 import { AgentsPanel } from '@/components/AgentsPanel';
+import { UpdatesPanel } from '@/components/UpdatesPanel';
+import { useAppUpdate } from '@/stores/appUpdate.store';
 import { PageHeader } from '@/components/layout/PageHeader';
 
 
@@ -149,6 +151,13 @@ export function OptionsPage() {
   const servers = useServersStore(s => s.servers);
   const setView = useWorkspace(s => s.setView);
   const setServerDraft = useWorkspace(s => s.setServerDraft);
+  const optionsTab = useWorkspace(s => s.optionsTab);
+  const setOptionsTab = useWorkspace(s => s.setOptionsTab);
+  // Updates exist only in the desktop application; a browser tab has none, and
+  // a link to the tab from somewhere else lands on the first one instead.
+  const appUpdate = useAppUpdate(s => s.info);
+  const tab = optionsTab === 'updates' && !appUpdate ? 'appearance' : optionsTab;
+  const updateWaiting = appUpdate !== null && ['available', 'downloading', 'ready'].includes(appUpdate.status);
 
   const reload = () => state.options().then(setOptions).catch(() => {});
   useEffect(() => {
@@ -189,7 +198,7 @@ export function OptionsPage() {
       {/* Five settings screens' worth of controls used to be one column you
           scrolled through, which made "where is the thing I came for" a reading
           exercise. Tabs answer it before you scroll. */}
-      <Tabs defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
+      <Tabs value={tab} onValueChange={setOptionsTab} className="flex min-h-0 flex-1 flex-col">
         {/* Wraps in a narrow window. The list's one-row height and the tabs'
             "fill the list" height are both overridden, under the same variant
             the component sets them with, or a second row falls outside the
@@ -198,6 +207,12 @@ export function OptionsPage() {
           <TabsTrigger value="appearance" className={TAB}>Appearance</TabsTrigger>
           <TabsTrigger value="vault" className={TAB}>Vault</TabsTrigger>
           <TabsTrigger value="agents" className={TAB}>AI tools</TabsTrigger>
+          {appUpdate && (
+            <TabsTrigger value="updates" className={TAB}>
+              Updates
+              {updateWaiting && <span role="img" aria-label="update available" className="h-1.5 w-1.5 rounded-full bg-primary" />}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="alerts" className={TAB}>Alerts</TabsTrigger>
           <TabsTrigger value="groups" className={TAB}>Groups</TabsTrigger>
           <TabsTrigger value="tunnels" className={TAB}>Tunnels</TabsTrigger>
@@ -216,6 +231,8 @@ export function OptionsPage() {
         <TabsContent value="vault" className="mt-0"><VaultPanel /></TabsContent>
 
         <TabsContent value="agents" className="mt-0"><AgentsPanel /></TabsContent>
+
+        <TabsContent value="updates" className="mt-0"><UpdatesPanel /></TabsContent>
 
         <TabsContent value="alerts" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">

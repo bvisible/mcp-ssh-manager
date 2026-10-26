@@ -48,6 +48,10 @@ interface WorkspaceState {
 
   setView: (view: ViewId) => void;
 
+  /** The Options tab showing, so something elsewhere (the update mark) can open one. */
+  optionsTab: string;
+  setOptionsTab: (tab: string) => void;
+
   /**
    * A host somebody asked to turn into a server, from somewhere that is not the
    * Servers screen — Known hosts, today. Read and cleared by ServersPage, which
@@ -86,6 +90,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   setHandedOver: handedOver => set({ handedOver }),
 
   setView: view => set({ view, activeTabId: null }),
+
+  optionsTab: 'appearance',
+  setOptionsTab: optionsTab => set({ optionsTab }),
 
   wantsImport: false,
   setWantsImport: wantsImport => set({ wantsImport }),

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The application shows its updates
+
+- **Options → Updates** (desktop application only): the version running and its
+  channel (a preview build is offered newer previews and the stable release), the
+  version on offer, *Check now*, *Download*, download progress, *Restart to
+  update*, the time of the last check, a link to the release notes, and the reason
+  when a check fails. If commands are waiting for your decision when you restart,
+  it says they will be refused.
+- **The sidebar says so too**: an *Update available* (or *Restart to update*)
+  mark above Options, and a dot on the Options icon when the rail is collapsed.
+  A native notification is posted once per version, not at every launch.
+- *Help → Check for Updates…*, and the menu-bar entry, are kept; the window and
+  the menu show the same state.
+- A browser tab (`ssh-manager control`) and the npm engine see none of it: the
+  endpoints do not exist there, and nothing about updates is drawn.
+
+### Fixes
+
+- **Servers**: the grid/list switch sits beside the search field instead of
+  wrapping onto a line of its own below the group filters, which left a band of
+  empty space when there were many groups.
+- The primary button's hover state no longer drops white-on-orange text below
+  the 4.5:1 AA contrast (it now moves toward the page's text colour).
+
 ### The interface is built when the package is made, not committed
 
 `dist/ui` (the bundled control plane interface) is no longer in git. `prepack`

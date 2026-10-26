@@ -268,6 +268,28 @@ const HANDOVER_MS = 4000;
  * @property {string} platform - Decides the hand-over order (see #handOver)
  */
 
+/**
+ * What the desktop application knows about its own updates, handed to the
+ * control plane by the application's main process. Absent everywhere else:
+ * `ssh-manager control` in a browser has no application to update.
+ *
+ * @typedef {Object} AppUpdateSnapshot
+ * @property {string} currentVersion - The version running now
+ * @property {'idle'|'checking'|'available'|'downloading'|'ready'|'error'} status
+ * @property {string} [version] - The version on offer (available, downloading, ready)
+ * @property {number} [percent] - Download progress, 0 to 100
+ * @property {string} [checkedAt] - ISO time of the last completed check
+ * @property {string} [error] - Why the last check or download failed
+ * @property {'stable'|'preview'} channel - Previews are offered newer previews and the stable release
+ *
+ * @typedef {Object} AppUpdates
+ * @property {() => AppUpdateSnapshot} snapshot
+ * @property {() => Promise<unknown>} check
+ * @property {() => Promise<unknown>} download
+ * @property {() => void} install - Quits and installs; the application restarts
+ * @property {(listener: (snapshot: AppUpdateSnapshot) => void) => (() => void)} subscribe
+ */
+
 export class ControlPlane {
   /**
    * @param {Object} options - Configuration
@@ -282,10 +304,13 @@ export class ControlPlane {
    * @param {() => void} [options.onHandover] - Called once this plane has stopped for the app
    * @param {Partial<import('./agent-clients.js').Context>} [options.agents] - Stand-ins for the
    *   AI tools' configuration files and commands (tests)
+   * @param {AppUpdates|null} [options.appUpdates] - The application's own updates; only the
+   *   desktop application sets it
    */
   constructor({
     socketPath, port = 0, auditPaths = [], vaultPath = defaultVaultPath(),
     offerDesktop = false, desktop = {}, handoverMs = HANDOVER_MS, onHandover = null, agents = {},
+    appUpdates = null,
   }) {
     this.socketPath = socketPath;
     this.port = port;
@@ -309,6 +334,11 @@ export class ControlPlane {
     this.onHandover = onHandover;
     /** Where the AI tools' configurations are read and written (tests point it elsewhere). */
     this.agentContext = agentContext(agents);
+    /** The application's updates, or null: then /api/app-update is a 404 like any unknown path. */
+    this.appUpdates = appUpdates;
+    this.stopAppUpdates = appUpdates
+      ? appUpdates.subscribe(snapshot => this.#broadcast({ type: 'app-update', ...snapshot }))
+      : null;
     /** @type {{installing: boolean, handingOver: boolean, phase: string|null, received: number, total: number, error: string|null}} */
     this.desktopState = { installing: false, handingOver: false, phase: null, received: 0, total: 0, error: null };
     // Live command output from the engine, kept with a bounded scrollback so a
@@ -457,6 +487,7 @@ export class ControlPlane {
   }
 
   async stop() {
+    if (this.stopAppUpdates) this.stopAppUpdates();
     if (this.auditTimer) clearInterval(this.auditTimer);
     for (const response of this.subscribers) response.end();
     this.subscribers.clear();
@@ -706,6 +737,15 @@ export class ControlPlane {
     if (req.method === 'GET' && url.pathname === '/api/agents') return this.#serveAgents(res);
     if (req.method === 'POST' && url.pathname === '/api/agents/use') {
       return this.#readJsonBody(req, res, payload => this.#useAgentEngine(payload, res));
+    }
+    // The desktop application's own updates: what is running, what is on offer,
+    // and the three things a person can do about it. 404 outside the application.
+    if (this.appUpdates && url.pathname.startsWith('/api/app-update')) {
+      if (req.method === 'GET' && url.pathname === '/api/app-update') return this.#json(res, 200, this.appUpdates.snapshot());
+      if (req.method === 'POST') {
+        const action = url.pathname.slice('/api/app-update/'.length);
+        if (action === 'check' || action === 'download' || action === 'install') return this.#appUpdateAction(action, res);
+      }
     }
     if (req.method === 'DELETE' && url.pathname === '/api/hostkey') {
       return this.#forgetHostKey(url.searchParams.get('host'), url.searchParams.get('port'), res);
@@ -2326,6 +2366,39 @@ export class ControlPlane {
       return this.#json(res, 200, { client });
     } catch (error) {
       return this.#json(res, error.status || 500, { error: error.message });
+    }
+  }
+
+  /**
+   * Check for an update, download the one on offer, or restart into it. Each is a
+   * deliberate click: nothing here downloads or restarts by itself, because the
+   * application holds SSH connections and the approval socket agents wait on.
+   *
+   * @param {'check'|'download'|'install'} action
+   * @param {import('http').ServerResponse} res - Response
+   */
+  async #appUpdateAction(action, res) {
+    const updates = /** @type {AppUpdates} */ (this.appUpdates);
+    try {
+      const { status } = updates.snapshot();
+      if (action === 'download' && status !== 'available') {
+        return this.#json(res, 409, { error: 'There is no update on offer to download', snapshot: updates.snapshot() });
+      }
+      if (action === 'install' && status !== 'ready') {
+        return this.#json(res, 409, { error: 'No update has been downloaded yet', snapshot: updates.snapshot() });
+      }
+      if (action === 'install') {
+        // Answer first: the application is about to quit, and the page should
+        // be told before it loses its connection.
+        this.#json(res, 200, { ok: true, restarting: true });
+        setTimeout(() => updates.install(), 200);
+        return;
+      }
+      await updates[action]();
+      return this.#json(res, 200, updates.snapshot());
+    } catch (error) {
+      logger.warn('Application update action failed', { action, error: error.message });
+      return this.#json(res, 500, { error: error.message, snapshot: updates.snapshot() });
     }
   }
 

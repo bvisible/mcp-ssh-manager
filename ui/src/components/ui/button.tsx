@@ -9,7 +9,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        // Hover moves the fill towards the page's text colour: darker on the light theme,
+        // lighter on the dark one. Fading it into the background (bg-primary/90) took
+        // white text on the orange from 5.1:1 to 4.36:1, under the 4.5 AA needs.
+        default: 'bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--color-primary)_88%,var(--color-foreground))]',
         destructive:
           'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
         outline:
