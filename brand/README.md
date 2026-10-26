@@ -5,7 +5,7 @@
 | `wordmark.svg` | The logo: **ssh** solid, **manager** outlined. Supplied, not derived. |
 | `icon.svg` | The app icon — the mark on its tile. Everything else is generated from this. |
 | `mark.svg` | The mark alone, no tile, `currentColor` for the white parts. |
-| `social-preview.html` | The GitHub social preview (1280×640), rendered to `docs/images/social-preview.png` and `@2x` by `npm run brand:social`. The card in it, `approval-card.png`, is a capture of the real approval screen. |
+| `social-preview.html` | The GitHub social preview (1280×640), rendered to `docs/images/social-preview.png` and `@2x` by `npm run brand:social`. The window in it is the README's own capture of the real application (`docs/images/v4-waiting-app.png`, made by the screenshot rig), so the image follows the interface when the rig is re-run. |
 
 ## The icon
 
