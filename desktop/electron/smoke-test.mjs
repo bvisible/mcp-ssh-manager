@@ -165,7 +165,9 @@ export async function runSmokeTest({ app, BrowserWindow, url, root, localShellPr
   assert.equal(snapshot.currentVersion, app.getVersion());
   assert.equal(snapshot.status, 'idle');
   assert.equal(snapshot.channel, app.getVersion().includes('-') ? 'preview' : 'stable');
-  stage(`application updates reported (running ${snapshot.currentVersion}, ${snapshot.channel})`);
+  // The progress file is written from what the application itself knows, never
+  // from what a response said (the check above is what proves they agree).
+  stage(`application updates reported (running ${app.getVersion()})`);
   const groups = await import(pathToFileURL(path.join(root, 'src/server-groups.js')).href);
   groups.createGroup('release_smoke', ['fixture']);
   assert.equal(fs.existsSync(path.join(root, '.server-groups.json')), false, 'groups must not write inside the application');

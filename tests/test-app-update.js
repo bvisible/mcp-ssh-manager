@@ -6,7 +6,6 @@
 // stand-in plays it; nothing is downloaded and nothing restarts.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { ControlPlane } from '../src/control-plane.js';
 
