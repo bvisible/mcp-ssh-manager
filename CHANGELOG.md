@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The primary button's hover state no longer drops white-on-orange text below
   the 4.5:1 AA contrast (it now moves toward the page's text colour).
 
+### Easier to find
+
+- The npm description and keywords, the MCP registry description and the GitHub
+  About box say what V4 is now (SSH for AI agents, with approval, a vault and an
+  audit trail) instead of the v3 pitch; the repository topics lose the ones that
+  had nothing to do with this project.
+- The README opens by saying it is an MCP server for SSH and ends with the
+  questions people ask (is it safe, which clients, do I need Node, how is it
+  different).
+- A code of conduct, issue forms and a pull request template (the project
+  already pointed to a code of conduct that did not exist).
+
 ### The interface is built when the package is made, not committed
 
 `dist/ui` (the bundled control plane interface) is no longer in git. `prepack`

@@ -12,8 +12,9 @@
 <h1 align="center">You give your agents a shell,<br>and you see what they do with it.</h1>
 
 <p align="center">
-  Let <b>Claude Code</b> and <b>OpenAI Codex</b> work on your real servers — run commands, move files,<br>
-  query databases, take backups, check health — and watch over their shoulder while they do it.
+  <b>An MCP server for SSH.</b> Let <b>Claude Code</b>, <b>Claude Desktop</b> and <b>OpenAI Codex</b> (or any MCP client)<br>
+  work on your real servers — run commands, move files, query databases, take backups, check health —<br>
+  and watch over their shoulder while they do it.
 </p>
 
 <div align="center">
@@ -322,6 +323,35 @@ AES-256-GCM, master key in your OS keychain (a `0600` file where there is none �
 - **Read-only SQL is enforced, not suggested.** `ssh_db_query` refuses anything that isn't a `SELECT`.
 - **Vulnerabilities are published, not buried.** [SECURITY.md](SECURITY.md) has the reporting process and every advisory already fixed — including the six in v3.8.6, among them a command injection on the machine running the server, triggered by any SSH server it connects to.
 - **Reproducible installs.** The lockfile is committed, CI installs with `npm ci`, and a test enforces that every dependency resolves to registry.npmjs.org with an integrity hash and no unreviewed install scripts.
+
+---
+
+## Questions people ask
+
+**Can I let an AI agent SSH into my servers safely?**
+Yes, if you decide how far it can go. Per server you can make it read-only, allow only commands that match a pattern, or hold every request (or only the destructive ones) until you approve it in the control plane; credentials can live in an encrypted vault instead of a clear-text `.env`; and every command and decision is logged. See [Safe by default](#safe-by-default).
+
+**How do I use Claude Code or Codex with SSH?**
+`npm install -g mcp-ssh-manager`, add a server with `ssh-manager server add`, then `claude mcp add ssh-manager mcp-ssh-manager`. Codex is [set up here](#up-and-running-with-npm). Then ask in plain words: *"why is production slow?"*, *"tail the nginx error log on staging"*.
+
+**Does it work with Cursor, Windsurf, Cline or another MCP client?**
+It is a standard stdio MCP server, so any MCP client can run it. Claude Code, Claude Desktop and Codex are the clients documented and tested here. For another one, add what it expects, for example:
+
+```json
+{ "mcpServers": { "ssh-manager": { "command": "npx", "args": ["-y", "mcp-ssh-manager"] } } }
+```
+
+**Do I need Node.js?**
+With npm, yes (Node 18 or later). The desktop application carries its own runtime and engine: install it and connect your AI tools from *Options → AI tools*, with no Node and no npm.
+
+**How is this different from other SSH MCP servers?**
+Most hand the agent a shell. This one lets you choose per server how far it goes, can hold requests until you approve them, keeps an audit trail, and has a desktop app and a browser interface to see it all. It also runs without any of that, as a plain engine configured from a `.env` or a TOML file, if that is what you want.
+
+**Where are my passwords and keys kept?**
+Key files stay where they are. Saved passwords and passphrases can go into the encrypted vault (AES-256-GCM, with the key in your operating system's keychain) rather than a `.env`.
+
+**Is it free?**
+Yes, it is MIT-licensed. The source is here, the package is on [npm](https://www.npmjs.com/package/mcp-ssh-manager) and the desktop apps are on the [releases page](https://github.com/bvisible/mcp-ssh-manager/releases).
 
 ---
 

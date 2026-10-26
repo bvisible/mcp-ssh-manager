@@ -1,41 +1,30 @@
-# GitHub repository settings for optimal SEO and discoverability
-# These topics will appear on the repository and improve search results
+# GitHub repository settings (the About box and its topics), kept in step with
+# what is set on GitHub so that nothing that applies this file reverts them.
+# GitHub allows at most 20 topics.
 
 repository:
   name: mcp-ssh-manager
-  description: "MCP SSH Manager: Model Context Protocol server for SSH remote server management from Claude Code and OpenAI Codex"
-  homepage: https://github.com/bvisible/mcp-ssh-manager
+  description: "MCP server for SSH: let Claude Code, Codex and any MCP client run commands, transfer files and manage servers over SSH, with human approval, an encrypted vault and a live audit trail. Desktop app and CLI included."
+  homepage: https://www.npmjs.com/package/mcp-ssh-manager
 
   topics:
-    # Core MCP SSH keywords for maximum visibility
     - mcp
     - mcp-server
-    - mcp-ssh
-    - ssh-mcp
     - model-context-protocol
     - ssh
-    - ssh-manager
-    - ssh-automation
-
-    # AI Assistant integrations
+    - ssh-mcp
+    - mcp-ssh
+    - ssh-client
+    - sftp
     - claude-code
-    - claude-ssh
+    - claude-desktop
     - openai-codex
-    - codex
-    - ai-tools
+    - anthropic
+    - ai-agents
+    - agentic-ai
     - llm-tools
-
-    # Remote management features
-    - remote-server
-    - remote-ssh
-    - server-management
     - devops
-    - automation
-
-    # Technical features
-    - deployment
-    - backup
-    - monitoring
-    - database
-    - nodejs
-    - javascript
+    - remote-access
+    - security
+    - audit-log
+    - human-in-the-loop

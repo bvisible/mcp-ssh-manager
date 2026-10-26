@@ -1,0 +1,54 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. **Never paste passwords, keys or tokens**, and do not report a vulnerability here: use the private channel in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `ssh-manager --version`, or the version shown in Options → Updates in the desktop app.
+      placeholder: 4.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options: [npm, Desktop app, Homebrew, From source, Other]
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Which MCP client runs it?
+      description: Claude Code, Claude Desktop, Codex, Cursor, other.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and Node.js version
+      placeholder: macOS 15, Node 22
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: What you ran or asked, and what came back. Remove anything private.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: From `~/.ssh-manager` logs or the client. Redact hostnames if you prefer.
+      render: shell

@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.bvisible/mcp-ssh-manager",
-  "description": "SSH server management for agents, with per-server read-only and allowlist security modes",
+  "description": "SSH for AI agents: commands, files, backups and health, with approval, a vault and an audit trail",
   "repository": {
     "url": "https://github.com/bvisible/mcp-ssh-manager",
     "source": "github"
