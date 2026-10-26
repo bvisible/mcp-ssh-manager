@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The desktop app's terminal starts a login shell.** Opened from the Dock or
+  Finder, the app only has macOS's bare `PATH`, and the terminal read none of the
+  profile files (`~/.zprofile`, `~/.bash_profile`) where Homebrew and most
+  installers add theirs: `brew`, `node` or any tool installed outside `/usr/bin`
+  answered "command not found" there while working in Terminal.app or Warp. The
+  shell is now started with `-l` on macOS and Linux (Windows is unchanged).
+  `npm run test:local-shell` runs a real shell both ways.
+
 ## [4.0.1] - 2026-10-26
 
 **The application tells you about updates, and nothing changes in the engine.**

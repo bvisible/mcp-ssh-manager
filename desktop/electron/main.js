@@ -29,6 +29,7 @@ import { createRequire } from 'module';
 // electron-updater is CommonJS: named imports do not resolve through the bridge.
 import electronUpdater from 'electron-updater';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { localShellLaunch, localShellName } from './local-shell.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -108,17 +109,12 @@ function localShellProvider() {
 
   return async ({ cols, rows, cwd }) => {
     // The user's own login shell, because that is what "a terminal on this
-    // machine" means to them — their aliases, their prompt, their PATH.
-    const shellPath = process.platform === 'win32'
-      ? process.env.COMSPEC || 'powershell.exe'
-      : process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
+    // machine" means to them — their aliases, their prompt, their PATH. A
+    // login shell: opened from the Dock this process has launchd's bare PATH,
+    // and only a login shell reads the profile that adds Homebrew's.
+    const { file, args, env } = localShellLaunch();
 
-    const env = { ...process.env, TERM: 'xterm-256color' };
-    // Electron sets this when it runs as a plain Node process; inherited by a
-    // shell it makes every `electron` the user runs behave as node instead.
-    delete env.ELECTRON_RUN_AS_NODE;
-
-    const term = pty.spawn(shellPath, [], {
+    const term = pty.spawn(file, args, {
       name: 'xterm-256color',
       cols,
       rows,
@@ -127,7 +123,7 @@ function localShellProvider() {
     });
 
     return {
-      shell: path.basename(shellPath),
+      shell: localShellName(file),
       onData: handler => term.onData(handler),
       onExit: handler => term.onExit(() => handler()),
       // node-pty writes strings. What arrives is the UTF-8 of exactly what the
