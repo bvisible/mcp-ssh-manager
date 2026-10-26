@@ -294,10 +294,19 @@ async function main() {
     // --- the built interface, and nothing else, is served from disk ---
     // xterm.js used to be vendored and served from /vendor. The app bundles it
     // now, so the only files reaching a browser are the build's own.
-    for (const [asset, type] of [['/app.js', 'javascript'], ['/app.css', 'css']]) {
-      const res = await fetch(`${base}${asset}?${q}`);
-      assert.strictEqual(res.status, 200, `${asset} must be served — run npm run build:ui`);
-      assert.match(res.headers.get('content-type') || '', new RegExp(type));
+    // The interface is generated (npm run build:ui), not committed. The engine
+    // suites of the CI matrix run without it; the interface jobs and the release
+    // build it first and set REQUIRE_INTERFACE=1, which makes its absence a failure.
+    const built = fs.existsSync(new URL('../dist/ui/index.html', import.meta.url));
+    if (!built && process.env.REQUIRE_INTERFACE === '1') assert.fail('dist/ui is not built — run npm run build:ui');
+    if (built) {
+      for (const [asset, type] of [['/app.js', 'javascript'], ['/app.css', 'css']]) {
+        const res = await fetch(`${base}${asset}?${q}`);
+        assert.strictEqual(res.status, 200, `${asset} must be served — run npm run build:ui`);
+        assert.match(res.headers.get('content-type') || '', new RegExp(type));
+      }
+    } else {
+      console.log('  (interface not built: serving of /app.js and /app.css is checked by the interface jobs)');
     }
     // These two routes read a path out of a URL, which is how traversal happens.
     for (const attempt of ['/assets/../../package.json', '/assets/../../../etc/passwd']) {

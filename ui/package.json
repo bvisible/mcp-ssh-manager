@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Control plane interface. Built here, committed as dist/ui — the published npm package never installs any of this.",
+  "description": "Control plane interface. Built here into dist/ui when the package is packed — the published npm package never installs any of this.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

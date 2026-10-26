@@ -27,10 +27,12 @@ cd ..
 npm run test:published-upgrade   # needs network: actual npm 3.8.5 → V4 → 3.8.5
 ```
 
-`dist/ui` is committed and shipped in the npm tarball. Rebuild after a UI edit;
-CI rejects a build that differs from the committed interface. Browser tests
-exercise that compiled interface against the real local ControlPlane HTTP/SSE
-server. Playwright reports, traces and failure screenshots are retained in CI.
+`dist/ui` is generated, not committed: `prepack` builds it into the npm tarball
+(`npm run build:ui` does the same by hand), and the desktop app builds it when it
+is assembled. CI builds it on three systems, fails if anything generated is
+tracked by git, and release.yml refuses a tarball that does not carry it. Browser
+tests exercise that compiled interface against the real local ControlPlane
+HTTP/SSE server. Playwright reports, traces and failure screenshots are retained in CI.
 
 For focused work, run `npm run test:migration`, `test:security`, `test:hostkeys`,
 `test:proxy`, `test:working-directory`, `test:groups-persistence`, `test:release`,

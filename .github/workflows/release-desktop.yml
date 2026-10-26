@@ -60,9 +60,14 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_REQUIRE_TAG: ${{ inputs.publish }}
       - name: Install engine and interface
-        run: npm ci && npm ci --prefix ui && npm run build --prefix ui
-      - name: Require the committed interface to match its source
-        run: git diff --exit-code -- dist/ui
+        run: npm ci && npm ci --prefix ui
+      # Generated, never committed; prepare-engine builds it again when the app
+      # is assembled, so the app cannot carry a stale one.
+      - name: Typecheck and build the interface
+        run: npm run build:ui
+      - name: Nothing generated is tracked by git
+        shell: bash
+        run: test -z "$(git ls-files dist)"
       - name: Install desktop dependencies
         run: npm ci
         working-directory: desktop/electron

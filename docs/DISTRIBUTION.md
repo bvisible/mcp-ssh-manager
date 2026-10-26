@@ -19,8 +19,8 @@ release check.
 
 1. Merge the release changes through a pull request. Keep the existing required
    `lint`, `test (18.x)` and `test (20.x)` checks; also require the interface jobs
-   before release. They build/typecheck the UI, compare it with committed
-   `dist/ui`, run browser flows, and exercise an upgrade from the real npm 3.8.5.
+   before release. They build/typecheck the UI into the generated
+   `dist/ui` (and check nothing generated is tracked), run browser flows, and exercise an upgrade from the real npm 3.8.5.
 2. Update root/desktop package manifests and lockfiles, plus both version fields
    in `server.json`. `scripts/release-version.mjs` checks their agreement.
 3. For a candidate, use a version such as `4.0.0-beta.1` and its exact

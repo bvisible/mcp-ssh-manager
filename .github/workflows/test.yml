@@ -134,8 +134,18 @@ jobs:
             ui/package-lock.json
       - name: Install engine and interface
         run: npm ci && npm ci --prefix ui
-      - name: Typecheck, build and verify the committed interface
-        run: npm run build --prefix ui && git diff --exit-code -- dist/ui
+      # The interface is generated, never committed: this builds it the way the
+      # npm package and the desktop app do, and proves nothing generated slipped
+      # into git.
+      - name: Typecheck and build the interface
+        run: npm run build:ui
+      - name: Nothing generated is tracked by git
+        shell: bash
+        run: test -z "$(git ls-files dist)" && test -z "$(git status --porcelain)"
+      - name: Engine test that serves the built interface
+        run: npm run test:terminal
+        env:
+          REQUIRE_INTERFACE: '1'
       - name: Install browser
         working-directory: ui
         run: npx playwright install --with-deps chromium

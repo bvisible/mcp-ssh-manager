@@ -21,11 +21,13 @@ const out = path.join(here, 'engine');
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
-// The interface has to exist: without it the app starts and shows the
-// "not built" fallback, which would be a strange thing to ship.
+// The interface is generated, not committed: build it here, from the sources,
+// so the app can never carry a stale or missing one. Without it the app would
+// start and show the "not built" fallback, which is a strange thing to ship.
+execFileSync(process.execPath, [path.join(repo, 'scripts', 'build-interface.mjs')], { cwd: repo, stdio: 'inherit' });
 const ui = path.join(repo, 'dist', 'ui', 'index.html');
 if (!fs.existsSync(ui)) {
-  console.error('dist/ui is missing — run `npm run build:ui` from the repository root first.');
+  console.error('dist/ui is missing after the interface build.');
   process.exit(1);
 }
 

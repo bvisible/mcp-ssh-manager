@@ -5,6 +5,18 @@ All notable changes to MCP SSH Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### The interface is built when the package is made, not committed
+
+`dist/ui` (the bundled control plane interface) is no longer in git. `prepack`
+builds it into the npm package and the desktop app builds it when it is
+assembled, so what users install is the same: the package and the app carry the
+built interface and nothing compiles on their machine. In a source checkout, run
+`npm run build:ui` once before `ssh-manager control`. CI builds it on three
+systems and fails if anything generated is tracked; `release.yml` refuses a
+tarball that does not carry it.
+
 ## [4.0.0] - 2026-10-25
 
 **V4 is stable, on npm and as a desktop application** — [release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0).

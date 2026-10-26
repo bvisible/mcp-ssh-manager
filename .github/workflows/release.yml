@@ -38,10 +38,15 @@ jobs:
       - name: Install dependencies
         run: npm ci && npm ci --prefix ui
       - name: Validate source, interface and bundled output
+        env:
+          REQUIRE_INTERFACE: '1'
         run: |
+          # The interface is generated, never committed: build it first, so the
+          # suites that serve it run against the real build.
+          npm run build:ui
+          test -z "$(git ls-files dist)"
           npm run test:all
-          npm run build --prefix ui
-          git diff --exit-code -- dist/ui
+          git diff --exit-code
           # Both ways in: 3.8.5, the last release before the security fixes,
           # and 3.8.6, what npm users run when 4.0.0 arrives.
           node scripts/test-upgrade-from-published.mjs 3.8.5
@@ -56,6 +61,16 @@ jobs:
         run: npm --prefix ui run test:e2e
       - name: Pack the reviewed package
         run: npm pack --pack-destination "$RUNNER_TEMP"
+      # `prepack` builds the interface into the tarball. Refuse to publish one
+      # that does not carry it: `ssh-manager control` would show "not built".
+      - name: The package carries the built interface
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tarball="$RUNNER_TEMP/mcp-ssh-manager-$VERSION.tgz"
+          for file in index.html app.js app.css; do
+            tar -tzf "$tarball" | grep -qx "package/dist/ui/$file" || { echo "package/dist/ui/$file is not in the tarball"; exit 1; }
+          done
       - name: Publish the reviewed tarball with provenance and the right channel
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

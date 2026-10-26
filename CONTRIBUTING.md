@@ -70,6 +70,10 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 4. Make your changes and test them
 
+   The interface (`ui/`) is built, not committed: `npm run build:ui` builds it
+   into the git-ignored `dist/ui`, which `ssh-manager control` serves from a
+   checkout. Changing `ui/` needs no build artifact in your pull request.
+
 5. Commit your changes:
    ```bash
    git add .

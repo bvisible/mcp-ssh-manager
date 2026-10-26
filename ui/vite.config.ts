@@ -3,9 +3,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-// The control plane interface. Output lands in ../dist/ui and is committed, so
-// `npm install mcp-ssh-manager` never builds anything — the same bargain as the
-// vendored xterm.js. Nothing in here is a dependency of the published package.
+// The control plane interface. Output lands in ../dist/ui. It is generated, not
+// committed: the npm package builds it when it is packed (`prepack`) and the
+// desktop app when it is assembled, so `npm install mcp-ssh-manager` never builds
+// anything. Nothing in here is a dependency of the published package.
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],

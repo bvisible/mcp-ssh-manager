@@ -141,6 +141,10 @@ cd cli && ./install.sh
 claude mcp add ssh-manager node /absolute/path/to/mcp-ssh-manager/src/index.js
 ```
 
+The MCP engine needs no build. To use the interface (`ssh-manager control`) from a
+checkout, build it once: `npm run build:ui` (the published package and the desktop
+app already carry it).
+
 **Scopes** — `--scope project` writes an `.mcp.json` your team can commit; `--scope user` enables it everywhere for you.
 
 **Prerequisites** — Node 18+, on Linux, macOS or Windows. `rsync` for `ssh_sync`, `sshpass` only if you sync with password auth (`brew install hudochenkov/sshpass/sshpass`, or `apt-get install sshpass`).

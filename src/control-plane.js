@@ -1574,10 +1574,11 @@ export class ControlPlane {
   /**
    * The control plane's interface: a built React app under `dist/ui`.
    *
-   * Committed rather than built on install, for the same reason xterm.js is
-   * vendored — `npm install mcp-ssh-manager` must never compile anything. If
-   * the build is missing (a source checkout that has not run `npm run build:ui`)
-   * this falls back to the single-file page rather than showing a blank screen.
+   * Generated, not committed: `prepack` builds it into the npm package and the
+   * desktop app builds it when it is assembled, so `npm install` never compiles
+   * anything. If the build is missing (a source checkout that has not run
+   * `npm run build:ui`) this falls back to a page that says which command to
+   * run rather than showing a blank screen.
    *
    * @param {import('http').ServerResponse} res - Response
    */

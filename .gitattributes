@@ -1,5 +1,5 @@
-# The committed browser build must reproduce on Windows as well as Unix.
-# Mixed CRLF input and LF Vite injections otherwise change index.html.
+# The interface sources are checked out with LF on Windows too: the build must
+# reproduce byte for byte on every system (mixed CRLF input and LF injections
+# from Vite would otherwise change index.html).
 ui/** text=auto eol=lf
-dist/ui/** text=auto eol=lf
 *.woff2 -text

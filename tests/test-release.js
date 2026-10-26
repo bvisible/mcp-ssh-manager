@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { releaseVersion } from '../scripts/release-version.mjs';
 import { finalizeArtifacts, digest } from '../desktop/electron/finalize-artifacts.mjs';
 import { verifyArtifacts } from '../scripts/publish-desktop.mjs';
@@ -63,6 +65,25 @@ try {
   // alpha and beta builds on to a stable release.
   await assert.rejects(() => finalizeArtifacts(rejected, '4.0.0-rc.1', 'win32', { yaml, rebuildBlockmaps: false }), /alpha or beta/);
   console.log('Release channels, exact version tags, final artifact hashes and tamper detection passed.');
+
+  // The interface is generated, never committed. What reaches users is unchanged
+  // (the package and the app carry the built interface); these guards keep it so.
+  const root = new URL('..', import.meta.url);
+  const manifest = JSON.parse(fs.readFileSync(new URL('package.json', root), 'utf8'));
+  assert.equal(manifest.scripts.prepack, 'node scripts/build-interface.mjs', 'the package must build the interface when it is packed');
+  assert.equal(manifest.scripts['build:ui'], manifest.scripts.prepack, 'build:ui and prepack must be the same build');
+  const npmignore = fs.readFileSync(new URL('.npmignore', root), 'utf8').split('\n').map(line => line.trim());
+  assert.ok(npmignore.includes('!dist/ui/**'), '.npmignore must let the built interface into the package');
+  assert.ok(npmignore.includes('ui/'), 'the interface sources must stay out of the package');
+  const gitignore = fs.readFileSync(new URL('.gitignore', root), 'utf8').split('\n').map(line => line.trim());
+  assert.ok(gitignore.includes('dist/') && !gitignore.includes('!dist/ui/'), 'dist/ is generated and must be ignored, dist/ui included');
+  const tracked = spawnSync('git', ['ls-files', 'dist'], { cwd: fileURLToPath(root), encoding: 'utf8' });
+  if (tracked.status === 0) assert.equal(tracked.stdout.trim(), '', 'no generated output may be tracked by git');
+  for (const workflow of ['test.yml', 'release.yml', 'release-desktop.yml']) {
+    const text = fs.readFileSync(new URL(`.github/workflows/${workflow}`, root), 'utf8');
+    assert.ok(!/git diff --exit-code -- dist\/ui/.test(text), `${workflow} must not compare against a committed interface`);
+  }
+  console.log('The interface is generated at packaging: prepack builds it, nothing generated is tracked, the package still ships it.');
 } finally {
   fs.rmSync(scratch, { recursive: true, force: true });
 }
