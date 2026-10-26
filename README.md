@@ -21,7 +21,7 @@
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/release-4.0.0-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0)
+[![Version](https://img.shields.io/badge/release-4.0.1-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.1)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -54,17 +54,17 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application (`4.0.0`):** one installation with its own runtime,
+**Desktop application (`4.0.1`):** one installation with its own runtime,
 terminal, file browser and server settings. No separate Node.js or npm
-installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0):
+installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.1):
 
 | Platform | File | Signature |
 |---|---|---|
 | macOS, Apple silicon / Intel | `…-arm64.dmg` / `…-x64.dmg` | **Signed and notarized by Apple** — opens normally |
-| Windows x64 / arm64 | `…-setup.exe` | **Not code-signed in 4.0.0.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
+| Windows x64 / arm64 | `…-setup.exe` | **Not code-signed in 4.0.x.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
 | Linux x64 | `.deb`, `.AppImage` | Unsigned, as Linux packages usually are |
 
-**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.0.0,
+**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.0.1,
 and the V4 engine runs without an interface, from your existing `.env`, TOML or
 process variables — no automatic import, no forced wizard, no approval prompt
 unless you enable one per server. The one behaviour that tightens is **SSH
@@ -684,6 +684,8 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 ---
 
 ## What's new
+
+**[4.0.1](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.1) — the application tells you about updates.** *Options → Updates*, a mark on the sidebar and a notification once per version, so a new release no longer goes unnoticed in a menu you never open; a tidier Servers toolbar; the interface is built when the package is made rather than committed (what you install is byte for byte the same); and the npm, registry and GitHub descriptions say what V4 is. No change to the engine's behaviour.
 
 **[4.0.0](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.0) — the control plane.** See what an agent is running on your servers, with its output, and stop it before it runs. A desktop application for macOS, Windows and Linux, installed from the engine with `ssh-manager app`; an encrypted vault for credentials; human approval per server; a shell on your own machine alongside the remote ones. Everything new is opt-in — an npm install upgraded from 3.8.x keeps behaving as 3.8.x, which [a test installs from the registry and proves](docs/TESTING-V4.md). The Windows application is not code-signed in this release. [What changes and how to go back](docs/MIGRATION.md).
 

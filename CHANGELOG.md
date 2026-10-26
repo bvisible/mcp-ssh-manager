@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-10-26
+
+**The application tells you about updates, and nothing changes in the engine.**
+Everything below is in the interface, the packaging and the metadata: the MCP
+engine behaves exactly as in 4.0.0 (the release pipeline upgrades 3.8.5, 3.8.6,
+3.8.7 and 4.0.0 from the registry to this version and back). The desktop app
+updates itself from 4.0.0 and from the 4.0.0 betas.
+
+The Windows installer is **not Authenticode-signed** in this release either,
+for the same reason as 4.0.0 (the public certificate waits on the company's
+registration): Windows shows *"Windows protected your PC"*, *More info → Run
+anyway*, and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### The application shows its updates
 
 - **Options → Updates** (desktop application only): the version running and its

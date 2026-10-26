@@ -1,6 +1,6 @@
 {
   "name": "mcp-ssh-manager",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "mcpName": "io.github.bvisible/mcp-ssh-manager",
   "description": "MCP server for SSH: let AI agents (Claude Code, Codex, any MCP client) run commands, transfer files and manage servers over SSH, with human approval, an encrypted vault and a live audit trail.",
   "main": "src/index.js",
