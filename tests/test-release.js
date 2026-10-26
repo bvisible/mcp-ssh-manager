@@ -77,6 +77,9 @@ try {
   assert.ok(npmignore.includes('ui/'), 'the interface sources must stay out of the package');
   const gitignore = fs.readFileSync(new URL('.gitignore', root), 'utf8').split('\n').map(line => line.trim());
   assert.ok(gitignore.includes('dist/') && !gitignore.includes('!dist/ui/'), 'dist/ is generated and must be ignored, dist/ui included');
+  // `prepack` runs inside `npm pack --json`, whose stdout is machine-read by
+  // scripts/test-upgrade-from-published.mjs: the build script must only use stderr.
+  assert.ok(!/console\.log\(/.test(fs.readFileSync(new URL('scripts/build-interface.mjs', root), 'utf8')), 'build-interface.mjs must not write to stdout');
   const tracked = spawnSync('git', ['ls-files', 'dist'], { cwd: fileURLToPath(root), encoding: 'utf8' });
   if (tracked.status === 0) assert.equal(tracked.stdout.trim(), '', 'no generated output may be tracked by git');
   for (const workflow of ['test.yml', 'release.yml', 'release-desktop.yml']) {
