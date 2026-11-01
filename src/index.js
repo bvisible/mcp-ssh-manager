@@ -163,7 +163,8 @@ const envFilePath = envChoice.path;
 // Said at startup and repeated wherever a missing server would otherwise be
 // the only clue: an empty configuration used to fail without a word (#90).
 const envProblem = envFileProblem(envChoice);
-const envFile = dotenv.config({ path: envFilePath, processEnv: {} });
+// quiet: since dotenv 17 every load is announced on the log otherwise.
+const envFile = dotenv.config({ path: envFilePath, processEnv: {}, quiet: true });
 const envFileValues = envFile.parsed || {};
 
 function getRuntimeEnv(name) {
