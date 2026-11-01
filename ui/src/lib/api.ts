@@ -391,14 +391,37 @@ export const shells = {
       if (source.readyState === EventSource.CLOSED) onExit?.();
     };
 
+    // Keystrokes go out one request at a time, in order. Sent each on its own
+    // fetch, several were in flight at once and the control plane wrote them as
+    // they arrived: on a busy machine `mo --help` reached the shell as
+    // `mo- elh-p`. What is typed while a request is out waits and leaves with
+    // the next one, so fast typing costs one round trip, not one per key.
+    let unsent = '';
+    let sending = false;
+    const flush = async () => {
+      sending = true;
+      try {
+        while (unsent) {
+          const data = unsent;
+          unsent = '';
+          try {
+            await fetch(url('/api/terminal/input', { id }), {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ data: toBase64(encoder.encode(data)) }),
+            });
+          } catch { /* the stream reports a closed shell; keep the order for what follows */ }
+        }
+      } finally {
+        sending = false;
+      }
+    };
+
     return {
       id,
       write: data => {
-        void fetch(url('/api/terminal/input', { id }), {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ data: toBase64(encoder.encode(data)) }),
-        });
+        unsent += data;
+        if (!sending) void flush();
       },
       resize: (nextCols, nextRows) => {
         void fetch(url('/api/terminal/resize', { id }), {

@@ -96,6 +96,29 @@ function fakeAppUpdates() {
   };
 }
 
+/**
+ * A shell on this machine, stood in for: it runs nothing, echoes what it is
+ * sent so the screen shows it, and appends every write to typed.txt in the
+ * test's home, in the order the control plane handed them over.
+ */
+function fakeLocalShell() {
+  return async () => {
+    const data = new Set();
+    const typed = path.join(process.env.HOME, 'typed.txt');
+    return {
+      shell: 'zsh',
+      onData: handler => { data.add(handler); queueMicrotask(() => handler('fixture % ')); },
+      onExit: () => {},
+      write: bytes => {
+        fs.appendFileSync(typed, bytes);
+        for (const handler of data) handler(bytes.toString('utf8'));
+      },
+      resize: () => {},
+      kill: () => {},
+    };
+  };
+}
+
 const offerDesktop = process.env.UI_TEST_OFFER_DESKTOP === '1';
 const plane = new ControlPlane({
   socketPath: defaultSocketPath(),
@@ -105,6 +128,7 @@ const plane = new ControlPlane({
   ...(process.env.UI_TEST_APP_UPDATES === '1' ? { appUpdates: fakeAppUpdates() } : {}),
   ...(offerDesktop ? { offerDesktop, desktop: fakeDesktop(), handoverMs: 60_000 } : {}),
 });
+if (process.env.UI_TEST_LOCAL_SHELL === '1') plane.setLocalShellProvider(fakeLocalShell());
 const { url } = await plane.start();
 process.send?.({ url });
 let stopping = false;

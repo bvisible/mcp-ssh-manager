@@ -685,7 +685,7 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 
 ## What's new
 
-**[4.0.2](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.2) — commands reach a Mac, and the desktop terminal is your own.** Commands sent to a macOS server no longer fail with `timeout: command not found` before they start (thanks to Henrik Tilly, [#115](https://github.com/bvisible/mcp-ssh-manager/pull/115)); the desktop terminal starts a login shell, so what Homebrew installed is found as in Terminal or Warp, and PowerShell on Windows; dependencies refreshed. Nothing to change on upgrade.
+**[4.0.2](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.2) — commands reach a Mac, and the desktop terminal is your own.** Commands sent to a macOS server no longer fail with `timeout: command not found` before they start (thanks to Henrik Tilly, [#115](https://github.com/bvisible/mcp-ssh-manager/pull/115)); the desktop terminal starts a login shell, so what Homebrew installed is found as in Terminal or Warp, and PowerShell on Windows; keystrokes reach the shell in the order they were typed; dependencies refreshed. Nothing to change on upgrade.
 
 **[4.0.1](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.1) — the application tells you about updates.** *Options → Updates*, a mark on the sidebar and a notification once per version, so a new release no longer goes unnoticed in a menu you never open; a tidier Servers toolbar; the interface is built when the package is made rather than committed (what you install is byte for byte the same); and the npm, registry and GitHub descriptions say what V4 is. No change to the engine's behaviour.
 

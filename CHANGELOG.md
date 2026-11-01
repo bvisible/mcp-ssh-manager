@@ -36,6 +36,12 @@ anyway*, and `ssh-manager app` checks the installer against the SHA-256 in
   installers add theirs: `brew`, `node` or any tool installed outside `/usr/bin`
   answered "command not found" there while working in Terminal.app or Warp. The
   shell is now started with `-l` on macOS and Linux.
+- **The terminal keeps your keystrokes in order.** Each key went to the shell
+  on its own request, several at once, and the control plane wrote them as
+  they arrived: typed fast, or on a busy machine, `mo --help` could reach the
+  shell as `mo- elh-p`, a different command from the one on screen. Keystrokes
+  now leave one request at a time, in order, in every terminal (local and
+  remote, in the app and in `ssh-manager control`).
 
 ### Changed
 
