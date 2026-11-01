@@ -36,10 +36,14 @@ jobs:
       # `brew audit` no longer accepts a path — it wants a formula name, which
       # means the formula has to live in a tap. A throwaway local tap is the
       # standard way to exercise one before it is published anywhere.
+      # Homebrew 7 refuses to load a formula from a tap nobody trusted ("untrusted
+      # tap local/test"), and audit, install and test all load it. Trusting this
+      # one formula, on a runner thrown away after the job, is what it asks for.
       - name: Put the formula in a local tap
         run: |
           brew tap-new local/test --no-git
           cp Formula/ssh-manager.rb "$(brew --repository local/test)/Formula/"
+          brew trust --formula local/test/ssh-manager
           brew formula local/test/ssh-manager
 
       - name: Audit the formula
