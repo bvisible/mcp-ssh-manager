@@ -401,6 +401,12 @@ async function execCommandWithTimeout(ssh, command, options = {}, timeoutMs = 30
           }
         }
       }
+      // On a target with no timeout binary (a stock Mac) it is the client-side
+      // limit that stops the command, and its message would name the wrapper and
+      // the grace period: say what the caller sent and the limit they asked for.
+      if (error.message.startsWith('Command timeout after')) {
+        throw new Error(`Command timeout after ${timeoutMs}ms: ${command.substring(0, 100)}...`);
+      }
       throw error;
     }
   } else {

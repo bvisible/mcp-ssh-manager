@@ -114,4 +114,70 @@ try {
   fs.rmSync(scratch, { recursive: true, force: true });
 }
 
+// ── through the real engine, over SSH ───────────────────────────────────────
+// An inert ssh2 fixture records what the engine sends and runs nothing. The
+// "hang" command is never answered, as on a target with no timeout binary,
+// where the client-side limit (the timeout plus a grace period) stops it.
+{
+  const repo = path.dirname(SRC_DIR);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-ssh-timeoutwrap-e2e-'));
+  const { default: ssh2 } = await import('ssh2');
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
+  const crypto = await import('crypto');
+  const hostKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } }).privateKey;
+  const seen = [];
+  const server = new ssh2.Server({ hostKeys: [hostKey] }, connection => {
+    connection.on('error', () => {});
+    connection.on('authentication', ctx => ctx.accept());
+    connection.on('ready', () => connection.on('session', accept => {
+      accept().on('exec', (acceptExec, reject, info) => {
+        const stream = acceptExec();
+        seen.push(info.command);
+        if (info.command.includes('hang-forever')) return; // never answers
+        stream.write(info.command.includes('ping') ? 'ping\n' : 'fixture\n');
+        stream.exit(0);
+        stream.end();
+      });
+    }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  // Readers that use the OS home must see the scratch directory, not the
+  // developer's files. Constant code: the directory arrives in an env var.
+  const preload = path.join(home, 'isolated-home.mjs');
+  fs.writeFileSync(preload, "import os from 'node:os'; import {syncBuiltinESMExports} from 'node:module'; os.homedir = () => process.env.SSH_TEST_HOME; syncBuiltinESMExports();");
+  const envFile = path.join(home, 'servers.env');
+  fs.writeFileSync(envFile, `SSH_SERVER_TARGET_HOST=127.0.0.1\nSSH_SERVER_TARGET_PORT=${server.address().port}\nSSH_SERVER_TARGET_USER=fixture\nSSH_SERVER_TARGET_PASSWORD=fixture\n`);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('SSH_') && !key.startsWith('MCP_SSH_')));
+  Object.assign(env, { SSH_ENV_PATH: envFile, SSH_CONFIG_PATH: path.join(home, 'absent.toml'), SSH_MANAGER_HOME: home,
+    SSH_MANAGER_KEY_SOURCE: 'file', SSH_MANAGER_VAULT: path.join(home, 'vault.json'), SSH_MANAGER_KNOWN_HOSTS: path.join(home, 'known_hosts'),
+    SSH_LOG_FILE: path.join(home, 'engine.log'), SSH_HISTORY_FILE: path.join(home, 'history.json'), SSH_LOG_LEVEL: 'ERROR', SSH_TEST_HOME: home });
+  const transport = new StdioClientTransport({ command: process.execPath, args: ['--import', preload, path.join(repo, 'src', 'index.js')], cwd: home, env, stderr: 'pipe' });
+  transport.stderr?.on('data', () => {});
+  const client = new Client({ name: 'timeout-wrapper', version: '1.0' });
+  try {
+    await client.connect(transport);
+    const text = result => result.content.map(item => item.text || '').join('\n');
+
+    let result = await client.callTool({ name: 'ssh_execute', arguments: { server: 'target', command: "printf '%s' \"it's fine\"", timeout: 30000 } });
+    assert.ok(!result.isError, text(result));
+    assert.ok(seen.includes(withRemoteTimeout("printf '%s' \"it's fine\"", 30)), `the engine sends the wrapper over SSH (saw ${JSON.stringify(seen)})`);
+    ok('ssh_execute sends exactly withRemoteTimeout(command, seconds) over SSH');
+
+    const started = Date.now();
+    result = await client.callTool({ name: 'ssh_execute', arguments: { server: 'target', command: 'hang-forever', timeout: 1000 } });
+    const message = text(result);
+    assert.ok(result.isError || /timeout/i.test(message), message);
+    assert.match(message, /Command timeout after 1000ms: hang-forever/, 'the error names the command and the limit the caller asked for');
+    assert.doesNotMatch(message, /sh -c|command -v/, 'not the wrapper');
+    assert.ok(Date.now() - started < 15000);
+    ok('without a remote timeout, the client-side limit stops it and the error names the caller\'s command and limit');
+  } finally {
+    await client.close().catch(() => {});
+    server.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
 console.log(`\n✅ remote timeout wrapper tests passed (${passed} checks)`);
