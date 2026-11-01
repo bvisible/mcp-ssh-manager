@@ -293,7 +293,8 @@ export class ConfigLoader {
    * Load configuration from .env file
    */
   loadEnvConfig(envPath) {
-    const result = dotenv.config({ path: envPath, processEnv: {} });
+    // quiet: since dotenv 17 every load (and reload) is announced on the log otherwise.
+    const result = dotenv.config({ path: envPath, processEnv: {}, quiet: true });
     if (result.error) {
       throw result.error;
     }

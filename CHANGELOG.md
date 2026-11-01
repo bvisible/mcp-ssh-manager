@@ -7,15 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-11-01
+
+**Commands reach a Mac, and the desktop terminal behaves like your own.**
+A patch release: no setting, file or default changes for anyone upgrading
+(the release pipeline upgrades 3.8.5, 3.8.6, 3.8.7, 4.0.0 and 4.0.1 from the
+registry to this version and back). The desktop app updates itself from 4.0.x.
+
+The Windows installer is **not Authenticode-signed** in this release either,
+for the same reason as 4.0.0 (the public certificate waits on the company's
+registration): Windows shows *"Windows protected your PC"*, *More info → Run
+anyway*, and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Fixed
 
+- **Commands sent to a macOS server no longer fail before they start** (#115,
+  thanks to Henrik Tilly, @htilly). Every bounded command (`ssh_execute` and the
+  tools built on it) was wrapped in `timeout`, which a stock Mac does not have:
+  it failed with exit 127, `timeout: command not found`, whatever the command
+  was. The wrapper now finds `timeout` or Homebrew's `gtimeout` on the server
+  and, with neither, runs the command without it (the client-side limit still
+  applies). It works under any login shell, csh and tcsh included; Linux
+  servers still use their own `timeout`, with the same exit codes.
 - **The desktop app's terminal starts a login shell.** Opened from the Dock or
   Finder, the app only has macOS's bare `PATH`, and the terminal read none of the
   profile files (`~/.zprofile`, `~/.bash_profile`) where Homebrew and most
   installers add theirs: `brew`, `node` or any tool installed outside `/usr/bin`
   answered "command not found" there while working in Terminal.app or Warp. The
-  shell is now started with `-l` on macOS and Linux (Windows is unchanged).
-  `npm run test:local-shell` runs a real shell both ways.
+  shell is now started with `-l` on macOS and Linux.
+- **The terminal keeps your keystrokes in order.** Each key went to the shell
+  on its own request, several at once, and the control plane wrote them as
+  they arrived: typed fast, or on a busy machine, `mo --help` could reach the
+  shell as `mo- elh-p`, a different command from the one on screen. Keystrokes
+  now leave one request at a time, in order, in every terminal (local and
+  remote, in the app and in `ssh-manager control`).
 
 ### Changed
 
@@ -23,7 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (what `COMSPEC` names on every Windows machine), the old Command Prompt.
   It now starts Windows PowerShell (`powershell.exe`, present on Windows 10 and
   11), the shell Windows Terminal opens by default. `cmd.exe` is still one
-  `cmd` away inside it. macOS and Linux are unchanged by this entry.
+  `cmd` away inside it.
+- **Dependencies.** MCP SDK 1.32.2; dotenv 18, loaded quietly so it adds no line
+  to the log; `@hono/node-server` 2.1.5 (GHSA-rmxm-3fg6-px4f, in a part of the
+  SDK this stdio server never loads); CI actions and development tools.
 
 ## [4.0.1] - 2026-10-26
 

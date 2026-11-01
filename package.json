@@ -1,6 +1,6 @@
 {
   "name": "mcp-ssh-manager",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "mcpName": "io.github.bvisible/mcp-ssh-manager",
   "description": "MCP server for SSH: let AI agents (Claude Code, Codex, any MCP client) run commands, transfer files and manage servers over SSH, with human approval, an encrypted vault and a live audit trail.",
   "main": "src/index.js",
@@ -130,7 +130,7 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "dotenv": "^16.4.5",
+    "dotenv": "^18.0.9",
     "ssh2": "^1.17.0",
     "zod": "^4.6.7"
   },

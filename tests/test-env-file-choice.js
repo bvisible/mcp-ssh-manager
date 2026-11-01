@@ -102,6 +102,12 @@ try {
   assert.match(stale.stderr, /SSH_MANAGER_ENV names .* which does not exist; using/);
   ok('a stale SSH_MANAGER_ENV no longer empties the server list, and startup says why');
 
+  // dotenv 17+ announces every file it loads ("injected env (3) from .env").
+  // Reading the .env is the engine's business, not a line for every start and
+  // every reload in the host's log, so each load passes quiet: true.
+  assert.doesNotMatch(stale.stderr, /injected env|\[dotenv/, 'loading the .env adds nothing to the log');
+  ok('reading the .env writes nothing of its own to the log');
+
   const explicit = await probe({ ...baseEnv, SSH_ENV_PATH: gone });
   assert.deepEqual(JSON.parse(explicit.listed.content[0].text), [], 'the list itself is unchanged for parsers');
   assert.match(explicit.listed.content[1]?.text ?? '', /^No server loaded: SSH_ENV_PATH names .* which does not exist/);

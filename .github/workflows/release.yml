@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
@@ -54,6 +54,7 @@ jobs:
           node scripts/test-upgrade-from-published.mjs 3.8.7
           # And from the previous 4.x, which is who upgrades to a patch release.
           node scripts/test-upgrade-from-published.mjs 4.0.0
+          node scripts/test-upgrade-from-published.mjs 4.0.1
       # The same two steps as test.yml: Playwright from ui/package-lock.json
       # (npx finds the installed one), never a version npm exec would resolve.
       - name: Install browser
