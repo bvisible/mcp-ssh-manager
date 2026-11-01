@@ -31,16 +31,29 @@ function ko(label) { console.log(`[31m✗[0m ${label}`); failed++; }
 // Boot the server, wait for it to come up, then run `teardown(child)` and measure
 // time-to-exit. If the process is still alive after `killAfter` ms it is the
 // orphan bug: we SIGKILL it and the scenario reports signal='SIGKILL'.
-function bootAndTeardown(teardown, { bootMs = 800, killAfter = 4000 } = {}) {
-  return new Promise((resolve) => {
+//
+// "Up" is the answer to `initialize`, not a fixed delay: the signal handlers are
+// installed before the server connects its transport, so once it answers they
+// are in place. A fixed 800 ms failed on a loaded machine, where the engine took
+// longer than that to load and the test's own SIGTERM killed it before it could
+// handle one.
+function bootAndTeardown(teardown, { bootLimit = 15000, killAfter = 4000 } = {}) {
+  return new Promise((resolve, reject) => {
     const child = spawn('node', [SERVER], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, SSH_ENV_PATH: tmpEnv, SSH_CONFIG_PATH: tmpToml, SSH_LOG_LEVEL: 'ERROR' },
     });
     child.stderr.on('data', () => {}); // swallow boot/shutdown logs
     let exited = false;
+    let up = false;
 
-    setTimeout(() => {
+    const bootTimer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`server did not answer initialize within ${bootLimit} ms`)); }, bootLimit);
+    let buffer = '';
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      if (up || !buffer.split('\n').some((line) => line.includes('"id":1'))) return;
+      up = true;
+      clearTimeout(bootTimer);
       const t0 = process.hrtime.bigint();
       const killTimer = setTimeout(() => { if (!exited) child.kill('SIGKILL'); }, killAfter);
       child.once('exit', (code, signal) => {
@@ -49,7 +62,8 @@ function bootAndTeardown(teardown, { bootMs = 800, killAfter = 4000 } = {}) {
         resolve({ code, signal, ms: Number(process.hrtime.bigint() - t0) / 1e6 });
       });
       teardown(child);
-    }, bootMs);
+    });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'lifecycle', version: '1' } } })}\n`);
   });
 }
 
