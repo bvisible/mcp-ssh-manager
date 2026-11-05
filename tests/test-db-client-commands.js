@@ -85,10 +85,16 @@ const which = (name, extra = []) => {
   }
   return null;
 };
+// '/usr/lib/postgresql/*/bin' or '/opt/homebrew/opt/postgresql@*/bin': the
+// directories that exist, newest version first.
 const globDirs = pattern => {
-  const [base, rest] = pattern.split('*');
-  try { return fs.readdirSync(path.dirname(base)).filter(n => n.startsWith(path.basename(base))).map(n => path.join(path.dirname(base), n + rest)).sort().reverse(); }
-  catch { return []; }
+  const [head, rest] = pattern.split('*');
+  const dir = head.endsWith('/') ? head : path.dirname(head);
+  const prefix = head.endsWith('/') ? '' : path.basename(head);
+  try {
+    return fs.readdirSync(dir).filter(name => name.startsWith(prefix)).map(name => path.join(dir, name + rest))
+      .filter(candidate => fs.existsSync(candidate)).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  } catch { return []; }
 };
 const pgDirs = [...globDirs('/opt/homebrew/opt/postgresql@*/bin'), ...globDirs('/usr/local/opt/postgresql@*/bin'), ...globDirs('/usr/lib/postgresql/*/bin')];
 const freePort = () => new Promise(resolve => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
