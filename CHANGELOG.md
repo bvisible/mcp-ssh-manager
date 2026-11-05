@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The desktop build uses a fixed `minimatch`.** `electron-builder`, the tool
+  that builds the desktop app, pulled `minimatch` 10.2.6 and 9.0.9, open to a
+  denial of service through crafted glob patterns (GHSA-g3hv-75wg-m249). Nothing
+  was exposed: the tool only reads the patterns of our own build configuration,
+  and no copy of `minimatch` ships in the app or in the npm package. An npm
+  `overrides` entry in `desktop/electron/package.json` now resolves those copies
+  to 11.x; a build with it contains the same files as one without, the
+  `package.json` line aside. Remove the entry once `app-builder-lib` itself
+  requires `minimatch` 11.0.1 or later.
+
 ## [4.0.3] - 2026-11-05
 
 **A security release: upgrade.** `ssh_db_query` could run shell commands on
