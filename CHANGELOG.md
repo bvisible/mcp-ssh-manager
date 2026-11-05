@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-11-05
+
+**A security release: upgrade.** `ssh_db_query` could run shell commands on
+the server ([GHSA-qmf5-hrhv-5hjm](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-qmf5-hrhv-5hjm),
+high, reported by @orshih6). Every earlier version is affected; nothing else
+changes (the release pipeline upgrades 3.8.5, 3.8.6, 3.8.7, 4.0.0, 4.0.1 and
+4.0.2 from the registry to this version and back).
+
+The Windows installer is **not Authenticode-signed** in this release either,
+for the same reason as 4.0.0: Windows shows *"Windows protected your PC"*,
+*More info → Run anyway*, and `ssh-manager app` checks the installer against
+the SHA-256 in `release-manifest-win32.json`. macOS builds are signed and notarized.
+
+### Security
+
+- **`ssh_db_query` no longer lets the database client reach a shell.** The tool
+  is read-only, so it is allowed on servers in `readonly` and `restricted` mode
+  and never held for approval. Its SQL went to the remote `psql` or `mysql`
+  client as the client's input, and both clients act on commands of their own
+  found there: `\!` runs a shell command, psql's `\o |command` pipes to one,
+  mysql's `system` does at the start of a line. A query such as
+  `SELECT 1 \! <command>` passed the SELECT-only check, so a read-only query
+  could run anything as the SSH user, and an agent misled by what it read could
+  do it on a server meant to be read-only.
+  - **PostgreSQL**: each statement is now a single-quoted `-c` argument, which
+    psql sends to the server as it is, inside the same read-only transaction.
+    Multi-line queries and backslashes in literals keep working.
+  - **MySQL / MariaDB**: the client reads its commands even from `-e`, and no
+    option to turn them off exists in every client, so a MySQL query must now be
+    one line without backslashes (and without other control characters). The
+    error says so.
+  - `tests/test-db-client-commands.js` runs the report's payloads through the
+    real engine, over SSH, to a server in readonly mode, against a real psql and
+    a real MariaDB client: queries answer, no payload reaches a shell.
+
 ## [4.0.2] - 2026-11-01
 
 **Commands reach a Mac, and the desktop terminal behaves like your own.**

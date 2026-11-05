@@ -21,7 +21,7 @@
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
-[![Version](https://img.shields.io/badge/release-4.0.2-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.2)
+[![Version](https://img.shields.io/badge/release-4.0.3-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.3)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -54,9 +54,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application (`4.0.2`):** one installation with its own runtime,
+**Desktop application (`4.0.3`):** one installation with its own runtime,
 terminal, file browser and server settings. No separate Node.js or npm
-installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.2):
+installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.3):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -64,7 +64,7 @@ installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases
 | Windows x64 / arm64 | `…-setup.exe` | **Not code-signed in 4.0.x.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
 | Linux x64 | `.deb`, `.AppImage` | Unsigned, as Linux packages usually are |
 
-**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.0.2,
+**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.0.3,
 and the V4 engine runs without an interface, from your existing `.env`, TOML or
 process variables — no automatic import, no forced wizard, no approval prompt
 unless you enable one per server. The one behaviour that tightens is **SSH
@@ -684,6 +684,8 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 ---
 
 ## What's new
+
+**[4.0.3](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.3) — a security release; upgrade.** `ssh_db_query`, the read-only tool, could run shell commands on the server through the `psql` and `mysql` clients' own commands (`\!`), including on servers in `readonly` or `restricted` mode ([GHSA-qmf5-hrhv-5hjm](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-qmf5-hrhv-5hjm), reported by @orshih6). Every version before it is affected. A MySQL query must now be one line without backslashes. See the [CHANGELOG](CHANGELOG.md#403---2026-11-05).
 
 **[4.0.2](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.0.2) — commands reach a Mac, and the desktop terminal is your own.** Commands sent to a macOS server no longer fail with `timeout: command not found` before they start (thanks to Henrik Tilly, [#115](https://github.com/bvisible/mcp-ssh-manager/pull/115)); the desktop terminal starts a login shell, so what Homebrew installed is found as in Terminal or Warp, and PowerShell on Windows; keystrokes reach the shell in the order they were typed; dependencies refreshed. Nothing to change on upgrade.
 
