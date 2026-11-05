@@ -393,7 +393,8 @@ export function buildMySQLQueryCommand(options) {
   if (!isSafeQuery(query)) {
     throw new Error('Only SELECT queries are allowed');
   }
-  const script = readOnlyScript(DB_TYPES.MYSQL, query);
+  assertNoMySQLClientCommands(query);
+  const script = readOnlyScript(query);
 
   let command = 'mysql';
   if (user) command += ` -u${shellQuote(user)}`;
@@ -439,9 +440,17 @@ export function buildPostgreSQLQueryCommand(options) {
   if (host) command += ` -h ${shellQuote(host)}`;
   if (port) command += ` -p ${shellQuote(port)}`;
   command += ` -d ${shellQuote(database)}`;
-  // Feed SQL via stdin (quoted heredoc) instead of `-c "${query}"` so the remote shell
-  // never parses it. See buildHeredoc and issue #44.
-  command += buildHeredoc(readOnlyScript(DB_TYPES.POSTGRESQL, query));
+  // Each statement is a single-quoted `-c` argument, never psql's input. psql runs
+  // the backslash commands of a script it reads (`\!` runs a shell command, `\o |cmd`
+  // pipes to one) wherever they appear, so a query fed on stdin could leave the
+  // database for the shell (GHSA-qmf5-hrhv-5hjm). A `-c` that does not start with a
+  // backslash goes to the server as it is. Three of them, not one: psql before 15
+  // prints only the last result of a multi-statement `-c`, here the ROLLBACK.
+  // shellQuote, not double quotes, so the remote shell parses nothing (issue #44).
+  const statement = query.trim().replace(/;\s*$/, '');
+  command += ` -c ${shellQuote('BEGIN TRANSACTION READ ONLY')}`;
+  command += ` -c ${shellQuote(statement)}`;
+  command += ` -c ${shellQuote('ROLLBACK')}`;
 
   return command;
 }
@@ -656,17 +665,38 @@ export function isSafeQuery(query) {
 }
 
 /**
- * The SQL fed to the client: the query inside a read-only transaction. The
- * database then refuses any write the query would make, including one hidden
- * in a function it calls (MySQL 5.6.5+, MariaDB 10.0+, every PostgreSQL).
- * @param {string} type - DB_TYPES.MYSQL or DB_TYPES.POSTGRESQL
+ * Refuse what the mysql client would take for one of its own commands.
+ *
+ * The query reaches the remote `mysql` client as its input, and the client acts
+ * on backslash commands anywhere in a line (`\!` runs a shell command) and on
+ * named ones at the start of a line (`system`, `source`, `tee`), in batch mode and
+ * with `-e` alike, before the database sees anything (GHSA-qmf5-hrhv-5hjm). There
+ * is no option every client accepts to turn this off (MariaDB has `--sandbox`,
+ * MySQL 8.0.40+ `--system-command=OFF`, older clients reject both), so the query
+ * may contain neither a backslash nor a line break, nor any other control
+ * character. A read-only SELECT needs none of them.
+ *
+ * @param {string} query - A query that passed isSafeQuery
+ * @throws {Error} When the query contains a backslash or a control character
+ */
+export function assertNoMySQLClientCommands(query) {
+  const statement = query.trim();
+  // eslint-disable-next-line no-control-regex
+  if (/[\\\x00-\x08\x0a-\x1f\x7f]/.test(statement)) {
+    throw new Error('MySQL queries must be one line without backslashes: the mysql client runs commands such as \\! (shell) found in its input');
+  }
+}
+
+/**
+ * The SQL fed to the mysql client: the query inside a read-only transaction.
+ * The database then refuses any write the query would make, including one
+ * hidden in a function it calls (MySQL 5.6.5+, MariaDB 10.0+). PostgreSQL gets
+ * the same transaction from separate `-c` arguments (buildPostgreSQLQueryCommand).
  * @param {string} query - A query that passed isSafeQuery
  */
-function readOnlyScript(type, query) {
+function readOnlyScript(query) {
   const statement = query.trim().replace(/;\s*$/, '');
-  return type === DB_TYPES.MYSQL
-    ? `SET SESSION TRANSACTION READ ONLY;\n${statement};`
-    : `BEGIN TRANSACTION READ ONLY;\n${statement};\nROLLBACK;`;
+  return `SET SESSION TRANSACTION READ ONLY;\n${statement};`;
 }
 
 /**

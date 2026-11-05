@@ -320,7 +320,7 @@ AES-256-GCM, master key in your OS keychain (a `0600` file where there is none �
 
 - **Your sudo password never reaches the remote command line.** It travels on the SSH channel's stdin, so it isn't visible in `ps`, in `/proc/<pid>/cmdline`, or in an `auditd` trail — unlike the `echo "$pass" | sudo -S` pattern common in this category ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)).
 - **Every shell argument is quoted** through one central helper, with a test that drives **340 builder × argument × payload combinations** through a real shell to prove none of them execute.
-- **Read-only SQL is enforced, not suggested.** `ssh_db_query` refuses anything that isn't a `SELECT`.
+- **Read-only SQL is enforced, not suggested.** `ssh_db_query` refuses anything that isn't a `SELECT`, runs it inside a read-only transaction, and never lets the `psql` or `mysql` client read it as a script, where their own commands (`\!`) would reach a shell. A MySQL query is therefore one line, without backslashes.
 - **Vulnerabilities are published, not buried.** [SECURITY.md](SECURITY.md) has the reporting process and every advisory already fixed — including the six in v3.8.6, among them a command injection on the machine running the server, triggered by any SSH server it connects to.
 - **Reproducible installs.** The lockfile is committed, CI installs with `npm ci`, and a test enforces that every dependency resolves to registry.npmjs.org with an integrity hash and no unreviewed install scripts.
 
@@ -399,7 +399,7 @@ See the [Backup Guide](docs/BACKUP_GUIDE.md) and [examples/backup-workflow.md](e
 | `ssh_db_dump` | MySQL, PostgreSQL, MongoDB; optional gzip, optional table subset |
 | `ssh_db_import` | Import a dump, `.gz` handled automatically |
 | `ssh_db_list` | Databases, or the tables inside one |
-| `ssh_db_query` | **`SELECT` only** — enforced, not suggested |
+| `ssh_db_query` | **`SELECT` only** — enforced, not suggested (MySQL: one line, no backslash) |
 
 **Deployment & sessions**
 

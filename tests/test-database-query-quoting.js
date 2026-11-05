@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import {
   buildHeredoc,
   buildMySQLQueryCommand,
@@ -9,9 +10,9 @@ import {
 
 /**
  * Regression tests for issue #44: ssh_db_query must not let the remote shell parse the
- * SQL/JS query text. The query builders now deliver the query on stdin via a single-
- * quoted heredoc, so backtick-quoted identifiers survive intact and the query cannot
- * inject shell commands.
+ * SQL/JS query text. The MySQL and MongoDB builders deliver the query on stdin via a
+ * single-quoted heredoc and PostgreSQL in single-quoted -c arguments, so backtick-quoted
+ * identifiers survive intact and the query cannot inject shell commands.
  */
 
 const GREEN = '\x1b[32m';
@@ -63,7 +64,16 @@ function extractHeredocBody(command) {
 // Since 4.0 the query reaches the client inside a read-only transaction.
 const statement = query => query.trim().replace(/;\s*$/, '');
 const mysqlBody = query => `SET SESSION TRANSACTION READ ONLY;\n${statement(query)};`;
-const pgBody = query => `BEGIN TRANSACTION READ ONLY;\n${statement(query)};\nROLLBACK;`;
+
+/**
+ * The arguments psql would receive once a real POSIX shell has parsed the built
+ * command: `psql` is replaced by a function that prints its argv, NUL-separated.
+ */
+function psqlArgv(command) {
+  const out = execFileSync('/bin/sh', ['-c', `psql() { for a in "$@"; do printf '%s\\0' "$a"; done; }; ${command}`]);
+  return out.toString('utf8').split('\0').slice(0, -1);
+}
+const pgArgs = query => ['-c', 'BEGIN TRANSACTION READ ONLY', '-c', statement(query), '-c', 'ROLLBACK'];
 
 console.log('\n' + YELLOW + 'Running Database Query Quoting Tests (issue #44)...' + NC + '\n');
 
@@ -102,11 +112,15 @@ test('MySQL: non-JSON format also uses the heredoc', () => {
 
 // --- PostgreSQL ---
 
-test('PostgreSQL: query carried via heredoc, not -c "..."', () => {
-  const query = 'SELECT * FROM "weird-table" WHERE x = $1';
+// psql runs the backslash commands of any script it reads (`\\!` is a shell), so
+// the query is never its input: each statement is a single-quoted -c argument,
+// which psql sends to the server as it is (GHSA-qmf5-hrhv-5hjm).
+test('PostgreSQL: each statement is a single-quoted -c argument, never psql\'s input', () => {
+  const query = 'SELECT * FROM "weird-table" WHERE x = $1 AND y = `z` AND note = \'it\'\'s\'';
   const cmd = buildPostgreSQLQueryCommand({ database: 'app', query });
-  assertEqual(extractHeredocBody(cmd), pgBody(query), 'pg heredoc body must carry the query');
+  assertTrue(!cmd.includes('<<'), `must not feed psql a script on stdin: ${cmd}`);
   assertTrue(!cmd.includes('-c "'), 'must not interpolate query into -c "..."');
+  assertEqual(JSON.stringify(psqlArgv(cmd).slice(-6)), JSON.stringify(pgArgs(query)), 'psql receives the query verbatim, inside a read-only transaction');
 });
 
 // --- MongoDB ---
@@ -194,8 +208,8 @@ test('SQL: ordinary SELECTs still pass, including names that merely contain a ve
   for (const query of ['SELECT 1', 'SELECT 1;', 'select updated_at, created_by FROM t', 'SELECT * FROM t WHERE note LIKE \'%x%\'']) {
     assertEqual(isSafeQuery(query), true, query);
   }
-  assertEqual(extractHeredocBody(buildPostgreSQLQueryCommand({ database: 'app', query: 'SELECT 1;' })), pgBody('SELECT 1'),
-    'a trailing semicolon is not doubled');
+  assertEqual(JSON.stringify(psqlArgv(buildPostgreSQLQueryCommand({ database: 'app', query: 'SELECT 1;' })).slice(-6)),
+    JSON.stringify(pgArgs('SELECT 1')), 'a trailing semicolon is not doubled');
 });
 
 test('MongoDB: a filter that is code is refused, a collection name stays a name', () => {
