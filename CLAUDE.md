@@ -185,6 +185,7 @@ SSH_SERVER_[NAME]_HOST=hostname
 SSH_SERVER_[NAME]_USER=username
 SSH_SERVER_[NAME]_PASSWORD=password         # For password auth
 SSH_SERVER_[NAME]_KEYPATH=~/.ssh/key       # For SSH key auth
+SSH_SERVER_[NAME]_AGENT_PUBLIC_KEY_PATH=~/.ssh/id_ed25519.pub # Alternative: select one SSH_AUTH_SOCK identity
 SSH_SERVER_[NAME]_PASSPHRASE=passphrase    # Optional, for passphrase-protected keys
 SSH_SERVER_[NAME]_PORT=22                  # Optional
 SSH_SERVER_[NAME]_DEFAULT_DIR=/path        # Optional default working directory
@@ -215,6 +216,19 @@ proxy_command = "command"                   # Optional: custom proxy command (nc
 forward_agent = true                       # Optional: forward local ssh-agent to remote (needs SSH_AUTH_SOCK; security risk)
 announce_agent = true                      # Optional: send AI_AGENT=mcp-ssh-manager to this host (off by default; false keeps it silent under the global switch)
 ```
+
+### Selecting an SSH agent key
+
+Use `agent_public_key_path` in TOML or `SSH_SERVER_[NAME]_AGENT_PUBLIC_KEY_PATH` in `.env` (internal field: `agentPublicKeyPath`) to select a single public key from the existing agent at `SSH_AUTH_SOCK`:
+
+```toml
+[ssh_servers.agent_host]
+host = "example.com"
+user = "admin"
+agent_public_key_path = "~/.ssh/id_ed25519.pub"
+```
+
+This works with compatible SSH agents, including compatible password-manager agents; signing stays in the agent. Missing or invalid public key files, an unavailable agent, or no matching identity fail authentication without falling back to other agent identities. Combining this option with `key_path`, `password`, `cert_path`, or enabled `forward_agent` is rejected. Without this option, existing authentication behavior is unchanged. `ssh_sync` uses system OpenSSH and does not apply this filter; configure `IdentityFile` and `IdentitiesOnly yes` separately in the SSH client configuration.
 
 ## Key Implementation Details
 

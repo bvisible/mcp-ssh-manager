@@ -1,4 +1,5 @@
-import { Client } from 'ssh2';
+import { Client, createAgent } from 'ssh2';
+import { FilteredAgent } from './filtered-agent.js';
 import fs from 'fs';
 import { trustedHostKeyAlgorithms, verifyHostKey } from './ssh-key-manager.js';
 import { logger } from './logger.js';
@@ -171,9 +172,26 @@ class SSHManager {
         };
       }
 
+      // An explicitly selected Agent identity must not silently fall back to
+      // another credential or forward the unfiltered Agent to a remote host.
+      if (this.config.agentPublicKeyPath) {
+        if (this.config.keyPath || this.config.keypath || this.config.password || this.config.certPath) {
+          throw new Error('agent_public_key_path cannot be combined with key_path, password or cert_path');
+        }
+        if (this.config.forwardAgent) {
+          throw new Error('agent_public_key_path cannot be combined with forward_agent');
+        }
+        if (!process.env.SSH_AUTH_SOCK) {
+          throw new Error('agent_public_key_path requires SSH_AUTH_SOCK');
+        }
+      }
+
       // Use ssh-agent if available (handles passphrase-protected keys transparently)
       if (process.env.SSH_AUTH_SOCK) {
-        connConfig.agent = process.env.SSH_AUTH_SOCK;
+        connConfig.agent = this.config.agentPublicKeyPath
+          ? new FilteredAgent(createAgent(process.env.SSH_AUTH_SOCK),
+            fs.readFileSync(expandHomePath(this.config.agentPublicKeyPath)))
+          : process.env.SSH_AUTH_SOCK;
         // Opt-in per-server agent forwarding. ssh2 requires `agent` to be set,
         // so we only enable it inside this block — otherwise ssh2 throws at
         // connect. With allowAgentFwd on, every exec/shell channel forwards the
