@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Pick which key of the SSH agent a server uses** (#128, thanks to
+  @RebornOnce). When the agent holds many keys (a password manager's agent,
+  say), a server can hit `MaxAuthTries` and close the connection before the
+  right one is offered. `agent_public_key_path` in TOML, or
+  `SSH_SERVER_<NAME>_AGENT_PUBLIC_KEY_PATH` in `.env`, names a public key file:
+  only that identity is offered and used for signing, and the private key never
+  leaves the agent. If the agent does not hold it, the connection fails instead
+  of trying the others. It cannot be combined with a key, a password, a
+  certificate or agent forwarding, and nothing changes for servers without it.
+  `ssh_sync` uses the system's `ssh`, which takes `IdentityFile` and
+  `IdentitiesOnly yes` from your SSH configuration instead.
+
 ### Security
 
 - **The desktop build uses a fixed `minimatch`.** `electron-builder`, the tool
