@@ -92,7 +92,7 @@ jobs:
       - name: Generate SBOM
         run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cyclonedx.json
       - name: Attest the actual tarball
-        uses: actions/attest-sbom@10926c72720ffc3f7b666661c8e55b1344e2a365 # v2
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
         with:
           subject-path: '${{ runner.temp }}/mcp-ssh-manager-${{ steps.version.outputs.version }}.tgz'
           sbom-path: sbom.cyclonedx.json

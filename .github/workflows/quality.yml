@@ -34,6 +34,13 @@ jobs:
     - name: Install Node dependencies
       run: npm ci
 
+    # A pin to a tag object, or to a fork's commit, runs fine and still breaks
+    # Scorecard's publication: it went unnoticed for ten weeks with green runs.
+    - name: Check pinned actions point to commits of their repositories
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: node scripts/check-action-pins.mjs
+
     - name: Run JavaScript syntax check
       run: |
         node --check src/index.js
