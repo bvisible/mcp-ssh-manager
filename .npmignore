@@ -90,6 +90,8 @@ ui/
 docs/images/
 # The social preview's source: the image is built into the repository, not the package.
 brand/social-preview.html
+# The 400×400 icon is for directory listings, not for anything the package runs.
+brand/logo-400.png
 desktop/build/
 desktop/electron/dist/
 desktop/electron/engine/

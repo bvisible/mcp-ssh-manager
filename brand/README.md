@@ -5,6 +5,7 @@
 | `wordmark.svg` | The logo: **ssh** solid, **manager** outlined. Supplied, not derived. |
 | `icon.svg` | The app icon — the mark on its tile. Everything else is generated from this. |
 | `mark.svg` | The mark alone, no tile, `currentColor` for the white parts. |
+| `logo-400.png` | The icon at 400×400, for directories that ask for one (the Cline MCP Marketplace). Rendered from `icon.svg`: `qlmanage -t -s 400 -o /tmp brand/icon.svg`. |
 | `social-preview.html` | The GitHub social preview (1280×640), rendered to `docs/images/social-preview.png` and `@2x` by `npm run brand:social`. The window in it is the README's own capture of the real application (`docs/images/v4-waiting-app.png`, made by the screenshot rig), so the image follows the interface when the rig is re-run. |
 
 ## The icon
