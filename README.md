@@ -744,6 +744,10 @@ Made with ❤️ for the Claude Code community
 
 </div>
 
+## Also from us
+
+**[Relais](https://github.com/bvisible/relais)**: several Claude accounts on one Mac, one workspace. Switch Claude Desktop and Claude Code between your work and personal accounts in one click, keep every conversation, and see each account's limits. Free and open source, for macOS.
+
 ## Validation before a release
 
 The [V4 testing guide](docs/TESTING-V4.md) describes the offline suites, real npm
