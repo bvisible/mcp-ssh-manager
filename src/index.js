@@ -94,6 +94,7 @@ import {
   generateBackupId,
   getBackupMetadataPath,
   getBackupFilePath,
+  backupExtension,
   assertSafeBackupId,
   buildReadMetadataCommand,
   buildEnsureBackupDirCommand,
@@ -131,6 +132,7 @@ import {
   buildMySQLDumpCommand as buildDBMySQLDumpCommand,
   buildPostgreSQLDumpCommand as buildDBPostgreSQLDumpCommand,
   buildMongoDBDumpCommand as buildDBMongoDBDumpCommand,
+  mongoArchivePath,
   buildMySQLImportCommand,
   buildPostgreSQLImportCommand,
   buildMongoDBRestoreCommand,
@@ -3624,7 +3626,7 @@ registerToolConditional(
 
       const backupDirectory = backupDir || DEFAULT_BACKUP_DIR;
       const backupId = generateBackupId(type, name);
-      const backupFile = getBackupFilePath(backupId, backupDirectory);
+      const backupFile = getBackupFilePath(backupId, backupDirectory, backupExtension(type, compress));
       const metadataPath = getBackupMetadataPath(backupId, backupDirectory);
 
       // Ensure backup directory exists with proper error handling
@@ -3678,7 +3680,9 @@ registerToolConditional(
         if (!database) {
           throw new Error('database parameter required for MongoDB backup');
         }
-        const mongoOutputDir = backupFile.replace('.gz', '');
+        // The dump directory is the backup file without its extension (a path can
+        // contain ".gz" elsewhere: only the end is removed).
+        const mongoOutputDir = backupFile.replace(/\.tar\.gz$/, '');
         backupCommand = buildMongoDBDumpCommand({
           database,
           user: dbUser,
@@ -3912,7 +3916,13 @@ registerToolConditional(
       }
 
       const metadata = JSON.parse(metadataResult.stdout);
-      const backupFile = getBackupFilePath(backupId, backupDirectory);
+      const backupFile = getBackupFilePath(backupId, backupDirectory, backupExtension(metadata.type, metadata.compressed !== false));
+
+      // Said before anything is restored: a backup that is not there is not a restore failure.
+      const present = await ssh.execCommand(`test -e ${shellQuote(backupFile)}`);
+      if (present.code !== 0) {
+        throw new Error(`Backup file not found: ${backupFile}`);
+      }
 
       // Execute pre-restore hook
       await executeHook('pre-restore', {
@@ -4042,28 +4052,36 @@ registerToolConditional(
       scriptContent += `# Created: ${new Date().toISOString()}\n\n`;
 
       const backupId = `\${BACKUP_TYPE}_${name}_$(date +%Y%m%d_%H%M%S)_\${RANDOM}`;
-      const backupFile = `${backupDirectory}/${backupId}.gz`;
+      const backupFile = `${backupDirectory}/${backupId}${backupExtension(type)}`;
 
       scriptContent += `BACKUP_DIR="${backupDirectory}"\n`;
       scriptContent += `BACKUP_TYPE="${type}"\n`;
       scriptContent += `BACKUP_ID="${backupId}"\n`;
       scriptContent += `BACKUP_FILE="${backupFile}"\n\n`;
-      scriptContent += 'mkdir -p "$BACKUP_DIR"\n\n';
+      // A pipeline is as failed as its first failing command, and a failed backup
+      // leaves no file, says so, and stops before the cleanup below: otherwise a
+      // dump that fails every night leaves an empty archive each time while the
+      // cleanup deletes the good ones, until none is left.
+      scriptContent += 'set -o pipefail\n';
+      scriptContent += 'DUMP_DIR=""\n';
+      scriptContent += 'fail() { echo "ssh-manager backup failed: $BACKUP_ID" >&2; rm -rf "$BACKUP_FILE"; [ -n "$DUMP_DIR" ] && rm -rf "$DUMP_DIR"; exit 1; }\n\n';
+      scriptContent += 'mkdir -p "$BACKUP_DIR" || fail\n\n';
 
       // Add backup command based on type. The script runs later from cron, so
       // a value spliced in raw here would run every night, not once.
       switch (type) {
       case BACKUP_TYPES.MYSQL:
-        scriptContent += `mysqldump --single-transaction --routines --triggers ${shellQuote(database)} | gzip > "$BACKUP_FILE"\n`;
+        scriptContent += `mysqldump --single-transaction --routines --triggers ${shellQuote(database)} | gzip > "$BACKUP_FILE" || fail\n`;
         break;
       case BACKUP_TYPES.POSTGRESQL:
-        scriptContent += `pg_dump --format=custom --clean --if-exists ${shellQuote(database)} | gzip > "$BACKUP_FILE"\n`;
+        scriptContent += `pg_dump --format=custom --clean --if-exists ${shellQuote(database)} | gzip > "$BACKUP_FILE" || fail\n`;
         break;
       case BACKUP_TYPES.MONGODB:
-        scriptContent += `mongodump --db ${shellQuote(database)} --out /tmp/mongo_\${RANDOM} && tar -czf "$BACKUP_FILE" -C /tmp mongo_*\n`;
+        scriptContent += 'DUMP_DIR="/tmp/mongo_${RANDOM}"\n';
+        scriptContent += `mongodump --db ${shellQuote(database)} --out "$DUMP_DIR" && tar -czf "$BACKUP_FILE" -C /tmp "$(basename "$DUMP_DIR")" && rm -rf "$DUMP_DIR" || fail\n`;
         break;
       case BACKUP_TYPES.FILES:
-        scriptContent += `tar -czf "$BACKUP_FILE" ${(paths || []).map(shellQuote).join(' ')}\n`;
+        scriptContent += `tar -czf "$BACKUP_FILE" ${(paths || []).map(shellQuote).join(' ')} || fail\n`;
         break;
       }
 
@@ -4712,8 +4730,14 @@ registerToolConditional(
         throw new Error(`Dump failed: ${result.stderr || result.stdout}`);
       }
 
+      // What the dump really wrote: a MongoDB dump is a directory, or an archive
+      // named after it, not necessarily the path the caller gave.
+      const dumpedFile = type === DB_TYPES.MONGODB
+        ? (compress ? mongoArchivePath(options.outputDir) : options.outputDir)
+        : outputFile;
+
       // Get file size
-      const sizeCommand = `stat -f%z ${shellQuote(outputFile)} 2>/dev/null || stat -c%s ${shellQuote(outputFile)} 2>/dev/null`;
+      const sizeCommand = `stat -f%z ${shellQuote(dumpedFile)} 2>/dev/null || stat -c%s ${shellQuote(dumpedFile)} 2>/dev/null`;
       const sizeResult = await ssh.execCommand(sizeCommand);
       const size = parseSize(sizeResult.stdout);
 
@@ -4732,7 +4756,7 @@ registerToolConditional(
               server: serverName,
               type,
               database,
-              output_file: outputFile,
+              output_file: dumpedFile,
               size_bytes: size,
               size_human: formatBytes(size),
               compressed: compress,
