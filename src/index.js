@@ -319,11 +319,38 @@ async function applyServerPolicy(serverName, toolName, args, command) {
   return null;
 }
 
-// Convenience for the success-path audit: handlers call this after execution to
-// record the outcome. No-op when AUDIT_LOG is not configured.
+// A handler that records its own outcome (an exit code, one line per server)
+// calls this after execution. Calling it also tells the shared guard, which
+// audits every other tool itself, not to write a second line.
+// No-op when AUDIT_LOG is not configured.
 async function auditOk(serverName, toolName, args, executionResult) {
   const serverConfig = await getServerConfig(serverName);
+  const scope = toolContext.getStore()?.audit;
+  if (scope) scope.written = true;
   auditLog(serverConfig, toolName, args, { allowed: true }, executionResult);
+}
+
+/**
+ * The outcome line for a tool that passed the policy gate and did not write its
+ * own: success unless the handler threw or answered with isError. Only a denial
+ * or an approval decision used to be recorded for these tools, so most of what
+ * ran on a server left no trace. A broken audit file never changes the result.
+ * @param {any} serverConfig
+ * @param {string} toolName
+ * @param {any} args
+ * @param {any} result - The handler's reply, or null when it threw
+ * @param {Error|null} [error] - What the handler threw
+ */
+function auditOutcome(serverConfig, toolName, args, result, error = null) {
+  if (toolContext.getStore()?.audit?.written) return;
+  try {
+    const failed = !!error || result?.isError === true;
+    const text = error ? error.message
+      : failed ? String(result?.content?.find?.(item => item?.type === 'text')?.text ?? '') : '';
+    auditLog(serverConfig, toolName, args, { allowed: true }, failed ? { success: false, error: text } : { success: true });
+  } catch (auditError) {
+    logger.warn('Could not write the audit outcome', { tool: toolName, error: auditError.message });
+  }
 }
 
 // Execute command with timeout - using child_process timeout for real kill
@@ -668,23 +695,35 @@ function registerToolConditional(toolName, schema, handler) {
       // configuration (such as server listing) still load it explicitly.
       if (isApprovalExempt(toolName, args)) return handler(args, extra);
       const servers = await serverConfigManager.getServers();
-      return toolContext.run({ servers }, async () => {
+      return toolContext.run({ servers, audit: { written: false } }, async () => {
         if (HANDLER_GATED_TOOLS.has(toolName)) {
           return handler(args, extra);
         }
         // Fail closed for newly added remote tools with an unresolved target.
         // Local tools must be explicitly exempted above.
+        let config;
+        let canonicalArgs;
         try {
-          const config = await getServerConfig(args.server);
-          const canonicalArgs = { ...args, server: config.name };
+          config = await getServerConfig(args.server);
+          canonicalArgs = { ...args, server: config.name };
           const command = toolName === 'ssh_execute'
             ? expandCommandAlias(args.command) : args.command;
           const denied = await applyServerPolicy(config.name, toolName, canonicalArgs, command);
           if (denied) return denied;
-          return handler(canonicalArgs, extra);
         } catch (error) {
           return { isError: true, content: [{ type: 'text', text: error.message }] };
         }
+        // The handler runs outside the try above: what it throws still reaches
+        // the SDK as before; it is only recorded on the way.
+        let result;
+        try {
+          result = await handler(canonicalArgs, extra);
+        } catch (error) {
+          auditOutcome(config, toolName, canonicalArgs, null, error);
+          throw error;
+        }
+        auditOutcome(config, toolName, canonicalArgs, result);
+        return result;
       });
     };
     // The runtime zod schema validates args before this shared guard runs.
@@ -877,6 +916,7 @@ registerToolConditional(
         error: error.message
       });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -934,6 +974,7 @@ registerToolConditional(
         error: error.message
       });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -977,6 +1018,7 @@ registerToolConditional(
           execSync('which sshpass', { stdio: 'ignore' });
         } catch (error) {
           return {
+            isError: true,
             content: [
               {
                 type: 'text',
@@ -1275,6 +1317,7 @@ registerToolConditional(
       });
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1383,6 +1426,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1556,6 +1600,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1658,6 +1703,7 @@ registerToolConditional(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1712,6 +1758,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1805,6 +1852,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1883,6 +1931,7 @@ registerToolConditional(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1947,6 +1996,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2097,6 +2147,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2257,6 +2308,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2399,6 +2451,7 @@ registerToolConditional(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2503,6 +2556,7 @@ registerToolConditional(
         error: error.message,
       });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2604,6 +2658,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2696,6 +2751,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2776,6 +2832,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2894,6 +2951,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3064,6 +3122,7 @@ registerToolConditional(
     } catch (error) {
       logger.error('Failed to list tunnels', { error: error.message });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3130,6 +3189,7 @@ registerToolConditional(
     } catch (error) {
       logger.error('Failed to close tunnel', { error: error.message });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3378,6 +3438,7 @@ registerToolConditional(
       logger.error('SSH key management failed', { action, server, error: error.message });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3465,6 +3526,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3690,6 +3752,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3762,6 +3825,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3886,6 +3950,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4018,6 +4083,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4117,6 +4183,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4199,6 +4266,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4348,6 +4416,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4528,6 +4597,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4645,6 +4715,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4748,6 +4819,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4873,6 +4945,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4997,6 +5070,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
