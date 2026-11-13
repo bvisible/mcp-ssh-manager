@@ -12,6 +12,14 @@ to @jaredshuai, @SEU-zhc, @fyq163 and @xutianhao6 for the work and the ideas.
 
 ### Added
 
+- **A Chinese interface (简体中文).** Options → Appearance has a *Language / 语言*
+  selector, for the desktop application and the web interface; the desktop menus,
+  dialogs and notifications follow it. Until you choose, the interface follows the
+  system language (Chinese for a `zh` locale, English for anything else), and the
+  choice is remembered. English is exactly as it was. Server names, commands,
+  paths and what a remote host prints are never translated. The translation is
+  @xutianhao6's, from his fork's community build: adapted here, completed for the
+  strings it missed and proofread. Thank you.
 - **`ssh_execute` with `background: true`** starts a command detached from the
   SSH session and returns at once with `{ pid, logFile }`, for a job that
   outlives the timeout (a training run, a long build). Read its output with
@@ -49,6 +57,14 @@ to @jaredshuai, @SEU-zhc, @fyq163 and @xutianhao6 for the work and the ideas.
 
 ### Fixed
 
+- **The health check no longer counts container layers as disks.** On a Docker
+  host every `overlay` layer repeated the same usage, and `tmpfs`, `devtmpfs` and
+  `squashfs` mounts counted as full disks (a snap mount is always at 100 %), which
+  raised duplicate or false disk alerts. The check now records each mount's
+  filesystem type and skips those, keeping `/` even inside a container, and an
+  alert fires when usage reaches the threshold, not only when it passes it. In the
+  interface, the health card keeps long mount paths and alert text inside its
+  borders. Thanks to @xutianhao6.
 - **Remote tunnels (`ssh_tunnel_create` with `type: "remote"`, `ssh -R`) never
   worked**: they failed with `this.ssh.forwardIn is not a function`, because the
   connection wrapper only had `forwardOut`. They work now, and closing one
