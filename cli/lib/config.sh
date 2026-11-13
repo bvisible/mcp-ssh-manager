@@ -120,6 +120,64 @@ load_servers() {
     printf '%s\n' "${servers[@]}" | sort -u
 }
 
+# The settings of a server, as the engine reads them (src/config-loader.js; a test
+# keeps the two lists in step). A server's lines are found by these names and never
+# by the bare prefix: removing "prod" used to remove the lines of "prod_eu" too.
+SERVER_ENV_FIELDS="HOST USER PASSWORD KEYPATH CERTPATH AGENT_PUBLIC_KEY_PATH PASSPHRASE PORT DEFAULT_DIR SUDO_PASSWORD DESCRIPTION GROUP PLATFORM PROXYJUMP PROXYCOMMAND FORWARD_AGENT ANNOUNCE_AGENT MODE ALLOW_PATTERNS DENY_PATTERNS AUDIT_LOG APPROVAL"
+
+# Copy stdin to stdout without the lines of server $1 (upper case) whose setting is
+# in $2 (space separated). With a file as $3, its lines take the place of the first
+# line dropped, so a server keeps its place and every setting that is not rewritten.
+# Compared as text, never as a pattern: a name cannot steer it.
+rewrite_server_lines() {
+    awk -v name="$1" -v fields="$2" -v block="${3:-}" '
+        BEGIN {
+            n = split(fields, f, " "); for (i = 1; i <= n; i++) drop[f[i]] = 1
+            prefix = "SSH_SERVER_" name "_"; done = 0
+        }
+        {
+            if (index($0, prefix) == 1) {
+                eq = index($0, "=")
+                if (eq > 0) {
+                    field = substr($0, length(prefix) + 1, eq - length(prefix) - 1)
+                    if (field in drop) {
+                        if (block != "" && !done) { while ((getline line < block) > 0) print line; close(block); done = 1 }
+                        next
+                    }
+                }
+            }
+            print
+        }
+        END { if (block != "" && !done) { print ""; while ((getline line < block) > 0) print line; close(block) } }'
+}
+
+# One KEY=value line, written so that the engine's dotenv reads the value back as it
+# was. A plain value stays bare, as before; one that dotenv would misread (a "#"
+# starts a comment anywhere in it, a leading quote or space is eaten) is quoted with
+# the delimiter it does not contain: single quotes and backticks have no escapes.
+# With a third argument the value is quoted even when plain (descriptions and
+# patterns always were), with double quotes unless it holds one.
+env_line() {
+    local key="$1" value="$2" quote="${3:-}"
+    case "$value" in
+        *$'\n'*|*$'\r'*) print_error "The value of $key cannot hold a line break" >&2; return 1 ;;
+    esac
+    if [ -n "$quote" ] && [[ "$value" != *\"* ]]; then
+        printf '%s="%s"\n' "$key" "$value"
+    elif [[ "$value" != *"#"* ]] && [[ "$value" != [\'\"\`\ ]* ]] && [[ "$value" != *" " ]]; then
+        printf '%s=%s\n' "$key" "$value"
+    elif [[ "$value" != *\'* ]]; then
+        printf "%s='%s'\n" "$key" "$value"
+    elif [[ "$value" != *\"* ]]; then
+        printf '%s="%s"\n' "$key" "$value"
+    elif [[ "$value" != *'`'* ]]; then
+        printf '%s=`%s`\n' "$key" "$value"
+    else
+        print_error "The value of $key holds all three quote characters (' \" \`) and has to be quoted: the .env format cannot carry it" >&2
+        return 1
+    fi
+}
+
 # Get server configuration
 get_server_config() {
     local server="$1"
@@ -147,8 +205,9 @@ get_server_config() {
         return 1
     fi
 
-    # Only remove surrounding quotes if they exist, preserve quotes within the value
-    if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+    # Only remove surrounding quotes if they exist (the three dotenv accepts),
+    # preserve quotes within the value
+    if [[ "$value" =~ ^\"(.*)\"$ ]] || [[ "$value" =~ ^\'(.*)\'$ ]] || [[ "$value" =~ ^\`(.*)\`$ ]]; then
         printf '%s' "${BASH_REMATCH[1]}"
     else
         printf '%s' "$value"
@@ -187,36 +246,39 @@ add_server_to_env() {
     # Backup .env file
     cp "$SSH_MANAGER_ENV" "$SSH_MANAGER_ENV.bak"
 
-    # Add server configuration
-    {
+    # Add server configuration. Built before anything is written, so a value that
+    # cannot be carried by the .env format (see env_line) leaves the file as it was.
+    local block
+    block="$(
         echo ""
         echo "# Server: $name"
-        echo "SSH_SERVER_${name_upper}_HOST=$host"
-        echo "SSH_SERVER_${name_upper}_USER=$user"
-        echo "SSH_SERVER_${name_upper}_PORT=$port"
+        env_line "SSH_SERVER_${name_upper}_HOST" "$host" &&
+        env_line "SSH_SERVER_${name_upper}_USER" "$user" &&
+        env_line "SSH_SERVER_${name_upper}_PORT" "$port" || exit 1
 
         if [ "$auth_type" = "password" ]; then
-            echo "SSH_SERVER_${name_upper}_PASSWORD=$auth_value"
+            env_line "SSH_SERVER_${name_upper}_PASSWORD" "$auth_value" || exit 1
         else
-            echo "SSH_SERVER_${name_upper}_KEYPATH=$auth_value"
+            env_line "SSH_SERVER_${name_upper}_KEYPATH" "$auth_value" || exit 1
         fi
 
         if [ -n "$description" ]; then
-            echo "SSH_SERVER_${name_upper}_DESCRIPTION=\"$description\""
+            env_line "SSH_SERVER_${name_upper}_DESCRIPTION" "$description" quote || exit 1
         fi
 
         # Security mode (v3.5.0+) — only emit non-empty / non-default values to
         # keep generated .env diff-free for users who skip these prompts.
         if [ -n "$mode" ] && [ "$mode" != "unrestricted" ]; then
-            echo "SSH_SERVER_${name_upper}_MODE=$mode"
+            env_line "SSH_SERVER_${name_upper}_MODE" "$mode" || exit 1
         fi
         if [ -n "$allow_patterns" ]; then
-            echo "SSH_SERVER_${name_upper}_ALLOW_PATTERNS=\"$allow_patterns\""
+            env_line "SSH_SERVER_${name_upper}_ALLOW_PATTERNS" "$allow_patterns" quote || exit 1
         fi
         if [ -n "$audit_log" ]; then
-            echo "SSH_SERVER_${name_upper}_AUDIT_LOG=$audit_log"
+            env_line "SSH_SERVER_${name_upper}_AUDIT_LOG" "$audit_log" || exit 1
         fi
-    } >> "$SSH_MANAGER_ENV"
+    )" || { rm -f "$SSH_MANAGER_ENV.bak"; return 1; }
+    printf '%s\n' "$block" >> "$SSH_MANAGER_ENV"
 
     print_success "Server '$name' added successfully"
 }
@@ -243,37 +305,39 @@ update_server_in_env() {
     # Backup .env file
     cp "$SSH_MANAGER_ENV" "$SSH_MANAGER_ENV.bak"
 
-    # Remove old server configuration (all lines including comments and old auth methods)
-    local temp=$(mktemp)
-    # Remove server config lines and the comment line before them
-    sed "/^# Server: $name$/d; /^SSH_SERVER_${name_upper}_/d" "$SSH_MANAGER_ENV" > "$temp"
-
-    # Find position to insert (after other servers or at end)
-    # Add updated server configuration
-    {
-        cat "$temp"
-        echo ""
-        echo "# Server: $name"
-        echo "SSH_SERVER_${name_upper}_HOST=$host"
-        echo "SSH_SERVER_${name_upper}_USER=$user"
-        echo "SSH_SERVER_${name_upper}_PORT=$port"
+    # The settings this function writes replace, in place, the ones the server had;
+    # every other setting of the server (mode, allow and deny patterns, audit log,
+    # group, proxy jump, platform...) stays exactly as it was. It used to delete all
+    # of them and write seven back, so editing a read-only server made it unrestricted.
+    # A changed login method drops the old one (a password or a key path, not both).
+    local block temp
+    block=$(mktemp)
+    temp=$(mktemp)
+    (
+        env_line "SSH_SERVER_${name_upper}_HOST" "$host" &&
+        env_line "SSH_SERVER_${name_upper}_USER" "$user" &&
+        env_line "SSH_SERVER_${name_upper}_PORT" "$port" || exit 1
 
         if [ "$auth_type" = "password" ]; then
-            echo "SSH_SERVER_${name_upper}_PASSWORD=$auth_value"
+            env_line "SSH_SERVER_${name_upper}_PASSWORD" "$auth_value" || exit 1
         else
-            echo "SSH_SERVER_${name_upper}_KEYPATH=$auth_value"
+            env_line "SSH_SERVER_${name_upper}_KEYPATH" "$auth_value" || exit 1
         fi
 
         if [ -n "$description" ]; then
-            echo "SSH_SERVER_${name_upper}_DESCRIPTION=\"$description\""
+            env_line "SSH_SERVER_${name_upper}_DESCRIPTION" "$description" quote || exit 1
         fi
 
         if [ -n "$default_dir" ]; then
-            echo "SSH_SERVER_${name_upper}_DEFAULT_DIR=$default_dir"
+            env_line "SSH_SERVER_${name_upper}_DEFAULT_DIR" "$default_dir" || exit 1
         fi
-    } > "$SSH_MANAGER_ENV"
+    ) > "$block" || { rm -f "$block" "$temp" "$SSH_MANAGER_ENV.bak"; return 1; }
 
-    rm -f "$temp"
+    rewrite_server_lines "$name_upper" "HOST USER PORT PASSWORD KEYPATH DESCRIPTION DEFAULT_DIR" "$block" < "$SSH_MANAGER_ENV" > "$temp"
+    # Written through the file, not renamed over it: its mode stays what it was.
+    cat "$temp" > "$SSH_MANAGER_ENV"
+
+    rm -f "$temp" "$block"
     print_success "Server '$name' updated successfully"
 }
 
@@ -290,10 +354,11 @@ remove_server_from_env() {
     # Backup .env file
     cp "$SSH_MANAGER_ENV" "$SSH_MANAGER_ENV.bak"
     
-    # Remove all lines for this server
+    # Remove all lines for this server, and only this server's (see SERVER_ENV_FIELDS)
     local temp=$(mktemp)
-    grep -v "^SSH_SERVER_${name_upper}_" "$SSH_MANAGER_ENV" > "$temp"
-    mv "$temp" "$SSH_MANAGER_ENV"
+    rewrite_server_lines "$name_upper" "$SERVER_ENV_FIELDS" < "$SSH_MANAGER_ENV" > "$temp"
+    cat "$temp" > "$SSH_MANAGER_ENV"
+    rm -f "$temp"
     
     print_success "Server '$name' removed successfully"
 }

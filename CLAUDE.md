@@ -44,11 +44,9 @@ ssh-manager server show SERVER                # Show server details
 
 ### OpenAI Codex Integration
 ```bash
-ssh-manager codex setup                       # Configure for Codex
-ssh-manager codex migrate                     # Convert servers to TOML
-ssh-manager codex test                        # Test Codex integration
-ssh-manager codex convert to-toml            # Convert .env to TOML
-ssh-manager codex convert to-env             # Convert TOML to .env
+ssh-manager codex setup                       # Point Codex at this engine (~/.codex/config.toml)
+ssh-manager codex status                      # What Codex runs today
+ssh-manager export servers.toml               # Servers as TOML (.toml, .env, .csv and .xlsx are written)
 ```
 
 ### Tool Management (NEW in v3.1)
