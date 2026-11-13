@@ -92,6 +92,9 @@ docs/images/
 brand/social-preview.html
 # The 400×400 icon is for directory listings, not for anything the package runs.
 brand/logo-400.png
+# The README's download badges: computed by a scheduled workflow, read on GitHub.
+scripts/download-stats.mjs
+docs/DOWNLOAD-STATS.md
 desktop/build/
 desktop/electron/dist/
 desktop/electron/engine/

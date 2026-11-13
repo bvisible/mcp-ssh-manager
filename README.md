@@ -20,7 +20,10 @@
 <div align="center">
 
 [![npm version](https://img.shields.io/npm/v/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdownloads.json&style=flat-square)](docs/DOWNLOAD-STATS.md)
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
+[![Desktop app downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdesktop.json&style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/bvisible/mcp-ssh-manager?style=flat-square&color=c04500)](https://github.com/bvisible/mcp-ssh-manager/stargazers)
 [![Version](https://img.shields.io/badge/release-4.1.0-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.1.0)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)

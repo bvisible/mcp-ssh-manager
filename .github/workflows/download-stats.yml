@@ -1,0 +1,50 @@
+# Counts downloads (npm and GitHub releases) once a day and publishes the
+# README badge files on the `stats` branch, which shields.io reads.
+# scripts/download-stats.mjs says what is counted; docs/DOWNLOAD-STATS.md
+# explains it to readers.
+#
+# The branch holds one commit, replaced each run: nothing else lives there,
+# and no other workflow runs on a push to it.
+name: Download stats
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: download-stats
+  cancel-in-progress: false
+
+jobs:
+  stats:
+    if: github.repository == 'bvisible/mcp-ssh-manager'
+    runs-on: ubuntu-latest
+    permissions:
+      # Pushes the badge files to the `stats` branch.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.x
+      - name: Count downloads
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/download-stats.mjs "$RUNNER_TEMP/stats"
+      - name: Publish the badge files on the stats branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/stats"
+          git init -q -b stats
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads.json desktop.json stats.json
+          git commit -q -m 'Download stats'
+          git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" stats
