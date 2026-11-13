@@ -1,5 +1,3 @@
-import { nativeText, nativeLanguage } from './locale.mjs';
-import { applicationMenuTemplate } from './native-menu.mjs';
 /**
  * The desktop application.
  *
@@ -32,8 +30,19 @@ import { createRequire } from 'module';
 import electronUpdater from 'electron-updater';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { localShellLaunch, localShellName } from './local-shell.mjs';
+import { nativeLanguage, nativeText } from './locale.mjs';
+import { applicationMenuTemplate } from './native-menu.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The language of the menus, tray and notifications: the one chosen in the
+ * interface, else the system's. Read each time, because it can change while the
+ * application runs. `app.getLocale()` is only meaningful once the app is ready,
+ * and every caller runs after that.
+ */
+const nativeLang = () => nativeLanguage({ systemLocale: app.getLocale() });
+const text = (message, values) => nativeText(message, values, nativeLang());
 
 /**
  * The engine lives two directories up in the repository, and inside
@@ -196,7 +205,7 @@ function updateSnapshot() {
 const appUpdates = {
   snapshot: updateSnapshot,
   check: async () => {
-    if (!updaterActive) throw new Error(nativeText("Updates are turned off in this build"));
+    if (!updaterActive) throw new Error(text('Updates are turned off in this build'));
     await electronUpdater.autoUpdater.checkForUpdates();
   },
   download: async () => { await electronUpdater.autoUpdater.downloadUpdate(); },
@@ -312,10 +321,15 @@ function createWindow(url) {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+/** The language the application menu was last built in. */
+let menuLanguage = null;
+
 /** A menu with the shortcuts a terminal-adjacent app is expected to have. */
 function buildMenu(url) {
+  menuLanguage = nativeLang();
   Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate({
     isMac: process.platform === 'darwin',
+    language: menuLanguage,
     onOpenBrowser: () => void shell.openExternal(url),
     onCheckUpdates: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }),
   })));
@@ -367,8 +381,8 @@ function announce(pending) {
 
     const notification = new Notification({
       title: request.destructive
-        ? nativeText("{{v0}}: destructive command waiting", { v0: request.server })
-        : nativeText("{{v0}}: waiting for your decision", { v0: request.server }),
+        ? text('{{v0}}: destructive command waiting', { v0: request.server })
+        : text('{{v0}}: waiting for your decision', { v0: request.server }),
       body: String(request.command || request.tool || '').slice(0, 220),
       // Destructive requests stay on screen. `rm -rf` on production and
       // `systemctl status` are not the same interruption, and a banner that
@@ -406,15 +420,18 @@ function refreshTray() {
     // An unreadable vault is the interface's problem to report, not the tray's.
   }
 
+  // The application menu follows the language chosen in the interface, which
+  // can change while the app runs. Rebuild it only when that happens.
+  if (menuLanguage !== nativeLang()) buildMenu(plane.url);
+
   // Rebuilding a menu the user may have open is disruptive, and this runs on a
   // timer, so only touch it when something actually moved.
   const signature = JSON.stringify([
     pending.map(r => r.id), shells.map(t => t.server),
-    running.map(s => s.id), servers, update.status, update.percent, nativeLanguage(),
+    running.map(s => s.id), servers, update.status, update.percent, nativeLang(),
   ]);
   if (signature === trayState) return;
   trayState = signature;
-  buildMenu(plane.url);
 
   announce(pending);
 
@@ -438,7 +455,7 @@ function refreshTray() {
   const template = [...updateMenuItems()];
 
   if (pending.length) {
-    template.push({ label: nativeText("{{v0}} waiting for your decision", { v0: pending.length }), enabled: false });
+    template.push({ label: text('{{v0}} waiting for your decision', { v0: pending.length }), enabled: false });
     for (const request of pending.slice(0, 6)) {
       template.push({
         label: `    ${request.server} · ${brief(request.command)}`,
@@ -447,14 +464,14 @@ function refreshTray() {
     }
     template.push({ type: 'separator' });
   } else {
-    template.push({ label: nativeText("Nothing is waiting"), enabled: false });
+    template.push({ label: text('Nothing is waiting'), enabled: false });
     template.push({ type: 'separator' });
   }
 
   if (shells.length || running.length) {
-    template.push({ label: nativeText("Open right now"), enabled: false });
+    template.push({ label: text('Open right now'), enabled: false });
     for (const shell of shells.slice(0, 5)) {
-      template.push({ label: nativeText("    Shell on {{v0}}", { v0: shell.server }), click: focus });
+      template.push({ label: text('    Shell on {{v0}}', { v0: shell.server }), click: focus });
     }
     for (const stream of running.slice(0, 5)) {
       template.push({
@@ -467,22 +484,22 @@ function refreshTray() {
 
   if (servers.length) {
     template.push({
-      label: nativeText("Servers ({{v0}})", { v0: servers.length }),
+      label: text('Servers ({{v0}})', { v0: servers.length }),
       submenu: servers.slice(0, 12).map(name => ({ label: name, click: focus })),
     });
     template.push({ type: 'separator' });
   }
 
   template.push(
-    { label: nativeText("Show SSH Manager"), click: focus },
-    { label: nativeText("Open in browser"), click: () => plane && void shell.openExternal(plane.url) },
+    { label: text('Show SSH Manager'), click: focus },
+    { label: text('Open in browser'), click: () => plane && void shell.openExternal(plane.url) },
     { type: 'separator' },
-    { label: nativeText("Quit SSH Manager"), click: () => app.quit() },
+    { label: text('Quit SSH Manager'), click: () => app.quit() },
   );
 
   tray.setContextMenu(Menu.buildFromTemplate(template));
   tray.setToolTip(pending.length
-    ? nativeText("SSH Manager — {{v0}} waiting for your decision", { v0: pending.length })
+    ? text('SSH Manager — {{v0}} waiting for your decision', { v0: pending.length })
     : 'SSH Manager');
 
   // The count beside the icon, and on the dock. Only when it is not zero: a
@@ -566,8 +583,8 @@ function announceUpdate(version) {
   try { fs.writeFileSync(marker, `${version}\n`); } catch { /* it will say it again next time; harmless */ }
   if (!Notification.isSupported()) return;
   const notification = new Notification({
-    title: nativeText("SSH Manager {{v0}} is available", { v0: version }),
-    body: nativeText("Open Options → Updates to download it. Nothing is installed until you restart."),
+    title: text('SSH Manager {{v0}} is available', { v0: version }),
+    body: text('Open Options → Updates to download it. Nothing is installed until you restart.'),
     silent: true,
   });
   notification.on('click', () => {
@@ -587,23 +604,23 @@ function updateMenuItems() {
   const { autoUpdater } = electronUpdater;
   switch (update.status) {
   case 'checking':
-    return [{ label: nativeText("Checking for updates…"), enabled: false }, { type: 'separator' }];
+    return [{ label: text('Checking for updates…'), enabled: false }, { type: 'separator' }];
   case 'available':
     return [{
-      label: nativeText("Update to {{v0}}", { v0: update.version }),
+      label: text('Update to {{v0}}', { v0: update.version }),
       click: () => autoUpdater.downloadUpdate().catch(() => { /* reported by the error handler */ }),
     }, { type: 'separator' }];
   case 'downloading':
-    return [{ label: nativeText("Downloading update… {{v0}}%", { v0: update.percent }), enabled: false },
+    return [{ label: text('Downloading update… {{v0}}%', { v0: update.percent }), enabled: false },
       { type: 'separator' }];
   case 'ready':
     return [{
-      label: nativeText("Restart to update to {{v0}}", { v0: update.version }),
+      label: text('Restart to update to {{v0}}', { v0: update.version }),
       click: () => autoUpdater.quitAndInstall(),
     }, { type: 'separator' }];
   default:
     return updaterActive
-      ? [{ label: nativeText("Check for Updates…"), click: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }) },
+      ? [{ label: text('Check for Updates…'), click: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }) },
         { type: 'separator' }]
       : [];
   }
@@ -732,13 +749,13 @@ app.whenReady().then(async () => {
     // box confidently suggested another copy was running, which sent the reader
     // looking in the wrong place entirely.
     const guess = /Cannot find (package|module)/i.test(error.message)
-      ? 'The application is missing part of itself. This is a packaging fault, '
-        + 'not something you can fix here — please report it with this message.'
+      ? text('The application is missing part of itself. This is a packaging fault, '
+        + 'not something you can fix here — please report it with this message.')
       : error.code === 'EADDRINUSE' || /already running|EADDRINUSE/i.test(error.message)
-        ? 'Another copy is already running, or a stale socket is in the way.'
-        : 'The socket path may be too long for this system, or the port could '
-          + 'not be opened.';
-    dialog.showErrorBox('SSH Manager could not start', `${error.message}\n\n${guess}`);
+        ? text('Another copy is already running, or a stale socket is in the way.')
+        : text('The socket path may be too long for this system, or the port could '
+          + 'not be opened.');
+    dialog.showErrorBox(text('SSH Manager could not start'), `${error.message}\n\n${guess}`);
     app.quit();
   }
 
