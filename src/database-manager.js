@@ -13,7 +13,8 @@ export const DB_TYPES = {
 // A single quote character as a constant, so shellQuote()'s escaping stays
 // readable under the repo's single-quote lint style.
 import { shellQuote } from './shell-quote.js';
-export { shellQuote };
+import { guardedDump, guardedFeed, mongoArchivePath } from './dump-guard.js';
+export { shellQuote, mongoArchivePath };
 
 /**
  * Build MySQL dump command
@@ -44,13 +45,8 @@ export function buildMySQLDumpCommand(options) {
     command += ` ${tables.map(shellQuote).join(' ')}`;
   }
 
-  if (compress) {
-    command += ` | gzip > ${shellQuote(outputFile)}`;
-  } else {
-    command += ` > ${shellQuote(outputFile)}`;
-  }
-
-  return command;
+  // A producer that fails must fail the whole command and leave no file: see dump-guard.js.
+  return guardedDump(command, outputFile, compress);
 }
 
 /**
@@ -87,13 +83,8 @@ export function buildPostgreSQLDumpCommand(options) {
 
   command += ` ${shellQuote(database)}`;
 
-  if (compress) {
-    command += ` | gzip > ${shellQuote(outputFile)}`;
-  } else {
-    command += ` > ${shellQuote(outputFile)}`;
-  }
-
-  return command;
+  // A producer that fails must fail the whole command and leave no file: see dump-guard.js.
+  return guardedDump(command, outputFile, compress);
 }
 
 /**
@@ -127,7 +118,7 @@ export function buildMongoDBDumpCommand(options) {
   command += ` --out ${shellQuote(outputDir)}`;
 
   if (compress) {
-    command += ` && tar -czf ${shellQuote(outputDir + '.tar.gz')} -C "$(dirname ${shellQuote(outputDir)})" "$(basename ${shellQuote(outputDir)})"`;
+    command += ` && tar -czf ${shellQuote(mongoArchivePath(outputDir))} -C "$(dirname ${shellQuote(outputDir)})" "$(basename ${shellQuote(outputDir)})"`;
     command += ` && rm -rf ${shellQuote(outputDir)}`;
   }
 
@@ -147,22 +138,16 @@ export function buildMySQLImportCommand(options) {
     inputFile
   } = options;
 
-  let command = '';
-
-  if (inputFile.endsWith('.gz')) {
-    command = `gunzip -c ${shellQuote(inputFile)} | `;
-  } else {
-    command = `cat ${shellQuote(inputFile)} | `;
-  }
-
-  command += 'mysql';
+  let command = 'mysql';
   if (user) command += ` -u${shellQuote(user)}`;
   if (password) command += ` -p${shellQuote(password)}`;
   if (host) command += ` -h ${shellQuote(host)}`;
   if (port) command += ` -P ${shellQuote(port)}`;
   command += ` ${shellQuote(database)}`;
 
-  return command;
+  // A gzip file is verified whole before mysql reads a byte of it (dump-guard.js).
+  if (inputFile.endsWith('.gz')) return guardedFeed(inputFile, command);
+  return `cat ${shellQuote(inputFile)} | ${command}`;
 }
 
 /**
@@ -190,11 +175,8 @@ export function buildPostgreSQLImportCommand(options) {
   command += ' --clean --if-exists';
   command += ` -d ${shellQuote(database)}`;
 
-  if (inputFile.endsWith('.gz')) {
-    command = `gunzip -c ${shellQuote(inputFile)} | ${command}`;
-  } else {
-    command += ` ${shellQuote(inputFile)}`;
-  }
+  if (inputFile.endsWith('.gz')) return guardedFeed(inputFile, command);
+  command += ` ${shellQuote(inputFile)}`;
 
   return command;
 }
