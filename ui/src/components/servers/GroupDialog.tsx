@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * Create or edit a server group.
  *
@@ -17,6 +16,7 @@ import {
 import { groups as api, type Group } from '@/lib/api';
 import { useServersStore } from '@/stores/servers.store';
 import { cn } from '@/lib/utils';
+import { tr, useLocale } from '@/lib/i18n';
 
 export function GroupDialog({
   group,
@@ -51,7 +51,7 @@ export function GroupDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{group ? tr("Edit {{v0}}", { v0: group.name }) : tr("New group")}</DialogTitle>
-          <DialogDescription> {tr("A group runs one command across several machines. Stored in")}{' '}
+          <DialogDescription>{tr("A group runs one command across several machines. Stored in")}{' '}
             <code className="font-mono text-xs">.server-groups.json</code>.
           </DialogDescription>
         </DialogHeader>
@@ -73,12 +73,12 @@ export function GroupDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label> {tr("Servers")} <span className="ml-1.5 font-normal text-muted-foreground">
+            <Label>{tr("Servers")}<span className="ml-1.5 font-normal text-muted-foreground">
                 {selected.size} {tr("of")} {allServers.length}
               </span>
             </Label>
             {allServers.length === 0 ? (
-              <p className="text-xs text-muted-foreground"> {tr("No server in the vault yet — add one first.")} </p>
+              <p className="text-xs text-muted-foreground">{tr("No server in the vault yet — add one first.")}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5 rounded-md border border-border p-2">
                 {allServers.map(server => (
@@ -112,7 +112,7 @@ export function GroupDialog({
               </select>
             </div>
             <div className="grid gap-1.5">
-              <Label> {tr("Delay")} <span className="ml-1.5 font-normal text-muted-foreground">{tr("ms between servers")}</span>
+              <Label>{tr("Delay")}<span className="ml-1.5 font-normal text-muted-foreground">{tr("ms between servers")}</span>
               </Label>
               <Input
                 type="number"
@@ -129,9 +129,9 @@ export function GroupDialog({
               checked={stopOnError}
               onChange={e => setStopOnError(e.target.checked)}
               className="h-3.5 w-3.5"
-            /> {tr("Stop at the first failure")} <span className="text-xs text-muted-foreground">
+            />{tr("Stop at the first failure")}<span className="text-xs text-muted-foreground">
               {/* Which one you want depends on the command, and getting it
-                  wrong is expensive in opposite directions. */} {tr("— otherwise every server is attempted")} </span>
+                  wrong is expensive in opposite directions. */}{tr("— otherwise every server is attempted")}</span>
           </label>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

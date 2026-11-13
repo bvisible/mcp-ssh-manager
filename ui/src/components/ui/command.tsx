@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 'use client'
 
 import * as React from 'react'
@@ -13,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { tr, useLocale } from '@/lib/i18n'
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (

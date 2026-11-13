@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -21,6 +20,7 @@ import { Breadcrumb } from './Breadcrumb'
 import { FilePaneContextMenu } from './FilePaneContextMenu'
 import { FilePaneRow } from './FilePaneRow'
 import { cn } from '@/lib/utils'
+import { tr, useLocale } from '@/lib/i18n'
 
 export interface FileItem {
   name: string

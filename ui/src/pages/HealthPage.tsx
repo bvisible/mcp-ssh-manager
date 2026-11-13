@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * Server health, probed when you ask and never on a timer.
  *
@@ -15,6 +14,7 @@ import { health, thresholds as thresholdsApi, type HealthAlert, type HealthResul
 import { ensurePermission } from '@/lib/notify';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
+import { tr, useLocale, type Language } from '@/lib/i18n';
 
 /**
  * Amber at the threshold, red ten points past it, and graphite below: a card of
@@ -31,7 +31,13 @@ function severity(percent: number, threshold: number): 'over' | 'near' | 'ok' {
 const BAR = { over: 'bg-destructive', near: 'bg-warning', ok: 'bg-meter' } as const;
 const TEXT = { over: 'text-destructive', near: 'text-warning', ok: '' } as const;
 
-function alertMessage(alert: HealthAlert): string {
+/**
+ * The engine words its alerts in English only. In English they are shown as
+ * they come; in Chinese the same facts (kind, mount, value, threshold) are
+ * worded here, so a long alert never reads half in one language.
+ */
+function alertMessage(alert: HealthAlert, language: Language): string {
+  if (language === 'en') return alert.message;
   const values = { value: alert.value, threshold: alert.threshold, mount: alert.mount ?? '/' };
   if (alert.type === 'disk') return tr('Disk {{mount}}: {{value}}% used (threshold {{threshold}}%)', values);
   if (alert.type === 'memory') return tr('Memory: {{value}}% used (threshold {{threshold}}%)', values);
@@ -58,7 +64,7 @@ function Gauge({ label, percent, detail, threshold, mono }:
       {detail && (
         <p className="min-w-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">
           {detail}
-          {level !== 'ok' && tr(' · at or above the {{v0}}% threshold', { v0: threshold })}
+          {level !== 'ok' && tr(' · over the {{v0}}% threshold', { v0: threshold })}
         </p>
       )}
     </div>
@@ -67,7 +73,6 @@ function Gauge({ label, percent, detail, threshold, mono }:
 
 export function HealthPage() {
   const language = useLocale();
-  const number = (value: number) => new Intl.NumberFormat(language, { maximumFractionDigits: 1 }).format(value);
   const [results, setResults] = useState<HealthResult[] | null>(null);
   const [probing, setProbing] = useState(false);
   const [limits, setLimits] = useState<Thresholds>({ cpu: 80, memory: 90, disk: 85, enabled: true });
@@ -92,8 +97,8 @@ export function HealthPage() {
       const crossed = answer.results.filter(r => (r.alerts?.length ?? 0) > 0);
       if (crossed.length > 0 && await ensurePermission()) {
         for (const machine of crossed) {
-          new Notification(tr('{{server}}: resource threshold reached', { server: machine.server }), {
-            body: machine.alerts!.map(alertMessage).join('\n'),
+          new Notification(tr('{{server}}: {{type}} over threshold', { server: machine.server, type: tr(machine.alerts![0].type) }), {
+            body: machine.alerts!.map(a => alertMessage(a, language)).join('\n'),
             tag: `health:${machine.server}`,
           });
         }
@@ -115,7 +120,7 @@ export function HealthPage() {
         hint={tr("Probed when you ask. Nothing runs in the background.")}
         actions={
           <Button className="font-bold" disabled={probing} onClick={() => void probe()}>
-            {probing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {tr("Check every server")} </Button>
+            {probing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{tr("Check every server")}</Button>
         }
       />
 
@@ -126,16 +131,16 @@ export function HealthPage() {
           <div className="mb-5 flex flex-wrap gap-2" aria-label={tr("Summary")}>
             <span className="inline-flex h-8 items-center gap-2 rounded-full bg-success-light px-3 text-[13px] font-bold text-success">
               <span className="h-2 w-2 rounded-full bg-success" aria-hidden="true" />
-              {reachable} {tr("reachable")} </span>
+              {reachable} {tr("reachable")}</span>
             {warned > 0 && (
               <span className="inline-flex h-8 items-center gap-2 rounded-full bg-warning-light px-3 text-[13px] font-bold text-warning">
                 <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-                {warned} {tr("over a threshold")} </span>
+                {warned} {tr("over a threshold")}</span>
             )}
             {unreachable > 0 && (
               <span className="inline-flex h-8 items-center gap-2 rounded-full bg-destructive-light px-3 text-[13px] font-bold text-destructive">
                 <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
-                {unreachable} {tr("unreachable")} </span>
+                {unreachable} {tr("unreachable")}</span>
             )}
           </div>
         )}
@@ -178,22 +183,22 @@ export function HealthPage() {
                         {result.alerts!.map(alert => (
                           <p key={`${alert.type}:${alert.mount ?? ''}`} className="flex min-w-0 items-start gap-1.5 text-xs font-medium">
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                            <span className="min-w-0 [overflow-wrap:anywhere]">{alertMessage(alert)}</span>
+                            <span className="min-w-0 [overflow-wrap:anywhere]">{alertMessage(alert, language)}</span>
                           </p>
                         ))}
                       </div>
                     )}
                     <Gauge label="CPU" percent={result.cpu?.percent} threshold={limits.cpu}
-                      detail={result.load_average ? tr('Load average: {{value}}', { value: result.load_average }) : undefined} />
+                      detail={result.load_average ? tr('load {{value}}', { value: result.load_average }) : undefined} />
                     <Gauge label={tr("Memory")} percent={result.memory?.percent} threshold={limits.memory}
                       detail={result.memory?.used_mb !== undefined && result.memory.total_mb !== undefined
-                        ? tr('{{used}} of {{total}} GB used', { used: number(result.memory.used_mb / 1024), total: number(result.memory.total_mb / 1024) })
+                        ? tr('{{used}} of {{total}} GB', { used: Math.round(result.memory.used_mb / 1024), total: Math.round(result.memory.total_mb / 1024) })
                         : undefined} />
                     {/* Container layers and RAM filesystems are omitted by the
                         engine; persistent mounts still get individual gauges. */}
                     {result.disks?.map(disk => (
                       <Gauge key={disk.mount} label={disk.mount} mono percent={disk.percent} threshold={limits.disk}
-                        detail={tr('{{used}} of {{total}} used · {{available}} available', { used: disk.used, total: disk.size, available: disk.avail })} />
+                        detail={tr('{{used}} of {{total}}, {{avail}} free', { used: disk.used, total: disk.size, avail: disk.avail })} />
                     ))}
                   </div>
                 ) : (
@@ -203,7 +208,8 @@ export function HealthPage() {
                     <div className="rounded-lg border border-border bg-secondary px-3.5 py-3">
                       <p className="text-sm font-bold [overflow-wrap:anywhere]">{result.error ?? tr("No answer")}</p>
                       <p className="mt-1 font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                        {result.host} {tr("· gave up after")} {result.tookMs} {tr("ms")} </p>
+                        {tr('{{host}} · gave up after {{ms}} ms', { host: result.host, ms: result.tookMs })}
+                      </p>
                     </div>
                   </div>
                 )}

@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * Which ssh-manager each AI tool starts, and the switch between the two there
  * can be: the one installed with npm, and the one inside the desktop
@@ -13,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { Bot, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { agents, state, type AgentClient, type AgentEngine } from '@/lib/api';
+import { tr, useLocale } from '@/lib/i18n';
 
 type Status = Awaited<ReturnType<typeof agents.status>>;
 
@@ -79,8 +79,8 @@ export function AgentsPanel() {
     <div className="max-w-3xl space-y-4">
       <div className="rounded-lg border border-border bg-card p-4">
         <h2 className="flex items-center gap-2 text-sm font-medium">
-          <Bot aria-hidden="true" className="h-4 w-4 text-primary" /> {tr("Which ssh-manager your AI tools start")} </h2>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground"> {tr("An AI tool starts ssh-manager itself, from the command in its settings. It can be the one installed with npm or the one inside the desktop app — the same engine either way; the app's needs no Node. Changing it rewrites that one entry and nothing else.")} </p>
+          <Bot aria-hidden="true" className="h-4 w-4 text-primary" />{tr("Which ssh-manager your AI tools start")}</h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{tr("An AI tool starts ssh-manager itself, from the command in its settings. It can be the one installed with npm or the one inside the desktop app — the same engine either way; the app's needs no Node. Changing it rewrites that one entry and nothing else.")}</p>
         <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
           {(['app', 'npm'] as const).map((kind, index) => {
             const engine = engines[index];

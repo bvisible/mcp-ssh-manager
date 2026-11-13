@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * The dual-pane file browser: this machine on the left, the server on the right.
  *
@@ -16,6 +15,7 @@ import 'allotment/dist/style.css';
 import { FilePane, type FileItem } from '@/components/browser/FilePane';
 import { files as remote, local, transfers, state, type TransferEvent } from '@/lib/api';
 import { useWorkspace } from '@/stores/workspace';
+import { tr, useLocale } from '@/lib/i18n';
 
 type Side = 'local' | 'remote';
 
@@ -144,7 +144,7 @@ export function FilesPage({ server }: { server: string }) {
   };
 
   const remove = (side: Side) => async (items: FileItem[]) => {
-    if (!window.confirm(`Delete ${items.length === 1 ? items[0].name : `${items.length} items`}?`)) return;
+    if (!window.confirm(items.length === 1 ? tr('Delete {{name}}?', { name: items[0].name }) : tr('Delete {{n}} items?', { n: items.length }))) return;
     try {
       for (const item of items) {
         if (side === 'local') await local.remove(item.path, item.isDirectory);

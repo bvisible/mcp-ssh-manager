@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * Save a command for later.
  *
@@ -16,6 +15,7 @@ import {
 import { commands as api, type SavedCommand } from '@/lib/api';
 import { useServersStore } from '@/stores/servers.store';
 import { cn } from '@/lib/utils';
+import { tr, useLocale } from '@/lib/i18n';
 
 export function CommandDialog({
   server,
@@ -53,7 +53,7 @@ export function CommandDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{existing ? tr("Edit command") : tr("Save a command")}</DialogTitle>
-          <DialogDescription> {tr("It appears in the list next to any terminal it applies to.")} </DialogDescription>
+          <DialogDescription>{tr("It appears in the list next to any terminal it applies to.")}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3">
@@ -89,7 +89,7 @@ export function CommandDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label> {tr("Where it is offered")} <span className="ml-1.5 font-normal text-muted-foreground">
+            <Label>{tr("Where it is offered")}<span className="ml-1.5 font-normal text-muted-foreground">
                 {scope.size === 0 ? tr("every server") : `${scope.size} selected`}
               </span>
             </Label>
@@ -115,8 +115,8 @@ export function CommandDialog({
               )}
             </div>
             {scope.size === 0 && (
-              <p className="text-[11px] text-muted-foreground"> {tr("Selecting none offers it everywhere.")} {server && (
-                  <button className="ml-1 underline" onClick={() => setScope(new Set([server]))}> {tr("Limit to")} {server}?
+              <p className="text-[11px] text-muted-foreground">{tr("Selecting none offers it everywhere.")}{server && (
+                  <button className="ml-1 underline" onClick={() => setScope(new Set([server]))}>{tr("Limit to")} {server}?
                   </button>
                 )}
               </p>
@@ -129,7 +129,7 @@ export function CommandDialog({
               checked={confirmBeforeRun}
               onChange={e => setConfirmBeforeRun(e.target.checked)}
               className="h-3.5 w-3.5"
-            /> {tr("Ask before putting it in the terminal")} <span className="text-xs text-muted-foreground">{tr("— for the ones that delete things")}</span>
+            />{tr("Ask before putting it in the terminal")}<span className="text-xs text-muted-foreground">{tr("— for the ones that delete things")}</span>
           </label>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

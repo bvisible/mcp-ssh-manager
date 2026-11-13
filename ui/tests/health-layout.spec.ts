@@ -24,9 +24,11 @@ test('health cards contain long paths, bars, warnings and backgrounds at every d
   await page.getByRole('button', { name: '健康状态', exact: true }).click();
   await page.getByRole('button', { name: '检查所有服务器', exact: true }).click();
   await expect(page.locator('.health-card')).toHaveCount(3);
-  await expect(page.getByText('已用 2.2 GB / 总计 4 GB', { exact: true })).toBeVisible();
-  await expect(page.getByText('已用 25G / 总计 29G · 可用 4.4G', { exact: false })).toBeVisible();
+  await expect(page.getByText('已用 2 / 4 GB', { exact: true })).toBeVisible();
+  await expect(page.getByText('已用 25G / 总计 29G，可用 4.4G', { exact: false })).toBeVisible();
+  // Chinese words an alert from its facts; the engine's English sentence is not shown.
   await expect(page.getByText('Raw engine alert', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(`磁盘 ${longMount}：已用 90%（阈值 85%）`, { exact: false })).toBeVisible();
   await expect(page.getByText(longMount, { exact: true })).toBeVisible();
 
   for (const width of [900, 1100, 1440]) {
@@ -64,8 +66,11 @@ test('health cards contain long paths, bars, warnings and backgrounds at every d
 
   await page.setViewportSize({ width: 1100, height: 800 });
   await page.getByRole('button', { name: '设置', exact: true }).click();
-  await page.getByLabel('语言 / Language').selectOption('en');
+  await page.getByLabel('Language / 语言').selectOption('en');
   await page.getByRole('button', { name: 'Health', exact: true }).click();
   await page.getByRole('button', { name: 'Check every server', exact: true }).click();
-  await expect(page.getByText('2.2 of 4 GB used', { exact: true })).toBeVisible();
+  // English is shown exactly as it always was: the engine's own alert, memory rounded to whole gigabytes.
+  await expect(page.getByText('2 of 4 GB', { exact: true })).toBeVisible();
+  await expect(page.getByText('25G of 29G, 4.4G free', { exact: false })).toBeVisible();
+  await expect(page.getByText('Raw engine alert', { exact: true })).toBeVisible();
 });

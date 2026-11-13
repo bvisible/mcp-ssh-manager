@@ -1,4 +1,3 @@
-import { useLocale } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ServersPage } from '@/pages/ServersPage';
@@ -20,6 +19,7 @@ import { DesktopBanner } from '@/components/DesktopBanner';
 import { initAppUpdate } from '@/stores/appUpdate.store';
 import { Wizard, wizardSeen } from '@/components/Wizard';
 import { SessionTabs } from '@/components/layout/SessionTabs';
+import { useLocale } from '@/lib/i18n';
 
 export function App() {
   useLocale();

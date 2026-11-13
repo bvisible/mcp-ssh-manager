@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * Whether this page is still talking to the control plane.
  *
@@ -13,6 +12,7 @@ import { Loader2, Unplug } from 'lucide-react';
 import { state } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/stores/workspace';
+import { tr, useLocale } from '@/lib/i18n';
 
 function useConnection(): string {
   const [status, setStatus] = useState('connecting');

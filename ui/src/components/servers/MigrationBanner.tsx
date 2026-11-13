@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * Offers to bring servers from a .env into the vault.
  *
@@ -16,11 +15,12 @@ import { ArrowRight, FileKey, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { migration, type PendingServer } from '@/lib/api';
 import { readPreference, writePreference } from '@/lib/preferences';
+import { tr, trn, useLocale } from '@/lib/i18n';
 
 const DISMISSED_KEY = 'ssh-manager.migration-dismissed';
 
 export function MigrationBanner({ onImported }: { onImported: () => void }) {
-  const locale = useLocale();
+  useLocale();
   const [pending, setPending] = useState<PendingServer[] | null>(null);
   const [envPath, setEnvPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,11 +51,16 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
       <div className="flex items-start gap-3">
         <FileKey className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium"> {tr("Your existing setup keeps working")} </p>
+          <p className="text-sm font-medium">{tr("Your existing setup keeps working")}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {envPath && <><code className="font-mono">{envPath}</code> — </>}
-            {withSecrets > 0 && tr('{{count}} connection(s) contain plaintext credentials. ', { count: withSecrets })}
-            {tr('Import {{count}} server(s) to edit them here. The original configuration stays unchanged.', { count: pending.length })} </p>
+            {withSecrets > 0 && `${trn(withSecrets,
+              '{{n}} of them keeps credentials in clear text.',
+              '{{n}} of them keep credentials in clear text.')} `}
+            {trn(pending.length,
+              'Bring {{n}} server into this workspace to edit them here. Importing is optional and leaves the original configuration unchanged.',
+              'Bring {{n}} servers into this workspace to edit them here. Importing is optional and leaves the original configuration unchanged.')}
+          </p>
 
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {pending.map(server => (
@@ -67,7 +72,7 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
                 </span>
                 {server.secrets > 0 && (
                   <span className="ml-1.5 text-accent">
-                    {tr('{{count}} secret(s)', { count: server.secrets })}
+                    {trn(server.secrets, '{{n}} secret', '{{n}} secrets')}
                   </span>
                 )}
               </li>
@@ -92,14 +97,14 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
                 }
               }}
             >
-              {busy ? tr('Importing…') : locale === 'en' ? (pending.length === 1 ? 'Import it' : 'Import them') : tr('Import')}
+              {busy ? tr('Importing…') : pending.length > 1 ? tr('Import them') : tr('Import it')}
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={dismiss}> {tr("Not now")} </Button>
+            <Button variant="ghost" size="sm" onClick={dismiss}>{tr("Not now")}</Button>
             <p className="text-[10px] text-muted-foreground">
               {/* Said here rather than after the fact: the vault's key belongs
                   to this machine, and that is the thing to know before it
-                  becomes the only copy of anything. */} {tr("Afterwards, create a recovery backup in Options → Vault. Your encryption key belongs to this machine; the backup lets you restore elsewhere.")} </p>
+                  becomes the only copy of anything. */}{tr("Afterwards, create a recovery backup in Options → Vault. Your encryption key belongs to this machine; the backup lets you restore elsewhere.")}</p>
           </div>
           {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
         </div>

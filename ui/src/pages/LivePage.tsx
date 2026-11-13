@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * What your agents are running, while they run it.
  *
@@ -19,6 +18,7 @@ import { state, type LiveStream } from '@/lib/api';
 import { TerminalOutput } from '@/components/terminal/TerminalOutput';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
+import { tr, useLocale } from '@/lib/i18n';
 
 export function LivePage() {
   useLocale();
@@ -62,7 +62,7 @@ export function LivePage() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
             </span>
-            {running.length} {tr("running")} </span>
+            {running.length} {tr("running")}</span>
         )}
       </PageHeader>
 

@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * The open sessions, as a strip of tabs above the pane.
  *
@@ -17,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { useWorkspace, type WorkspaceTab } from '@/stores/workspace';
 import { headerIsTitleBar } from '@/lib/desktop';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { tr, useLocale } from '@/lib/i18n';
 
 const ICONS = {
   'dual-browser': FolderOpen,

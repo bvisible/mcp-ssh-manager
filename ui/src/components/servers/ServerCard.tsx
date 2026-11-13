@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 import { useState, useCallback } from 'react'
 import { Monitor, FolderOpen, Terminal, Pencil, Trash2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -18,6 +17,7 @@ import {
 import type { ServerConfig } from '@/types/electron'
 import { useWorkspaceStore } from '@/stores/workspace.store'
 import { generateId } from '@/lib/utils'
+import { tr, useLocale } from '@/lib/i18n'
 
 interface ServerCardProps {
   server: ServerConfig
@@ -237,9 +237,9 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
           ) : (
             <>
               <Button variant="outline" size="sm" aria-label={t('actions.browse')} onClick={openFileBrowser}>
-                <FolderOpen className="h-3.5 w-3.5" /> {tr("Files")} </Button>
+                <FolderOpen className="h-3.5 w-3.5" />{tr("Files")}</Button>
               <Button variant="outline" size="sm" aria-label={tr("Open a shell")} onClick={openSshTerminal}>
-                <Terminal className="h-3.5 w-3.5" /> {tr("Shell")} </Button>
+                <Terminal className="h-3.5 w-3.5" />{tr("Shell")}</Button>
             </>
           )}
         </div>

@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * "SSH Manager is also a desktop app", in a browser tab, once.
  *
@@ -26,6 +25,7 @@ import { desktop, state, type DesktopStatus } from '@/lib/api';
 import { inDesktopApp } from '@/lib/desktop';
 import { readPreference, writePreference } from '@/lib/preferences';
 import { useWorkspace } from '@/stores/workspace';
+import { tr, useLocale } from '@/lib/i18n';
 
 const DISMISSED = 'ssh-manager.desktop-offer-dismissed';
 
@@ -121,7 +121,7 @@ export function DesktopBanner() {
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-8 py-3 text-sm">
       <AppWindow className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
       <p className="min-w-0 flex-[1_1_320px]">
-        <b>{tr("SSH Manager is also a desktop app:")}</b> {tr("menu bar, native notifications, updates itself.")} {status.installed && status.version && <span className="text-muted-foreground"> {tr("Version")} {status.version} {tr("is installed.")}</span>}
+        <b>{tr("SSH Manager is also a desktop app:")}</b> {tr("menu bar, native notifications, updates itself.")}{status.installed && status.version && <span className="text-muted-foreground"> {tr('Version {{version}} is installed.', { version: status.version })}</span>}
       </p>
 
       {busy && (
@@ -147,7 +147,7 @@ export function DesktopBanner() {
         <div className="ml-auto flex items-center gap-2">
           {status.method === 'terminal' && !status.installed ? (
             <>
-              <code className="rounded-md border border-border bg-secondary px-2.5 py-1.5 font-mono text-[13px]">{'ssh-manager app'}</code>
+              <code className="rounded-md border border-border bg-secondary px-2.5 py-1.5 font-mono text-[13px]">ssh-manager app</code>
               <Button variant="outline" size="sm" onClick={() => void copyCommand()}>
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copied ? tr("Copied") : tr("Copy")}
@@ -159,7 +159,7 @@ export function DesktopBanner() {
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={notNow}>
-            <X className="h-3.5 w-3.5" /> {tr("Not now")} </Button>
+            <X className="h-3.5 w-3.5" />{tr("Not now")}</Button>
         </div>
       )}
 

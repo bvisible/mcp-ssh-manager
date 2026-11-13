@@ -1,4 +1,3 @@
-import { setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
 /**
  * Groups, known host keys, tunnels — the state that lives in files and can
  * therefore be read from here.
@@ -24,6 +23,7 @@ import { AgentsPanel } from '@/components/AgentsPanel';
 import { UpdatesPanel } from '@/components/UpdatesPanel';
 import { useAppUpdate } from '@/stores/appUpdate.store';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
 
 
 /** A tab's own height, so a wrapped row keeps the size of the first. */
@@ -64,7 +64,7 @@ function ThemePicker() {
               <Icon className={cn('h-4 w-4', active ? 'text-primary' : 'text-muted-foreground')} />
               <span className="text-sm font-medium">{tr(theme.label)}</span>
               {theme.id === 'system' && (
-                <span className="ml-auto text-[10px] text-muted-foreground">{tr("currently")} {tr(resolved === 'dark' ? 'Dark' : 'Light')}</span>
+                <span className="ml-auto text-[10px] text-muted-foreground">{resolved === 'dark' ? tr('currently dark') : tr('currently light')}</span>
               )}
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">{tr(theme.hint)}</p>
@@ -110,13 +110,13 @@ function Thresholds() {
           checked={limits.enabled}
           onChange={e => update({ enabled: e.target.checked })}
           className="h-3.5 w-3.5"
-        /> {tr("Point out machines over these levels")} <span className="text-xs text-muted-foreground">
-          {/* Said plainly: nothing runs on a timer, here or on the servers. */} {tr("— checked when you probe, never in the background")} </span>
+        />{tr("Point out machines over these levels")}<span className="text-xs text-muted-foreground">
+          {/* Said plainly: nothing runs on a timer, here or on the servers. */}{tr("— checked when you probe, never in the background")}</span>
         {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
       </label>
 
       <div className="grid grid-cols-3 gap-3">
-        {([['cpu', 'CPU'], ['memory', tr("Memory")], ['disk', tr("Disk")]] as const).map(([key, label]) => (
+        {([['cpu', 'CPU'], ['memory', 'Memory'], ['disk', 'Disk']] as const).map(([key, label]) => (
           <div key={key} className="grid gap-1">
             <span className="text-xs text-muted-foreground">{tr(label)}</span>
             <div className="flex items-center gap-1">
@@ -136,6 +136,21 @@ function Thresholds() {
       </div>
     </div>
   );
+}
+
+/** The engine's own descriptions of the built-in and the config-derived groups. */
+const ENGINE_GROUP_DESCRIPTIONS = new Set(['All configured servers', 'Production servers', 'Staging/test servers', 'Development servers']);
+const DERIVED_GROUP_DESCRIPTION = /^Servers configured with group = "(.*)"$/;
+
+/**
+ * Those descriptions come from the engine in English, so they are translated
+ * here when they are exactly the engine's. A description somebody wrote for a
+ * group of their own is theirs and is shown as written.
+ */
+function groupDescription(description: string): string {
+  const derived = DERIVED_GROUP_DESCRIPTION.exec(description);
+  if (derived) return tr('Servers configured with group = "{{name}}"', { name: derived[1] });
+  return ENGINE_GROUP_DESCRIPTIONS.has(description) ? tr(description) : description;
 }
 
 export function OptionsPage() {
@@ -208,7 +223,7 @@ export function OptionsPage() {
           <TabsTrigger value="vault" className={TAB}>{tr("Vault")}</TabsTrigger>
           <TabsTrigger value="agents" className={TAB}>{tr("AI tools")}</TabsTrigger>
           {appUpdate && (
-            <TabsTrigger value="updates" className={TAB}> {tr("Updates")} {updateWaiting && <span role="img" aria-label={tr("update available")} className="h-1.5 w-1.5 rounded-full bg-primary" />}
+            <TabsTrigger value="updates" className={TAB}>{tr("Updates")}{updateWaiting && <span role="img" aria-label={tr("update available")} className="h-1.5 w-1.5 rounded-full bg-primary" />}
             </TabsTrigger>
           )}
           <TabsTrigger value="alerts" className={TAB}>{tr("Alerts")}</TabsTrigger>
@@ -220,11 +235,20 @@ export function OptionsPage() {
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <TabsContent value="appearance" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-            <Palette className="h-3.5 w-3.5" /> {tr("Appearance")} </h2>
+            <Palette className="h-3.5 w-3.5" />{tr("Appearance")}</h2>
+          {/* The label and the options are bilingual on purpose, and never go
+              through tr(): somebody who landed in the wrong language must be
+              able to find this in the language they do read. */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">语言 / Language</label>
-            <select id="interface-language" value={language} onChange={event => void setLanguage(event.target.value as Language)} className="rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <option value="zh-CN">中文（简体）</option><option value="en">English</option>
+            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">Language / 语言</label>
+            <select
+              id="interface-language"
+              value={language}
+              onChange={event => void setLanguage(event.target.value as Language)}
+              className="w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
             </select>
           </div>
           <ThemePicker />
@@ -238,21 +262,21 @@ export function OptionsPage() {
 
         <TabsContent value="alerts" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-            <AlertTriangle className="h-3.5 w-3.5" /> {tr("Alert thresholds")} </h2>
+            <AlertTriangle className="h-3.5 w-3.5" />{tr("Alert thresholds")}</h2>
           <Thresholds />
         </TabsContent>
 
         <TabsContent value="groups" className="mt-0 space-y-4">
           <div className="mb-2 flex items-center gap-2">
             <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-              <Layers className="h-3.5 w-3.5" /> {tr("Groups")} <span className="text-muted-foreground">({options.groups.length})</span>
+              <Layers className="h-3.5 w-3.5" />{tr("Groups")}<span className="text-muted-foreground">({options.groups.length})</span>
             </h2>
             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> {tr("New group")} </Button>
+              <Plus className="h-3.5 w-3.5" />{tr("New group")}</Button>
           </div>
 
           {run && (
-            <div className="mb-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs"> {tr("Running on")} {run.group} — {run.done ?? 0} {tr("of")} {run.total ?? 0}
+            <div className="mb-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs">{tr('Running on {{group}} — {{done}} of {{total}}', { group: run.group, done: run.done ?? 0, total: run.total ?? 0 })}
               {run.server && <span className="ml-2 font-mono">{run.server}</span>}
             </div>
           )}
@@ -261,16 +285,16 @@ export function OptionsPage() {
               <div className="flex items-center gap-2 border-b border-border bg-muted px-3 py-1.5">
                 <span className="text-xs font-medium">{tr("Results")}</span>
                 <span className="text-[10px] text-muted-foreground">
-                  {output.filter(e => e.code === 0).length} {tr("of")} {output.length} {tr("succeeded")} </span>
+                  {tr('{{ok}} of {{total}} succeeded', { ok: output.filter(e => e.code === 0).length, total: output.length })}</span>
                 <button className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
-                  onClick={() => setOutput([])}> {tr("clear")} </button>
+                  onClick={() => setOutput([])}>{tr("clear")}</button>
               </div>
               <div className="max-h-64 overflow-auto">
               {output.map((entry, index) => (
                 <div key={index} className="border-b border-border-subtle p-2 last:border-b-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium">{entry.server}</span>
-                    <Badge variant={entry.code === 0 ? 'outline' : 'destructive'}>{tr("exit")} {entry.code}</Badge>
+                    <Badge variant={entry.code === 0 ? 'outline' : 'destructive'}>{tr('exit {{code}}', { code: entry.code })}</Badge>
                   </div>
                   {(entry.stdout || entry.stderr) && (
                     <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
@@ -287,7 +311,7 @@ export function OptionsPage() {
               <div key={group.name} className="group/card rounded-lg border border-border bg-card p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{group.name}</span>
-                  {group.dynamic && <Badge variant="secondary">dynamic</Badge>}
+                  {group.dynamic && <Badge variant="secondary">{tr('dynamic')}</Badge>}
                   {group.fromConfig && <Badge variant="outline">{tr("from config")}</Badge>}
                   <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover/card:opacity-100">
                     <Button
@@ -310,7 +334,7 @@ export function OptionsPage() {
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button
-                          variant="ghost" size="icon" aria-label={`Delete ${group.name}`}
+                          variant="ghost" size="icon" aria-label={tr('Delete {{name}}', { name: group.name })}
                           onClick={async () => {
                             if (!window.confirm(tr("Delete the group \"{{v0}}\"? The servers are untouched.", { v0: group.name }))) return;
                             try {
@@ -329,7 +353,7 @@ export function OptionsPage() {
                   <span className="text-xs text-muted-foreground tabular-nums">{group.serverCount}</span>
                 </div>
                 {group.description && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{group.description}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{groupDescription(group.description)}</p>
                 )}
                 {group.servers.length > 0 && (
                   <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
@@ -343,7 +367,7 @@ export function OptionsPage() {
 
         <TabsContent value="tunnels" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-            <Network className="h-3.5 w-3.5" /> {tr("Tunnels")} </h2>
+            <Network className="h-3.5 w-3.5" />{tr("Tunnels")}</h2>
           {options.tunnels.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               {options.tunnelsStale
@@ -364,7 +388,7 @@ export function OptionsPage() {
         <TabsContent value="hosts" className="mt-0 space-y-4">
           <div className="mb-2 flex items-center gap-2">
             <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-              <KeyRound className="h-3.5 w-3.5" /> {tr("Known hosts")} <span className="text-muted-foreground">({options.hostKeys.length})</span>
+              <KeyRound className="h-3.5 w-3.5" />{tr("Known hosts")}<span className="text-muted-foreground">({options.hostKeys.length})</span>
             </h2>
             <input
               value={filter}
@@ -401,7 +425,7 @@ export function OptionsPage() {
                         setView('servers');
                       }}
                     >
-                      <Plus className="h-3.5 w-3.5" /> {tr("Add as a server")} </Button>
+                      <Plus className="h-3.5 w-3.5" />{tr("Add as a server")}</Button>
                   )}
                   <Button
                     variant="ghost"
@@ -427,7 +451,7 @@ export function OptionsPage() {
             })}
             {matching.length > 200 && (
               <p className="px-3 py-2 text-[10px] text-muted-foreground">
-                {matching.length - 200} {tr("more — narrow the filter to see them.")} </p>
+                {matching.length - 200} {tr("more — narrow the filter to see them.")}</p>
             )}
             {matching.length === 0 && (
               <p className="px-3 py-2 text-xs text-muted-foreground">{tr("No host matches.")}</p>

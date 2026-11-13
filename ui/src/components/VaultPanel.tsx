@@ -1,13 +1,13 @@
-import { tr, useLocale } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import { ArchiveRestore, Download, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { vault, state, type RestorePreview, type VaultStatus } from '@/lib/api';
+import { tr, trn, useLocale } from '@/lib/i18n';
 
 /** Recovery travels as a passphrase-encrypted file. No plaintext credentials enter the UI. */
 export function VaultPanel() {
-  const locale = useLocale();
+  useLocale();
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [backupPhrase, setBackupPhrase] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -43,7 +43,7 @@ export function VaultPanel() {
           <h2 className="text-sm font-medium">{tr("A recovery copy you can take with you")}</h2>
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{tr("Your vault is encrypted with a key on this machine. Keep a recovery backup somewhere safe before moving to another computer or reinstalling. You will need its passphrase to restore it.")}</p>
           {status && <p className="mt-2 text-xs text-muted-foreground">{status.readable
-            ? (locale === 'en' ? status.servers + ' saved server' + (status.servers === 1 ? '' : 's') + ' · ' + status.secrets + ' encrypted secret' + (status.secrets === 1 ? '' : 's') : tr('{{servers}} saved server(s) · {{secrets}} encrypted secret(s)', { servers: status.servers, secrets: status.secrets }))
+            ? `${trn(status.servers, '{{n}} saved server', '{{n}} saved servers')} · ${trn(status.secrets, '{{n}} encrypted secret', '{{n}} encrypted secrets')}`
             : tr("The vault cannot be unlocked. Restore a recovery backup to recover access.")}</p>}
           <p className="mt-1 text-xs text-muted-foreground">{tr("Backups include saved servers and their credentials. Groups, preferences, host keys and original .env / TOML files need a separate backup.")}</p>
         </div>
@@ -84,14 +84,14 @@ export function VaultPanel() {
         <Input key={fileKey} id="recovery-file" type="file" accept=".json,application/json" disabled={busy || Boolean(preview)} onChange={event => {
           const file = event.target.files?.[0]; setPreview(null); setContent('');
           if (file) void run(async () => {
-            if (file.size > 16 * 1024 * 1024) throw new Error('Recovery files must be at most 16 MB. Use ssh-manager vault restore for larger files.');
+            if (file.size > 16 * 1024 * 1024) throw new Error(tr('Recovery files must be at most 16 MB. Use ssh-manager vault restore for larger files.'));
             setContent(await file.text());
           });
         }} />
         <label htmlFor="restore-passphrase" className="text-xs font-medium">{tr("Recovery passphrase")}</label>
         <Input id="restore-passphrase" type="password" autoComplete="off" disabled={busy || Boolean(preview)} required value={restorePhrase} onChange={event => { setRestorePhrase(event.target.value); setPreview(null); }} />
         {preview && <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3" aria-label={tr("Recovery preview")}>
-          <h4 className="text-sm font-medium">{tr("Ready to restore")} {preview.servers.length} {tr('server')}{locale === 'en' && preview.servers.length !== 1 ? 's' : ''}</h4>
+          <h4 className="text-sm font-medium">{trn(preview.servers.length, 'Ready to restore {{n}} server', 'Ready to restore {{n}} servers')}</h4>
           <ul className="max-h-40 overflow-y-auto text-sm">{preview.servers.map(name => <li key={name}>{name}{preview.conflicts.includes(name) ? tr(" — replaces saved server") : tr(" — adds server")}</li>)}</ul>
           {preview.replacesUnreadable && <p className="text-sm text-destructive">{tr("The unreadable vault will be replaced by this backup.")}</p>}
           {preview.removed.length > 0 && <p className="text-sm text-destructive">{tr("Servers missing from the backup will be removed:")} {preview.removed.join(', ')}.</p>}

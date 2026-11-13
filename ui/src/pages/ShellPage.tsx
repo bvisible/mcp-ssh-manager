@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -7,6 +6,7 @@ import { useTheme } from '@/stores/theme';
 import { TERMINAL_THEME } from '@/lib/terminal-theme';
 import { CommandsDropdown } from '@/components/commands/CommandsDropdown';
 import { CommandDialog } from '@/components/commands/CommandDialog';
+import { tr, useLocale } from '@/lib/i18n';
 
 
 

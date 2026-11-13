@@ -42,8 +42,11 @@
    Variable naming follows shadcn/ui conventions */
 @theme {
   --font-display: 'Forum', serif;
-  --font-body: 'Karla', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  /* The Chinese interface needs glyphs Karla and JetBrains Mono do not have.
+     The system's own CJK fonts follow as fallbacks only; Latin text is
+     unchanged, and no web font is added. */
+  --font-body: 'Karla', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace;
 
   --radius-sm: 4px;
   --radius-md: 6px;

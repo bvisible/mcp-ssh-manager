@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * The approval queue: what an agent wants to do, and your answer.
  *
@@ -20,6 +19,7 @@ import { EmptyState } from '@/components/layout/EmptyState';
 import { useWorkspace } from '@/stores/workspace';
 import { usePendingRequests } from '@/lib/use-pending';
 import { cn } from '@/lib/utils';
+import { tr, useLocale } from '@/lib/i18n';
 
 /** Seconds up to a minute, then minutes — nobody needs "waiting 143 s". */
 function formatWait(ms: number): string {
@@ -79,7 +79,7 @@ export function WaitingPage() {
           hint={tr("Nothing pauses here until you ask it to. Open a server, set Approval to destructive or always, and its agent will stop and wait for you before acting.")}
           action={
             <Button size="sm" onClick={() => setView('servers')}>
-              <ShieldCheck className="h-3.5 w-3.5" /> {tr("Set it up on a server")} </Button>
+              <ShieldCheck className="h-3.5 w-3.5" />{tr("Set it up on a server")}</Button>
           }
         />
       ) : (
@@ -103,7 +103,7 @@ export function WaitingPage() {
               {/* How long an agent has been blocked is the number that decides
                   whether you answer now or finish your sentence first. */}
               <span className="ml-auto inline-flex items-center gap-1.5 text-[13px] text-muted-foreground tabular-nums">
-                <Clock className="h-3.5 w-3.5" aria-hidden="true" /> {tr("waiting")} {formatWait(request.waitingMs)}
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" />{tr("waiting")} {formatWait(request.waitingMs)}
               </span>
             </div>
 
@@ -142,7 +142,7 @@ export function WaitingPage() {
                 disabled={deciding === request.id}
                 onClick={() => void decide(request.id, false)}
               >
-                <X className="h-4 w-4" /> {tr("Refuse")} </Button>
+                <X className="h-4 w-4" />{tr("Refuse")}</Button>
               <Button
                 variant={request.destructive ? 'destructive' : 'default'}
                 className={cn('h-11 px-5 font-bold')}

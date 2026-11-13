@@ -1,10 +1,10 @@
-import { tr, useLocale } from '@/lib/i18n';
 import * as React from 'react'
 import { XIcon } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { tr, useLocale } from '@/lib/i18n'
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />

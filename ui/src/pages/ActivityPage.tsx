@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * The audit trail: what was done, by whom, and what you answered.
  *
@@ -14,6 +13,7 @@ import { state, history as historyApi, type TimelineEntry, type CommandLogEntry 
 import { TerminalOutput } from '@/components/terminal/TerminalOutput';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
+import { tr, useLocale } from '@/lib/i18n';
 
 type Tab = 'commands' | 'decisions';
 
@@ -75,7 +75,7 @@ export function ActivityPage() {
             await historyApi.clear();
             setCommands([]);
           }}
-        > {tr("clear")} </button>
+        >{tr("clear")}</button>
       )}
     </PageHeader>
   );

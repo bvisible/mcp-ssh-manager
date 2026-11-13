@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * The terminal, as a place you can go rather than a button on a card.
  *
@@ -22,6 +21,7 @@ import { CommandDialog } from '@/components/commands/CommandDialog';
 import { useServersStore } from '@/stores/servers.store';
 import { useWorkspace } from '@/stores/workspace';
 import { commands as commandsApi, state, type SavedCommand } from '@/lib/api';
+import { tr, useLocale } from '@/lib/i18n';
 
 /** Ids have to be unique across tabs; the shape does not matter beyond that. */
 const newId = () => `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -109,7 +109,7 @@ export function TerminalPage() {
                 below is still empty. */}
             {localShell && (
               <section>
-                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground"> {tr("Here")} </h2>
+                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{tr("Here")}</h2>
                 <button
                   onClick={openLocalShell}
                   className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-card-hover sm:w-1/2 lg:w-1/3"
@@ -119,7 +119,7 @@ export function TerminalPage() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{tr("This machine")}</span>
-                    <span className="block truncate text-xs text-muted-foreground"> {tr("Your own shell, as you have it configured")} </span>
+                    <span className="block truncate text-xs text-muted-foreground">{tr("Your own shell, as you have it configured")}</span>
                   </span>
                   <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </button>
@@ -128,13 +128,13 @@ export function TerminalPage() {
 
             <section>
               {localShell && (
-                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground"> {tr("Somewhere else")} </h2>
+                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{tr("Somewhere else")}</h2>
               )}
               {servers.length === 0 ? (
                 <EmptyState
                   icon={TerminalSquare}
                   title={tr("No servers yet")}
-                  hint={tr('Add a connection under Servers, or import your existing configuration.')}
+                  hint={tr('Add one under Servers, or import what you already have with `ssh-manager import`.')}
                 />
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -185,9 +185,9 @@ export function TerminalPage() {
 
           <TabsContent value="commands" className="mt-0 space-y-4">
             <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground"> {tr("Picked from a list inside any shell, instead of typed again.")} </p>
+              <p className="text-xs text-muted-foreground">{tr("Picked from a list inside any shell, instead of typed again.")}</p>
               <Button size="sm" className="ml-auto" onClick={() => setCreating(true)}>
-                <Plus className="h-3.5 w-3.5" /> {tr("New command")} </Button>
+                <Plus className="h-3.5 w-3.5" />{tr("New command")}</Button>
             </div>
 
             {saved.length === 0 ? (
@@ -197,7 +197,7 @@ export function TerminalPage() {
                 hint={tr("Save the ones you type most. They appear in every shell, on the servers you choose.")}
                 action={
                   <Button size="sm" onClick={() => setCreating(true)}>
-                    <Plus className="h-3.5 w-3.5" /> {tr("Save a command")} </Button>
+                    <Plus className="h-3.5 w-3.5" />{tr("Save a command")}</Button>
                 }
               />
             ) : (
@@ -224,9 +224,9 @@ export function TerminalPage() {
                         onClick={() => setEditing(command)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" aria-label={`Delete ${command.name}`}
+                      <Button variant="ghost" size="icon" aria-label={tr('Delete {{name}}', { name: command.name })}
                         onClick={async () => {
-                          if (!window.confirm(`Delete “${command.name}”?`)) return;
+                          if (!window.confirm(tr('Delete “{{name}}”?', { name: command.name }))) return;
                           await commandsApi.remove(command.id);
                           void loadCommands();
                         }}>
@@ -240,7 +240,7 @@ export function TerminalPage() {
 
             {suggestions.length > 0 && (
               <div>
-                <h2 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground"> {tr("Suggestions")} </h2>
+                <h2 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground">{tr("Suggestions")}</h2>
                 {/* Offered, never installed. A list somebody did not choose is a
                     list they have to read past every time. */}
                 <div className="flex flex-wrap gap-1.5">

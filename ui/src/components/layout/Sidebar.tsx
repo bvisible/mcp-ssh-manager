@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * The rail, carried over from TransHub with the AI-chat parts removed.
  *
@@ -25,6 +24,7 @@ import { useAppUpdate } from '@/stores/appUpdate.store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { needsTitleBarRoom, hasOverlayControls } from '@/lib/desktop'
 import { ConnectionBadge } from '@/components/layout/ConnectionStatus'
+import { tr, useLocale } from '@/lib/i18n'
 
 type NavItem = { id: ViewId; label: string; icon: React.ComponentType<{ className?: string }> }
 
@@ -364,7 +364,7 @@ function SessionItem({
   }
 
   const Icon = session.type === 'dual-browser' ? FolderOpen : TerminalSquare
-  const kind = session.type === 'dual-browser' ? tr('Files') : tr('Shell')
+  const kind = session.type === 'dual-browser' ? tr('files') : tr('shell')
   const initials = getInitials(session.title)
 
   const button = (

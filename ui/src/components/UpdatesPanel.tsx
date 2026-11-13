@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * Options → Updates: which version this is, whether there is a newer one, and
  * the clicks that act on it. Only drawn inside the desktop application (the
@@ -15,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAppUpdate } from '@/stores/appUpdate.store';
 import { useWorkspace } from '@/stores/workspace';
+import { tr, trn, useLocale } from '@/lib/i18n';
 
 const RELEASES = 'https://github.com/bvisible/mcp-ssh-manager/releases';
 
@@ -59,18 +59,18 @@ export function UpdatesPanel() {
               {info.error ? tr("Could not check for updates.") : info.checkedAt ? tr("You are up to date.") : tr("Not checked yet.")}
             </p>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void check()}>
-              <RefreshCw className="h-3.5 w-3.5" /> {tr("Check now")} </Button>
+              <RefreshCw className="h-3.5 w-3.5" />{tr("Check now")}</Button>
           </div>
         )}
 
         {status === 'available' && (
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{tr("Version")} {info.version} {tr("is available")}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground"> {tr("Downloading does not change anything you are running; you choose when to restart.")} </p>
+              <p className="text-sm font-medium">{tr('Version {{version}} is available', { version: info.version })}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{tr("Downloading does not change anything you are running; you choose when to restart.")}</p>
             </div>
             <Button size="sm" disabled={busy} onClick={() => void download()}>
-              <Download className="h-3.5 w-3.5" /> {tr("Download")} {info.version}
+              <Download className="h-3.5 w-3.5" />{tr("Download")} {info.version}
             </Button>
           </div>
         )}
@@ -95,15 +95,18 @@ export function UpdatesPanel() {
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{tr("Version")} {info.version} {tr("is ready to install")}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground"> {tr("It installs when you restart, or by itself the next time you quit.")} </p>
+                <p className="text-sm font-medium">{tr('Version {{version}} is ready to install', { version: info.version })}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{tr("It installs when you restart, or by itself the next time you quit.")}</p>
               </div>
               <Button size="sm" disabled={busy} onClick={() => void install()}>
-                <RotateCw className="h-3.5 w-3.5" /> {tr("Restart to update")} </Button>
+                <RotateCw className="h-3.5 w-3.5" />{tr("Restart to update")}</Button>
             </div>
             {pending > 0 && (
               <p role="alert" className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
-                {tr('{{count}} commands are waiting. Restarting refuses these requests.', { count: pending })} </p>
+                {trn(pending,
+                  '{{n}} command is waiting for your decision. Restarting drops it: the agent will be told no.',
+                  '{{n}} commands are waiting for your decision. Restarting drops them: the agents will be told no.')}
+              </p>
             )}
           </div>
         )}
@@ -133,7 +136,7 @@ export function UpdatesPanel() {
         )}
       </div>
 
-      <p className="text-xs leading-relaxed text-muted-foreground"> {tr("The application checks when it starts and every six hours, and tells you here, in the sidebar and once per version in a notification. The npm engine, if you use one, is updated with npm and is not part of this.")} </p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{tr("The application checks when it starts and every six hours, and tells you here, in the sidebar and once per version in a notification. The npm engine, if you use one, is updated with npm and is not part of this.")}</p>
     </div>
   );
 }

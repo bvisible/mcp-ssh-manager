@@ -1,10 +1,10 @@
-import { tr, useLocale } from '@/lib/i18n';
 import { cloneElement, useId, useState, type ReactElement } from 'react';
 import { ChevronDown, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { servers as api, type ServerConfig } from '@/lib/api';
+import { tr, useLocale } from '@/lib/i18n';
 
 const BLANK: ServerConfig = { id: '', name: '', host: '', port: 22, username: '', mode: 'unrestricted', approval: 'never' };
 const inputClass = 'w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring';

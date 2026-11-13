@@ -1,4 +1,3 @@
-import { tr, useLocale } from '@/lib/i18n';
 /**
  * The server list. `ServerGrid`, `CategoryGroup` and `ServerCard` came from
  * TransHub; this page is the toolbar around them and the wiring to the vault.
@@ -22,6 +21,7 @@ import { useWorkspace } from '@/stores/workspace';
 import { ImportDialog } from '@/components/servers/ImportDialog';
 import { usePendingRequests } from '@/lib/use-pending';
 import { cn } from '@/lib/utils';
+import { tr, trn, useLocale } from '@/lib/i18n';
 
 
 export function ServersPage() {
@@ -88,7 +88,10 @@ export function ServersPage() {
       <PageHeader
         title={tr("Servers")}
         hint={servers.length > 0
-          ? tr('{{servers}} server(s) in {{groups}} group(s). Your agents reach them through this engine.', { servers: servers.length, groups: groups.length })
+          ? tr('{{servers}} in {{groups}}. Your agents reach them through this engine.', {
+            servers: trn(servers.length, '{{n}} server', '{{n}} servers'),
+            groups: trn(groups.length, '{{n}} group', '{{n}} groups'),
+          })
           : undefined}
         actions={
           <>
@@ -106,9 +109,9 @@ export function ServersPage() {
                 the CLI, which made seven working format readers invisible to
                 anybody who had not read the source. */}
             <Button variant="outline" onClick={() => setImporting(true)}>
-              <Download className="h-4 w-4" /> {tr("Import")} </Button>
+              <Download className="h-4 w-4" />{tr("Import")}</Button>
             <Button className="font-bold" onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" /> {tr("Add a server")} </Button>
+              <Plus className="h-4 w-4" />{tr("Add a server")}</Button>
           </>
         }
       />

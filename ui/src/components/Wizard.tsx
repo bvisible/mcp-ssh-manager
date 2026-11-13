@@ -1,10 +1,10 @@
-import { tr, useLocale } from '@/lib/i18n';
 import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Download, LockKeyhole, Monitor, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useWorkspace } from '@/stores/workspace';
 import { readPreference, writePreference } from '@/lib/preferences';
+import { tr, useLocale } from '@/lib/i18n';
 
 const SEEN_KEY = 'ssh-manager.wizard-seen';
 export const wizardSeen = () => readPreference(SEEN_KEY) === 'true';
@@ -113,7 +113,7 @@ export function Wizard({ onClose }: { onClose: () => void }) {
                 : <Button size="sm" onClick={() => setStep(step + 1)}>{tr("Next")} <ArrowRight className="h-3.5 w-3.5" /></Button>}
             </div>
             <div className="mt-auto flex items-center justify-between gap-3 pt-6">
-              <span aria-label={`Step ${step + 1} of ${STEPS.length}`} className="flex items-center gap-1.5">
+              <span aria-label={tr('Step {{step}} of {{total}}', { step: step + 1, total: STEPS.length })} className="flex items-center gap-1.5">
                 {STEPS.map((_, i) => <span key={i} className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${i <= step ? 'bg-primary/15 text-foreground' : 'bg-muted text-muted-foreground'}`}>
                   {i < step ? <Check className="h-3 w-3" /> : i + 1}
                 </span>)}
