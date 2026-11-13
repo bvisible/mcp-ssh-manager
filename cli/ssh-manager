@@ -99,6 +99,7 @@ show_help() {
     vault status                  Where it and its key live
     vault add|remove <name>       One server in or out
     vault backup|restore <file>   A recovery file, under a passphrase
+    codex setup|status            Point Codex at this engine
     guard install|remove|status   Keep agents off raw ssh in their shell
     guard print                   What install would write, nothing changed
     import <file>                 A spreadsheet, CSV, ~/.ssh/config, FileZilla,
@@ -383,6 +384,11 @@ main() {
             # Node, because it writes through the same SecretStore the engine
             # reads — one code path, so the two cannot disagree.
             node "$SCRIPT_DIR/portability.js" "$command" "$@"
+            ;;
+        codex)
+            # Codex's ssh-manager entry, through the same code as the interface's
+            # AI tools panel. Node, so it writes the file the way the engine does.
+            node "$SCRIPT_DIR/codex.js" "$@"
             ;;
         guard)
             # Opt-in Claude Code hook against raw ssh. Node, like vault: it edits

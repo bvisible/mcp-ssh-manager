@@ -57,7 +57,7 @@ Once installed, simply ask Claude Code:
 
 ```bash
 ssh-manager codex setup
-ssh-manager codex migrate
+ssh-manager export servers.toml
 ```
 
 Configure in `~/.codex/config.toml`:
