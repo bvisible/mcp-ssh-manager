@@ -41,7 +41,9 @@ const ICONS = {
 // Field names whose values must never be written to a log, matched
 // case-insensitively against the whole key (so `sudoPassword`, `SSH_PASSWORD`
 // and `passphrase` are all caught).
-const SECRET_KEY_PATTERN = /(pass(word|phrase)?|secret|token|credential|privatekey|private_key|apikey|api_key|auth)/i;
+// Exported so the audit log and the approval request redact with the same rule:
+// a list of its own went stale (dbPassword reached the audit log in clear text).
+export const SECRET_KEY_PATTERN = /(pass(word|phrase)?|secret|token|credential|privatekey|private_key|apikey|api_key|auth)/i;
 const REDACTED = '[redacted]';
 
 /**

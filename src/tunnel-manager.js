@@ -72,6 +72,8 @@ class SSHTunnel {
     this.createdAt = new Date();
     this.lastActivity = new Date();
     this.connections = new Set();
+    /** @type {((info: any, accept: () => any) => void) | null} */
+    this.onRemoteConnection = null;
     this.server = null;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
@@ -213,8 +215,9 @@ class SSHTunnel {
     });
     await forwarded;
 
-    // Handle incoming connections from remote
-    this.ssh.on('tcp connection', (info, accept) => {
+    // Handle incoming connections from remote. The listener is kept so close()
+    // can take it off the shared connection: other tunnels use it too.
+    this.onRemoteConnection = (info, accept) => {
       if (info.destPort !== remotePort) return;
 
       this.stats.connectionsTotal++;
@@ -258,7 +261,8 @@ class SSHTunnel {
 
       remoteSocket.on('close', cleanup);
       localSocket.on('close', cleanup);
-    });
+    };
+    this.ssh.on('tcp connection', this.onRemoteConnection);
 
     logger.info('Remote forwarding established', {
       local: `${localHost}:${localPort}`,
@@ -421,7 +425,13 @@ class SSHTunnel {
 
     // Cancel remote forwarding if needed
     if (this.type === TUNNEL_TYPES.REMOTE) {
-      this.ssh.unforwardIn(this.config.remoteHost, this.config.remotePort);
+      if (this.onRemoteConnection) this.ssh.off('tcp connection', this.onRemoteConnection);
+      try {
+        this.ssh.unforwardIn(this.config.remoteHost, this.config.remotePort);
+      } catch (error) {
+        // The connection may already be gone; the server drops the forward with it.
+        logger.warn(`Could not cancel remote forwarding for tunnel ${this.id}`, { error: error.message });
+      }
     }
 
     tunnels.delete(this.id);

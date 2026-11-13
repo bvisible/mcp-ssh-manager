@@ -269,6 +269,29 @@ test('auditLog redacts secrets in args', () => {
   }
 });
 
+test('auditLog redacts database passwords, whatever the spelling of the key', () => {
+  _resetWarnedPaths();
+  const tmpFile = path.join(os.tmpdir(), `ssh-audit-dbpass-${Date.now()}.log`);
+  try {
+    auditLog(
+      { name: 'prod', auditLog: tmpFile },
+      'ssh_db_import',
+      { database: 'shop', dbUser: 'app', dbPassword: 'db-secret-1', db_password: 'db-secret-2', nested: { DB_PASSWORD: 'db-secret-3', apiKey: 'k', passphrase: 'p' } },
+      { allowed: false, reason: 'readonly' }
+    );
+    const text = fs.readFileSync(tmpFile, 'utf8');
+    assertTrue(!/db-secret-[123]/.test(text), 'no database password in the file');
+    const entry = JSON.parse(text.trim());
+    assertEqual(entry.args.dbPassword, '***', 'dbPassword redacted');
+    assertEqual(entry.args.db_password, '***', 'db_password redacted');
+    assertEqual(entry.args.nested.DB_PASSWORD, '***', 'nested DB_PASSWORD redacted');
+    assertEqual(entry.args.database, 'shop', 'database name preserved');
+    assertEqual(entry.args.dbUser, 'app', 'database user preserved');
+  } finally {
+    if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+  }
+});
+
 test('auditLog records denials with reason', () => {
   _resetWarnedPaths();
   const tmpFile = path.join(os.tmpdir(), `ssh-audit-deny-${Date.now()}.log`);

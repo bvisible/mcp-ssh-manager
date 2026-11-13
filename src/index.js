@@ -522,6 +522,13 @@ function connectionMatchesConfig(name, servers, seen = new Set()) {
   return !jump || connectionMatchesConfig(jump, servers, seen);
 }
 
+// Connections being established, by server. Six simultaneous calls on a cold
+// engine used to open six SSH connections: every one was kept open, five of them
+// unreachable once the last was stored, and the burst of logins is what a
+// server's MaxStartups or fail2ban refuses.
+/** @type {Map<string, Promise<any>>} */
+const pendingConnections = new Map();
+
 // Get or create SSH connection with reconnection support
 async function getConnection(serverName) {
   const servers = await loadServerConfig();
@@ -569,7 +576,27 @@ async function getConnection(serverName) {
     }
   }
 
-  // Create new connection
+  // Callers that arrive while a connection to this server is being established
+  // wait for it instead of opening their own.
+  const inProgress = pendingConnections.get(normalizedName);
+  if (inProgress) return inProgress;
+  const establishing = openConnection(serverName, normalizedName, serverConfig, servers);
+  pendingConnections.set(normalizedName, establishing);
+  try {
+    return await establishing;
+  } finally {
+    pendingConnections.delete(normalizedName);
+  }
+}
+
+/**
+ * Open, register and return a new connection to a configured server.
+ * @param {string} serverName - The name the caller used (for logs and hooks)
+ * @param {string} normalizedName - The configured server it resolves to
+ * @param {any} serverConfig
+ * @param {Record<string, any>} servers
+ */
+async function openConnection(serverName, normalizedName, serverConfig, servers) {
   const ssh = new SSHManager(serverConfig);
 
   try {
@@ -2955,6 +2982,7 @@ registerToolConditional(
     } catch (error) {
       logger.error('Failed to create tunnel', { error: error.message });
       return {
+        isError: true,
         content: [
           {
             type: 'text',

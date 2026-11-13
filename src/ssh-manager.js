@@ -724,6 +724,57 @@ class SSHManager {
     });
   }
 
+  /**
+   * Ask the server to listen on remoteHost:remotePort and send each connection
+   * back over this one (ssh -R). Remote tunnels call it on this wrapper, which
+   * until now only had forwardOut: every remote tunnel failed with
+   * "forwardIn is not a function".
+   * @param {string} remoteHost
+   * @param {number} remotePort
+   * @param {(error?: Error, boundPort?: number) => void} callback
+   */
+  forwardIn(remoteHost, remotePort, callback) {
+    if (!this.connected) {
+      callback(new Error('Not connected to SSH server'));
+      return;
+    }
+    this.client.forwardIn(remoteHost, remotePort, callback);
+  }
+
+  /**
+   * Stop a remote forward asked for with forwardIn.
+   * @param {string} remoteHost
+   * @param {number} remotePort
+   * @param {(error?: Error) => void} [callback]
+   */
+  unforwardIn(remoteHost, remotePort, callback) {
+    if (!this.connected) {
+      callback?.(new Error('Not connected to SSH server'));
+      return;
+    }
+    this.client.unforwardIn(remoteHost, remotePort, callback);
+  }
+
+  /**
+   * Listen to an event of the underlying ssh2 connection ('tcp connection'
+   * for remote forwards).
+   * @param {string} event
+   * @param {(...args: any[]) => void} listener
+   */
+  on(event, listener) {
+    this.client.on(event, listener);
+    return this;
+  }
+
+  /**
+   * @param {string} event
+   * @param {(...args: any[]) => void} listener
+   */
+  off(event, listener) {
+    this.client.off(event, listener);
+    return this;
+  }
+
   async ping() {
     try {
       // Use `echo ping` WITHOUT quotes: cmd.exe echoes surrounding quotes
