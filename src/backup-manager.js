@@ -8,6 +8,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { logger } from './logger.js';
 import { shellQuote, safeInteger } from './shell-quote.js';
+import { guardedDump, guardedFeed, mongoArchivePath } from './dump-guard.js';
 
 // Backup types
 export const BACKUP_TYPES = {
@@ -91,6 +92,18 @@ export function getBackupFilePath(backupId, backupDir = DEFAULT_BACKUP_DIR, exte
 }
 
 /**
+ * The extension of the file (or directory) a backup of this kind is stored as.
+ * MongoDB is the one that differs: a compressed dump is the archive mongoArchivePath()
+ * names, <id>.tar.gz, and an uncompressed one is the dump directory itself.
+ * @param {string} type
+ * @param {boolean} [compressed]
+ */
+export function backupExtension(type, compressed = true) {
+  if (type !== BACKUP_TYPES.MONGODB) return '.gz';
+  return compressed ? '.tar.gz' : '';
+}
+
+/**
  * Build MySQL dump command
  */
 export function buildMySQLDumpCommand(options) {
@@ -121,13 +134,8 @@ export function buildMySQLDumpCommand(options) {
   command += ` ${shellQuote(database)}`;
 
   // Output handling
-  if (compress) {
-    command += ` | gzip > ${shellQuote(outputFile)}`;
-  } else {
-    command += ` > ${shellQuote(outputFile)}`;
-  }
-
-  return command;
+  // A producer that fails must fail the whole command and leave no file: see dump-guard.js.
+  return guardedDump(command, outputFile, compress);
 }
 
 /**
@@ -164,13 +172,8 @@ export function buildPostgreSQLDumpCommand(options) {
   command += ` ${shellQuote(database)}`;
 
   // Output handling
-  if (compress) {
-    command += ` | gzip > ${shellQuote(outputFile)}`;
-  } else {
-    command += ` > ${shellQuote(outputFile)}`;
-  }
-
-  return command;
+  // A producer that fails must fail the whole command and leave no file: see dump-guard.js.
+  return guardedDump(command, outputFile, compress);
 }
 
 /**
@@ -203,7 +206,7 @@ export function buildMongoDBDumpCommand(options) {
 
   // Compress the output directory
   if (compress) {
-    const archiveName = `${outputDir}.tar.gz`;
+    const archiveName = mongoArchivePath(outputDir);
     // dirname/basename receive the quoted value, so the substitution itself
     // cannot be steered by the caller.
     command += ` && tar -czf ${shellQuote(archiveName)} -C "$(dirname ${shellQuote(outputDir)})" "$(basename ${shellQuote(outputDir)})"`;
@@ -283,14 +286,7 @@ function buildMySQLRestoreCommand(backupFile, options) {
 
   let command = '';
 
-  // Decompress if needed
-  if (backupFile.endsWith('.gz')) {
-    command = `gunzip -c ${shellQuote(backupFile)} | `;
-  } else {
-    command = `cat ${shellQuote(backupFile)} | `;
-  }
-
-  command += 'mysql';
+  command = 'mysql';
 
   // Connection parameters
   if (user) command += ` -u${shellQuote(user)}`;
@@ -299,7 +295,9 @@ function buildMySQLRestoreCommand(backupFile, options) {
   if (port) command += ` -P ${safeInteger(port, 3306)}`;
   if (database) command += ` ${shellQuote(database)}`;
 
-  return command;
+  // A gzip file is verified whole before mysql reads a byte of it (dump-guard.js).
+  if (backupFile.endsWith('.gz')) return guardedFeed(backupFile, command);
+  return `cat ${shellQuote(backupFile)} | ${command}`;
 }
 
 /**
@@ -331,11 +329,8 @@ function buildPostgreSQLRestoreCommand(backupFile, options) {
   command += ' --clean --if-exists';
 
   // Handle compressed files
-  if (backupFile.endsWith('.gz')) {
-    command = `gunzip -c ${shellQuote(backupFile)} | ${command}`;
-  } else {
-    command += ` ${shellQuote(backupFile)}`;
-  }
+  if (backupFile.endsWith('.gz')) return guardedFeed(backupFile, command);
+  command += ` ${shellQuote(backupFile)}`;
 
   return command;
 }

@@ -23,6 +23,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import zlib from 'zlib';
 import {
   buildMySQLDumpCommand,
   buildPostgreSQLDumpCommand,
@@ -273,14 +274,27 @@ function testBackupIdIsAFileName() {
 
 function testBenignValuesStillWork() {
   // Quoting must not break ordinary use — a fix nobody can use is not a fix.
+  // The command is run for real, with a dump program that records what it was
+  // given: the values must arrive whole (a password with a space, a path with
+  // one), and the dump must land at the path asked for.
+  const dir = fs.mkdtempSync(path.join(workRoot, 'benign-'));
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  const argvFile = path.join(dir, 'argv');
+  fs.writeFileSync(path.join(bin, 'mysqldump'),
+    `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a" >> "${argvFile}"; done\necho 'CREATE TABLE t (id int);'\n`, { mode: 0o755 });
+  const outputFile = path.join(dir, 'my backups', 'app.sql.gz');
+  fs.mkdirSync(path.dirname(outputFile));
   const cmd = buildMySQLDumpCommand({
     database: 'my_app', user: 'backup', password: 'p@ss w0rd', host: 'db.internal',
-    port: 3306, outputFile: '/var/backups/app.sql.gz', compress: true
+    port: 3306, outputFile, compress: true
   });
-  assert.ok(cmd.includes("'my_app'"), 'database must be quoted');
-  assert.ok(cmd.includes("'p@ss w0rd'"), 'a password with a space must survive quoting');
-  assert.ok(cmd.includes("| gzip > '/var/backups/app.sql.gz'"), 'the output path must be quoted');
-  assert.ok(cmd.startsWith('mysqldump'), 'the command itself must be unchanged');
+  execSync(cmd, { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, stdio: 'pipe' });
+  const argv = fs.readFileSync(argvFile, 'utf8').split('\n');
+  assert.ok(argv.includes('my_app'), 'the database name arrives whole');
+  assert.ok(argv.includes('-pp@ss w0rd'), 'a password with a space must survive quoting');
+  assert.ok(argv.includes('-ubackup') && argv.includes('db.internal'), 'user and host arrive');
+  assert.equal(zlib.gunzipSync(fs.readFileSync(outputFile)).toString(), 'CREATE TABLE t (id int);\n', 'the dump is at the path asked for, with a space in it');
 
   const svc = buildServiceStatusCommand('nginx');
   assert.ok(svc.includes("systemctl is-active 'nginx'"), 'a plain service name must still work');
