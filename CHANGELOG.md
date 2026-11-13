@@ -45,10 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `package.json` line aside. Remove the entry once `app-builder-lib` itself
   requires `minimatch` 11.0.1 or later.
 
-- **`@hono/node-server` 2.1.8 in the lockfile** (GHSA-qv5m-9pm6-hqp3,
-  GHSA-jpvv-r467-5p4w, both moderate). The MCP SDK pulls it for its HTTP
-  transport; the stdio server this package runs never imports it, so nothing
-  was exposed.
+- **`@hono/node-server` 2.1.8 and `hono` 4.13.18 in the lockfile.** Two
+  moderate advisories for the first (GHSA-qv5m-9pm6-hqp3, GHSA-jpvv-r467-5p4w),
+  five for the second (four moderate, one low: GHSA-46wx-v44x-9hh2,
+  GHSA-4h7h-rv7c-7m2v, GHSA-4m76-xfj5-7975, GHSA-h7mg-cq63-vhpq,
+  GHSA-3gg2-335m-rxc6). The MCP SDK pulls both for its HTTP transport; the
+  stdio server this package runs never imports them, so nothing was exposed.
 
 ## [4.0.3] - 2026-11-05
 
