@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * Create or edit a server group.
  *
@@ -26,6 +27,7 @@ export function GroupDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  useLocale();
   const allServers = useServersStore(s => s.servers);
   const [name, setName] = useState(group?.name ?? '');
   const [description, setDescription] = useState(group?.description ?? '');
@@ -48,16 +50,15 @@ export function GroupDialog({
     <Dialog open onOpenChange={open => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{group ? `Edit ${group.name}` : 'New group'}</DialogTitle>
-          <DialogDescription>
-            A group runs one command across several machines. Stored in{' '}
+          <DialogTitle>{group ? tr("Edit {{v0}}", { v0: group.name }) : tr("New group")}</DialogTitle>
+          <DialogDescription> {tr("A group runs one command across several machines. Stored in")}{' '}
             <code className="font-mono text-xs">.server-groups.json</code>.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Name</Label>
+            <Label>{tr("Name")}</Label>
             <Input
               value={name}
               disabled={Boolean(group)}
@@ -67,21 +68,17 @@ export function GroupDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Description <span className="font-normal text-muted-foreground">optional</span></Label>
+            <Label>{tr("Description")} <span className="font-normal text-muted-foreground">{tr("optional")}</span></Label>
             <Input value={description} onChange={e => setDescription(e.target.value)} />
           </div>
 
           <div className="grid gap-1.5">
-            <Label>
-              Servers
-              <span className="ml-1.5 font-normal text-muted-foreground">
-                {selected.size} of {allServers.length}
+            <Label> {tr("Servers")} <span className="ml-1.5 font-normal text-muted-foreground">
+                {selected.size} {tr("of")} {allServers.length}
               </span>
             </Label>
             {allServers.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No server in the vault yet — add one first.
-              </p>
+              <p className="text-xs text-muted-foreground"> {tr("No server in the vault yet — add one first.")} </p>
             ) : (
               <div className="flex flex-wrap gap-1.5 rounded-md border border-border p-2">
                 {allServers.map(server => (
@@ -104,20 +101,18 @@ export function GroupDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Order</Label>
+              <Label>{tr("Order")}</Label>
               <select
                 value={strategy}
                 onChange={e => setStrategy(e.target.value as 'parallel' | 'sequential')}
                 className="h-9 rounded-md border border-input bg-transparent px-3 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
               >
-                <option value="parallel">all at once</option>
-                <option value="sequential">one after another</option>
+                <option value="parallel">{tr("all at once")}</option>
+                <option value="sequential">{tr("one after another")}</option>
               </select>
             </div>
             <div className="grid gap-1.5">
-              <Label>
-                Delay
-                <span className="ml-1.5 font-normal text-muted-foreground">ms between servers</span>
+              <Label> {tr("Delay")} <span className="ml-1.5 font-normal text-muted-foreground">{tr("ms between servers")}</span>
               </Label>
               <Input
                 type="number"
@@ -134,20 +129,16 @@ export function GroupDialog({
               checked={stopOnError}
               onChange={e => setStopOnError(e.target.checked)}
               className="h-3.5 w-3.5"
-            />
-            Stop at the first failure
-            <span className="text-xs text-muted-foreground">
+            /> {tr("Stop at the first failure")} <span className="text-xs text-muted-foreground">
               {/* Which one you want depends on the command, and getting it
-                  wrong is expensive in opposite directions. */}
-              — otherwise every server is attempted
-            </span>
+                  wrong is expensive in opposite directions. */} {tr("— otherwise every server is attempted")} </span>
           </label>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>{tr("Cancel")}</Button>
           <Button
             disabled={saving || !name || selected.size === 0}
             onClick={async () => {
@@ -170,7 +161,7 @@ export function GroupDialog({
               }
             }}
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? tr("Saving…") : tr("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The approval queue: what an agent wants to do, and your answer.
  *
@@ -31,6 +32,7 @@ function formatWait(ms: number): string {
 const MODE_LABEL = { readonly: 'read only', restricted: 'restricted', unrestricted: 'unrestricted' } as const;
 
 export function WaitingPage() {
+  useLocale();
   const setView = useWorkspace(state => state.setView);
   const { pending, drop } = usePendingRequests();
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -62,24 +64,22 @@ export function WaitingPage() {
           empty state, as this used to, made the screen look like a different
           application from the one next to it in the rail. */}
       <PageHeader
-        title="Waiting"
+        title={tr("Waiting")}
         count={pending.length}
-        hint="An agent paused on these commands. Nothing runs until you decide."
+        hint={tr("An agent paused on these commands. Nothing runs until you decide.")}
       />
 
       {pending.length === 0 ? (
         <EmptyState
           icon={Clock}
-          title="Nothing is waiting"
+          title={tr("Nothing is waiting")}
           // This screen used to explain where approval is configured and then
           // leave you to find it. Saying "it is set on the server" to somebody
           // looking at an empty queue is an instruction with no door attached.
-          hint="Nothing pauses here until you ask it to. Open a server, set Approval to destructive or always, and its agent will stop and wait for you before acting."
+          hint={tr("Nothing pauses here until you ask it to. Open a server, set Approval to destructive or always, and its agent will stop and wait for you before acting.")}
           action={
             <Button size="sm" onClick={() => setView('servers')}>
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Set it up on a server
-            </Button>
+              <ShieldCheck className="h-3.5 w-3.5" /> {tr("Set it up on a server")} </Button>
           }
         />
       ) : (
@@ -97,21 +97,20 @@ export function WaitingPage() {
               </span>
               {request.mode !== 'unrestricted' && (
                 <span className="inline-flex h-6 items-center rounded-md bg-secondary px-2 text-xs text-secondary-foreground">
-                  {MODE_LABEL[request.mode]}
+                  {tr(MODE_LABEL[request.mode])}
                 </span>
               )}
               {/* How long an agent has been blocked is the number that decides
                   whether you answer now or finish your sentence first. */}
               <span className="ml-auto inline-flex items-center gap-1.5 text-[13px] text-muted-foreground tabular-nums">
-                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                waiting {formatWait(request.waitingMs)}
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" /> {tr("waiting")} {formatWait(request.waitingMs)}
               </span>
             </div>
 
             {request.destructive && (
               <div className="flex items-start gap-2.5 bg-destructive-light px-5 py-3 text-sm text-destructive">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                <p><b>Destructive.</b> This command can delete or overwrite data, and nothing on the server will undo it.</p>
+                <p><b>{tr("Destructive.")}</b> {tr("This command can delete or overwrite data, and nothing on the server will undo it.")}</p>
               </div>
             )}
 
@@ -120,13 +119,13 @@ export function WaitingPage() {
             <div className="px-5 py-4">
               <div className="flex items-start gap-2 rounded-lg border border-border bg-secondary py-3 pl-4 pr-2">
                 <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[14.5px] leading-relaxed">
-                  {request.command || '(no command)'}
+                  {request.command || tr("(no command)")}
                 </pre>
                 {request.command && (
                   <button
                     type="button"
-                    aria-label={copied === request.id ? 'Copied' : 'Copy the command'}
-                    title={copied === request.id ? 'Copied' : 'Copy the command'}
+                    aria-label={copied === request.id ? tr("Copied") : tr("Copy the command")}
+                    title={copied === request.id ? tr("Copied") : tr("Copy the command")}
                     onClick={() => void copy(request.id, request.command!)}
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
                   >
@@ -143,9 +142,7 @@ export function WaitingPage() {
                 disabled={deciding === request.id}
                 onClick={() => void decide(request.id, false)}
               >
-                <X className="h-4 w-4" />
-                Refuse
-              </Button>
+                <X className="h-4 w-4" /> {tr("Refuse")} </Button>
               <Button
                 variant={request.destructive ? 'destructive' : 'default'}
                 className={cn('h-11 px-5 font-bold')}
@@ -153,7 +150,7 @@ export function WaitingPage() {
                 onClick={() => void decide(request.id, true)}
               >
                 <Check className="h-4 w-4" />
-                {request.destructive ? 'Approve and run' : 'Approve'}
+                {request.destructive ? tr("Approve and run") : tr("Approve")}
               </Button>
             </div>
           </article>

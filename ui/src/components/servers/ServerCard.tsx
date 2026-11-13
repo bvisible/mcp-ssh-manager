@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 import { useState, useCallback } from 'react'
 import { Monitor, FolderOpen, Terminal, Pencil, Trash2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -27,6 +28,7 @@ interface ServerCardProps {
 }
 
 export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: ServerCardProps) {
+  useLocale();
   const { t } = useTranslation()
   const { addTab, activateTab } = useWorkspaceStore()
   const [dupDialog, setDupDialog] = useState<{
@@ -117,7 +119,7 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
 
   // What is open on this machine, in words: two green glyphs in a corner
   // said the same thing to somebody who already knew what they meant.
-  const openLabel = hasBrowser && hasTerminal ? 'files and shell open' : hasBrowser ? 'files open' : 'shell open'
+  const openLabel = hasBrowser && hasTerminal ? tr("files and shell open") : hasBrowser ? tr("files open") : tr("shell open")
   const address = `${server.username}@${server.host}`
 
   if (viewMode === 'list') {
@@ -235,13 +237,9 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
           ) : (
             <>
               <Button variant="outline" size="sm" aria-label={t('actions.browse')} onClick={openFileBrowser}>
-                <FolderOpen className="h-3.5 w-3.5" />
-                Files
-              </Button>
-              <Button variant="outline" size="sm" aria-label="Open a shell" onClick={openSshTerminal}>
-                <Terminal className="h-3.5 w-3.5" />
-                Shell
-              </Button>
+                <FolderOpen className="h-3.5 w-3.5" /> {tr("Files")} </Button>
+              <Button variant="outline" size="sm" aria-label={tr("Open a shell")} onClick={openSshTerminal}>
+                <Terminal className="h-3.5 w-3.5" /> {tr("Shell")} </Button>
             </>
           )}
         </div>
@@ -258,19 +256,20 @@ export function ServerCard({ server, editMode, viewMode, onEdit, onDelete }: Ser
  * acts is recognisable across the room.
  */
 function ServerProtection({ server }: { server: ServerConfig }) {
+  useLocale();
   const approval = server.approval ?? 'never';
   const chip = 'inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs'
   return <div className="flex flex-wrap items-center gap-1.5">
     {server.mode === 'readonly'
-      ? <span className={cn(chip, 'bg-info-light font-bold text-info')}>Read only</span>
+      ? <span className={cn(chip, 'bg-info-light font-bold text-info')}>{tr("Read only")}</span>
       : server.mode === 'restricted'
-        ? <span className={cn(chip, 'bg-warning-light font-bold text-warning')}>Restricted</span>
-        : <span className={cn(chip, 'border border-border text-muted-foreground')}>Unrestricted</span>}
+        ? <span className={cn(chip, 'bg-warning-light font-bold text-warning')}>{tr("Restricted")}</span>
+        : <span className={cn(chip, 'border border-border text-muted-foreground')}>{tr("Unrestricted")}</span>}
     {approval === 'never'
-      ? <span className={cn(chip, 'border border-border text-muted-foreground')}>Approval off</span>
+      ? <span className={cn(chip, 'border border-border text-muted-foreground')}>{tr("Approval off")}</span>
       : <span className={cn(chip, 'bg-accent font-bold text-accent-foreground')}>
         <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-        {approval === 'always' ? 'Approval: every request' : 'Approval: destructive'}
+        {approval === 'always' ? tr("Approval: every request") : tr("Approval: destructive")}
       </span>}
   </div>;
 }
@@ -287,6 +286,7 @@ function ActionButton({
   onClick: () => void
   variant?: 'destructive'
 }) {
+  useLocale();
   return (
     <Tooltip>
       <TooltipTrigger asChild>

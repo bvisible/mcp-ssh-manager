@@ -1,3 +1,4 @@
+import { setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
 /**
  * Groups, known host keys, tunnels — the state that lives in files and can
  * therefore be read from here.
@@ -40,6 +41,7 @@ const THEMES: { id: ThemeMode; label: string; hint: string; icon: React.Componen
  * do the second time.
  */
 function ThemePicker() {
+  useLocale();
   const { mode, resolved, setMode } = useTheme();
   return (
     <div className="grid gap-2 sm:grid-cols-3">
@@ -60,12 +62,12 @@ function ThemePicker() {
           >
             <div className="flex items-center gap-2">
               <Icon className={cn('h-4 w-4', active ? 'text-primary' : 'text-muted-foreground')} />
-              <span className="text-sm font-medium">{theme.label}</span>
+              <span className="text-sm font-medium">{tr(theme.label)}</span>
               {theme.id === 'system' && (
-                <span className="ml-auto text-[10px] text-muted-foreground">currently {resolved}</span>
+                <span className="ml-auto text-[10px] text-muted-foreground">{tr("currently")} {tr(resolved === 'dark' ? 'Dark' : 'Light')}</span>
               )}
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">{theme.hint}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{tr(theme.hint)}</p>
           </button>
         );
       })}
@@ -83,6 +85,7 @@ function ThemePicker() {
  * nothing does. The watching happens here, when you press the health button.
  */
 function Thresholds() {
+  useLocale();
   const [limits, setLimits] = useState<Thresholds | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -107,19 +110,15 @@ function Thresholds() {
           checked={limits.enabled}
           onChange={e => update({ enabled: e.target.checked })}
           className="h-3.5 w-3.5"
-        />
-        Point out machines over these levels
-        <span className="text-xs text-muted-foreground">
-          {/* Said plainly: nothing runs on a timer, here or on the servers. */}
-          — checked when you probe, never in the background
-        </span>
+        /> {tr("Point out machines over these levels")} <span className="text-xs text-muted-foreground">
+          {/* Said plainly: nothing runs on a timer, here or on the servers. */} {tr("— checked when you probe, never in the background")} </span>
         {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
       </label>
 
       <div className="grid grid-cols-3 gap-3">
-        {([['cpu', 'CPU'], ['memory', 'Memory'], ['disk', 'Disk']] as const).map(([key, label]) => (
+        {([['cpu', 'CPU'], ['memory', tr("Memory")], ['disk', tr("Disk")]] as const).map(([key, label]) => (
           <div key={key} className="grid gap-1">
-            <span className="text-xs text-muted-foreground">{label}</span>
+            <span className="text-xs text-muted-foreground">{tr(label)}</span>
             <div className="flex items-center gap-1">
               <Input
                 type="number"
@@ -140,6 +139,7 @@ function Thresholds() {
 }
 
 export function OptionsPage() {
+  const language = useLocale();
   const [options, setOptions] = useState<Options | null>(null);
   const [filter, setFilter] = useState('');
   const [forgetting, setForgetting] = useState<string | null>(null);
@@ -193,7 +193,7 @@ export function OptionsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader title="Options" hint="Settings for this machine only." />
+      <PageHeader title={tr("Options")} hint={tr("Settings for this machine only.")} />
 
       {/* Five settings screens' worth of controls used to be one column you
           scrolled through, which made "where is the thing I came for" a reading
@@ -204,27 +204,29 @@ export function OptionsPage() {
             the component sets them with, or a second row falls outside the
             list and over the panel below. */}
         <TabsList className="mx-6 mt-4 w-fit max-w-[calc(100%-3rem)] shrink-0 flex-wrap justify-start group-data-[orientation=horizontal]/tabs:h-auto">
-          <TabsTrigger value="appearance" className={TAB}>Appearance</TabsTrigger>
-          <TabsTrigger value="vault" className={TAB}>Vault</TabsTrigger>
-          <TabsTrigger value="agents" className={TAB}>AI tools</TabsTrigger>
+          <TabsTrigger value="appearance" className={TAB}>{tr("Appearance")}</TabsTrigger>
+          <TabsTrigger value="vault" className={TAB}>{tr("Vault")}</TabsTrigger>
+          <TabsTrigger value="agents" className={TAB}>{tr("AI tools")}</TabsTrigger>
           {appUpdate && (
-            <TabsTrigger value="updates" className={TAB}>
-              Updates
-              {updateWaiting && <span role="img" aria-label="update available" className="h-1.5 w-1.5 rounded-full bg-primary" />}
+            <TabsTrigger value="updates" className={TAB}> {tr("Updates")} {updateWaiting && <span role="img" aria-label={tr("update available")} className="h-1.5 w-1.5 rounded-full bg-primary" />}
             </TabsTrigger>
           )}
-          <TabsTrigger value="alerts" className={TAB}>Alerts</TabsTrigger>
-          <TabsTrigger value="groups" className={TAB}>Groups</TabsTrigger>
-          <TabsTrigger value="tunnels" className={TAB}>Tunnels</TabsTrigger>
-          <TabsTrigger value="hosts" className={TAB}>Known hosts</TabsTrigger>
+          <TabsTrigger value="alerts" className={TAB}>{tr("Alerts")}</TabsTrigger>
+          <TabsTrigger value="groups" className={TAB}>{tr("Groups")}</TabsTrigger>
+          <TabsTrigger value="tunnels" className={TAB}>{tr("Tunnels")}</TabsTrigger>
+          <TabsTrigger value="hosts" className={TAB}>{tr("Known hosts")}</TabsTrigger>
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <TabsContent value="appearance" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-            <Palette className="h-3.5 w-3.5" />
-            Appearance
-          </h2>
+            <Palette className="h-3.5 w-3.5" /> {tr("Appearance")} </h2>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">语言 / Language</label>
+            <select id="interface-language" value={language} onChange={event => void setLanguage(event.target.value as Language)} className="rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <option value="zh-CN">中文（简体）</option><option value="en">English</option>
+            </select>
+          </div>
           <ThemePicker />
         </TabsContent>
 
@@ -236,49 +238,39 @@ export function OptionsPage() {
 
         <TabsContent value="alerts" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            Alert thresholds
-          </h2>
+            <AlertTriangle className="h-3.5 w-3.5" /> {tr("Alert thresholds")} </h2>
           <Thresholds />
         </TabsContent>
 
         <TabsContent value="groups" className="mt-0 space-y-4">
           <div className="mb-2 flex items-center gap-2">
             <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-              <Layers className="h-3.5 w-3.5" />
-              Groups
-              <span className="text-muted-foreground">({options.groups.length})</span>
+              <Layers className="h-3.5 w-3.5" /> {tr("Groups")} <span className="text-muted-foreground">({options.groups.length})</span>
             </h2>
             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" />
-              New group
-            </Button>
+              <Plus className="h-3.5 w-3.5" /> {tr("New group")} </Button>
           </div>
 
           {run && (
-            <div className="mb-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs">
-              Running on {run.group} — {run.done ?? 0} of {run.total ?? 0}
+            <div className="mb-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs"> {tr("Running on")} {run.group} — {run.done ?? 0} {tr("of")} {run.total ?? 0}
               {run.server && <span className="ml-2 font-mono">{run.server}</span>}
             </div>
           )}
           {output.length > 0 && (
             <div className="mb-3 overflow-hidden rounded-md border border-border">
               <div className="flex items-center gap-2 border-b border-border bg-muted px-3 py-1.5">
-                <span className="text-xs font-medium">Results</span>
+                <span className="text-xs font-medium">{tr("Results")}</span>
                 <span className="text-[10px] text-muted-foreground">
-                  {output.filter(e => e.code === 0).length} of {output.length} succeeded
-                </span>
+                  {output.filter(e => e.code === 0).length} {tr("of")} {output.length} {tr("succeeded")} </span>
                 <button className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
-                  onClick={() => setOutput([])}>
-                  clear
-                </button>
+                  onClick={() => setOutput([])}> {tr("clear")} </button>
               </div>
               <div className="max-h-64 overflow-auto">
               {output.map((entry, index) => (
                 <div key={index} className="border-b border-border-subtle p-2 last:border-b-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium">{entry.server}</span>
-                    <Badge variant={entry.code === 0 ? 'outline' : 'destructive'}>exit {entry.code}</Badge>
+                    <Badge variant={entry.code === 0 ? 'outline' : 'destructive'}>{tr("exit")} {entry.code}</Badge>
                   </div>
                   {(entry.stdout || entry.stderr) && (
                     <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
@@ -296,13 +288,13 @@ export function OptionsPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{group.name}</span>
                   {group.dynamic && <Badge variant="secondary">dynamic</Badge>}
-                  {group.fromConfig && <Badge variant="outline">from config</Badge>}
+                  {group.fromConfig && <Badge variant="outline">{tr("from config")}</Badge>}
                   <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover/card:opacity-100">
                     <Button
-                      variant="ghost" size="icon" aria-label={`Run a command on ${group.name}`}
+                      variant="ghost" size="icon" aria-label={tr("Run a command on {{v0}}", { v0: group.name })}
                       disabled={group.serverCount === 0 || Boolean(run)}
                       onClick={() => {
-                        const command = window.prompt(`Run on ${group.serverCount} server(s) in "${group.name}"`);
+                        const command = window.prompt(tr("Run on {{v0}} server(s) in \"{{v1}}\"", { v0: group.serverCount, v1: group.name }));
                         if (command?.trim()) void groupsApi.run(group.name, command);
                       }}
                     >
@@ -313,14 +305,14 @@ export function OptionsPage() {
                         following it. */}
                     {!group.dynamic && (
                       <>
-                        <Button variant="ghost" size="icon" aria-label={`Edit ${group.name}`}
+                        <Button variant="ghost" size="icon" aria-label={tr("Edit {{v0}}", { v0: group.name })}
                           onClick={() => setEditing(group)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost" size="icon" aria-label={`Delete ${group.name}`}
                           onClick={async () => {
-                            if (!window.confirm(`Delete the group "${group.name}"? The servers are untouched.`)) return;
+                            if (!window.confirm(tr("Delete the group \"{{v0}}\"? The servers are untouched.", { v0: group.name }))) return;
                             try {
                               await groupsApi.remove(group.name);
                               void reload();
@@ -351,14 +343,12 @@ export function OptionsPage() {
 
         <TabsContent value="tunnels" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-            <Network className="h-3.5 w-3.5" />
-            Tunnels
-          </h2>
+            <Network className="h-3.5 w-3.5" /> {tr("Tunnels")} </h2>
           {options.tunnels.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               {options.tunnelsStale
-                ? 'The published list is stale — the MCP server that opened them is no longer running.'
-                : 'None open. Tunnels live inside the MCP server’s process; this screen shows what that process publishes.'}
+                ? tr("The published list is stale — the MCP server that opened them is no longer running.")
+                : tr("None open. Tunnels live inside the MCP server’s process; this screen shows what that process publishes.")}
             </p>
           ) : (
             <ul className="space-y-1">
@@ -374,14 +364,12 @@ export function OptionsPage() {
         <TabsContent value="hosts" className="mt-0 space-y-4">
           <div className="mb-2 flex items-center gap-2">
             <h2 className="flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
-              <KeyRound className="h-3.5 w-3.5" />
-              Known hosts
-              <span className="text-muted-foreground">({options.hostKeys.length})</span>
+              <KeyRound className="h-3.5 w-3.5" /> {tr("Known hosts")} <span className="text-muted-foreground">({options.hostKeys.length})</span>
             </h2>
             <input
               value={filter}
               onChange={e => setFilter(e.target.value)}
-              placeholder="Filter"
+              placeholder={tr("Filter")}
               className="ml-auto h-7 w-48 rounded-md border border-input bg-transparent px-2 text-xs focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
             />
           </div>
@@ -413,18 +401,16 @@ export function OptionsPage() {
                         setView('servers');
                       }}
                     >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add as a server
-                    </Button>
+                      <Plus className="h-3.5 w-3.5" /> {tr("Add as a server")} </Button>
                   )}
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Forget ${entry.host}`}
+                    aria-label={tr("Forget {{v0}}", { v0: entry.host })}
                     className="opacity-0 group-hover:opacity-100"
                     disabled={forgetting === key}
                     onClick={async () => {
-                      if (!window.confirm(`Forget the host key for ${entry.host}?`)) return;
+                      if (!window.confirm(tr("Forget the host key for {{v0}}?", { v0: entry.host }))) return;
                       setForgetting(key);
                       try {
                         await hostKeys.forget(entry.host, entry.port);
@@ -441,11 +427,10 @@ export function OptionsPage() {
             })}
             {matching.length > 200 && (
               <p className="px-3 py-2 text-[10px] text-muted-foreground">
-                {matching.length - 200} more — narrow the filter to see them.
-              </p>
+                {matching.length - 200} {tr("more — narrow the filter to see them.")} </p>
             )}
             {matching.length === 0 && (
-              <p className="px-3 py-2 text-xs text-muted-foreground">No host matches.</p>
+              <p className="px-3 py-2 text-xs text-muted-foreground">{tr("No host matches.")}</p>
             )}
           </div>
         </TabsContent>

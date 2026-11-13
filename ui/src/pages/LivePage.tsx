@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * What your agents are running, while they run it.
  *
@@ -20,6 +21,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
 
 export function LivePage() {
+  useLocale();
   const [streams, setStreams] = useState<LiveStream[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -50,9 +52,9 @@ export function LivePage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title="Live"
+        title={tr("Live")}
         count={streams.length}
-        hint="What your agents are running, as it happens."
+        hint={tr("What your agents are running, as it happens.")}
       >
         {running.length > 0 && (
           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -60,16 +62,15 @@ export function LivePage() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
             </span>
-            {running.length} running
-          </span>
+            {running.length} {tr("running")} </span>
         )}
       </PageHeader>
 
       {streams.length === 0 ? (
         <EmptyState
           icon={Radio}
-          title="No command is running"
-          hint="When an agent runs something on one of your servers it appears here as it happens, output included. Nothing is written to disk."
+          title={tr("No command is running")}
+          hint={tr("When an agent runs something on one of your servers it appears here as it happens, output included. Nothing is written to disk.")}
         />
       ) : (
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-6">
@@ -87,10 +88,10 @@ export function LivePage() {
                   {stream.command}
                 </code>
                 {stream.code === null ? (
-                  <Badge variant="secondary">running</Badge>
+                  <Badge variant="secondary">{tr("running")}</Badge>
                 ) : (
                   <Badge variant={stream.code === 0 ? 'outline' : 'destructive'}>
-                    exit {stream.code}
+                    {tr("exit")} {stream.code}
                   </Badge>
                 )}
               </button>

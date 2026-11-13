@@ -465,7 +465,7 @@ export interface HealthResult {
   /** The engine's own shape — snake_case in places, and `disks`, not `disk`. */
   cpu?: { percent?: number; usage?: string; status?: string };
   memory?: { total_mb?: number; used_mb?: number; free_mb?: number; percent?: number; status?: string };
-  disks?: { mount: string; size: string; used: string; avail: string; percent: number; status?: string }[];
+  disks?: { filesystem?: string; device?: string; mount: string; size: string; used: string; avail: string; percent: number; status?: string }[];
   load_average?: string;
   /** Already reads "up 42 days" — prefixing it again is how you get "up up". */
   uptime?: string;
@@ -476,6 +476,7 @@ export interface HealthResult {
 
 export interface HealthAlert {
   type: 'cpu' | 'memory' | 'disk';
+  mount?: string;
   severity: 'warning' | 'critical';
   message: string;
   value: number;

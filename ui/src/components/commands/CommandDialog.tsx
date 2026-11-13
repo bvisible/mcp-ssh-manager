@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * Save a command for later.
  *
@@ -28,6 +29,7 @@ export function CommandDialog({
   onClose: () => void;
   onSaved?: (command: SavedCommand) => void;
 }) {
+  useLocale();
   const allServers = useServersStore(s => s.servers);
   const [name, setName] = useState(existing?.name ?? '');
   const [command, setCommand] = useState(existing?.command ?? '');
@@ -50,20 +52,18 @@ export function CommandDialog({
     <Dialog open onOpenChange={open => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{existing ? 'Edit command' : 'Save a command'}</DialogTitle>
-          <DialogDescription>
-            It appears in the list next to any terminal it applies to.
-          </DialogDescription>
+          <DialogTitle>{existing ? tr("Edit command") : tr("Save a command")}</DialogTitle>
+          <DialogDescription> {tr("It appears in the list next to any terminal it applies to.")} </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Name</Label>
-            <Input value={name} placeholder="Reload nginx" onChange={e => setName(e.target.value)} />
+            <Label>{tr("Name")}</Label>
+            <Input value={name} placeholder={tr("Reload nginx")} onChange={e => setName(e.target.value)} />
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Command</Label>
+            <Label>{tr("Command")}</Label>
             <textarea
               value={command}
               onChange={e => setCommand(e.target.value)}
@@ -75,11 +75,11 @@ export function CommandDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Description <span className="font-normal text-muted-foreground">optional</span></Label>
+              <Label>{tr("Description")} <span className="font-normal text-muted-foreground">{tr("optional")}</span></Label>
               <Input value={description} onChange={e => setDescription(e.target.value)} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Directory <span className="font-normal text-muted-foreground">optional</span></Label>
+              <Label>{tr("Directory")} <span className="font-normal text-muted-foreground">{tr("optional")}</span></Label>
               <Input
                 value={workingDirectory}
                 placeholder="/var/www"
@@ -89,10 +89,8 @@ export function CommandDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label>
-              Where it is offered
-              <span className="ml-1.5 font-normal text-muted-foreground">
-                {scope.size === 0 ? 'every server' : `${scope.size} selected`}
+            <Label> {tr("Where it is offered")} <span className="ml-1.5 font-normal text-muted-foreground">
+                {scope.size === 0 ? tr("every server") : `${scope.size} selected`}
               </span>
             </Label>
             {/* Scoping matters: `systemctl reload nginx` offered on a database
@@ -113,15 +111,12 @@ export function CommandDialog({
                 </button>
               ))}
               {allServers.length === 0 && (
-                <span className="text-xs text-muted-foreground">No server in the vault yet.</span>
+                <span className="text-xs text-muted-foreground">{tr("No server in the vault yet.")}</span>
               )}
             </div>
             {scope.size === 0 && (
-              <p className="text-[11px] text-muted-foreground">
-                Selecting none offers it everywhere.
-                {server && (
-                  <button className="ml-1 underline" onClick={() => setScope(new Set([server]))}>
-                    Limit to {server}?
+              <p className="text-[11px] text-muted-foreground"> {tr("Selecting none offers it everywhere.")} {server && (
+                  <button className="ml-1 underline" onClick={() => setScope(new Set([server]))}> {tr("Limit to")} {server}?
                   </button>
                 )}
               </p>
@@ -134,16 +129,14 @@ export function CommandDialog({
               checked={confirmBeforeRun}
               onChange={e => setConfirmBeforeRun(e.target.checked)}
               className="h-3.5 w-3.5"
-            />
-            Ask before putting it in the terminal
-            <span className="text-xs text-muted-foreground">— for the ones that delete things</span>
+            /> {tr("Ask before putting it in the terminal")} <span className="text-xs text-muted-foreground">{tr("— for the ones that delete things")}</span>
           </label>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>{tr("Cancel")}</Button>
           <Button
             disabled={saving || !name.trim() || !command.trim()}
             onClick={async () => {
@@ -168,7 +161,7 @@ export function CommandDialog({
               }
             }}
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? tr("Saving…") : tr("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>

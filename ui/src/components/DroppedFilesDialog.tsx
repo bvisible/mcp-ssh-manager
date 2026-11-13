@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * Where should the file you dropped on the Dock icon go?
  *
@@ -26,6 +27,7 @@ export interface DroppedFilesDialogProps {
 }
 
 export function DroppedFilesDialog({ paths, onClose }: DroppedFilesDialogProps) {
+  useLocale();
   const { servers, load } = useServersStore();
   const { tabs, addTab, activateTab } = useWorkspace();
   const [busy, setBusy] = useState<string | null>(null);
@@ -92,16 +94,14 @@ export function DroppedFilesDialog({ paths, onClose }: DroppedFilesDialogProps) 
             <Upload className="h-4.5 w-4.5 text-primary" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-medium">
-              Send {paths.length === 1 ? baseName(paths[0]) : `${paths.length} files`} where?
-            </h2>
+            <h2 className="text-sm font-medium"> {tr("Send")} {paths.length === 1 ? baseName(paths[0]) : `${paths.length} files`} {tr("where?")} </h2>
             {paths.length > 1 && (
               <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                 {paths.map(baseName).join(', ')}
               </p>
             )}
           </div>
-          <Button variant="ghost" size="icon" aria-label="Cancel" onClick={onClose}>
+          <Button variant="ghost" size="icon" aria-label={tr("Cancel")} onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -114,9 +114,7 @@ export function DroppedFilesDialog({ paths, onClose }: DroppedFilesDialogProps) 
 
         <div className="max-h-80 overflow-y-auto p-2">
           {ranked.length === 0 && (
-            <p className="p-4 text-center text-xs text-muted-foreground">
-              No servers configured yet.
-            </p>
+            <p className="p-4 text-center text-xs text-muted-foreground"> {tr("No servers configured yet.")} </p>
           )}
           {ranked.map(server => {
             const open = browsing.has(server.id);
@@ -137,7 +135,7 @@ export function DroppedFilesDialog({ paths, onClose }: DroppedFilesDialogProps) 
                   </span>
                 </span>
                 <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {open ? 'files open' : shell ? 'shell open' : ''}
+                  {open ? tr("files open") : shell ? tr("shell open") : ''}
                 </span>
               </button>
             );

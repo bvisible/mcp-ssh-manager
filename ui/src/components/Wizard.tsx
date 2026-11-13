@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Download, LockKeyhole, Monitor, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ const STEPS = [
 
 /** Local, decorative artwork; no downloaded images or animation dependency. */
 function WelcomeIllustration({ step }: { step: number }) {
+  useLocale();
   return (
     <svg viewBox="0 0 360 260" fill="none" aria-hidden="true" className="w-full max-w-sm welcome-illustration">
       <circle cx="180" cy="130" r="105" className="fill-primary/5" />
@@ -78,6 +80,7 @@ function WelcomeIllustration({ step }: { step: number }) {
 }
 
 export function Wizard({ onClose }: { onClose: () => void }) {
+  useLocale();
   const [step, setStep] = useState(0);
   const setView = useWorkspace(s => s.setView);
   const setWantsImport = useWorkspace(s => s.setWantsImport);
@@ -94,20 +97,20 @@ export function Wizard({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col justify-between border-b border-border bg-sidebar px-6 py-5 sm:border-r sm:border-b-0">
             <span className="flex items-center gap-2 text-sm font-medium"><Monitor className="h-4 w-4 text-primary" /> SSH Manager</span>
             <div key={step} className="mx-auto w-full max-w-[200px] sm:max-w-none"><WelcomeIllustration step={step} /></div>
-            <p className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex"><LockKeyhole className="h-3.5 w-3.5" /> On your machine. In your hands.</p>
+            <p className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex"><LockKeyhole className="h-3.5 w-3.5" /> {tr("On your machine. In your hands.")}</p>
           </div>
           <div className="flex flex-col px-7 py-7 sm:py-10">
-            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">{current.eyebrow}</p>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">{tr(current.eyebrow)}</p>
             <div key={step} className="welcome-copy">
-              <DialogTitle className="max-w-xs font-display text-3xl leading-tight font-normal">{current.title}</DialogTitle>
-              <DialogDescription className="mt-4 text-sm leading-relaxed">{current.body}</DialogDescription>
-              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">{current.detail}</p>
+              <DialogTitle className="max-w-xs font-display text-3xl leading-tight font-normal">{tr(current.title)}</DialogTitle>
+              <DialogDescription className="mt-4 text-sm leading-relaxed">{tr(current.body)}</DialogDescription>
+              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">{tr(current.detail)}</p>
             </div>
             <div className="mt-7 flex flex-wrap items-center gap-2">
-              {step > 0 && <Button variant="ghost" size="sm" onClick={() => setStep(step - 1)}><ArrowLeft className="h-3.5 w-3.5" /> Back</Button>}
-              {step === 1 && <Button variant="outline" size="sm" onClick={() => { setView('servers'); setWantsImport(true); finish(); }}><Download className="h-3.5 w-3.5" /> Import servers</Button>}
-              {last ? <Button size="sm" onClick={() => { setView('servers'); setWantsAdd(true); finish(); }}><Plus className="h-3.5 w-3.5" /> Add a server</Button>
-                : <Button size="sm" onClick={() => setStep(step + 1)}>Next <ArrowRight className="h-3.5 w-3.5" /></Button>}
+              {step > 0 && <Button variant="ghost" size="sm" onClick={() => setStep(step - 1)}><ArrowLeft className="h-3.5 w-3.5" /> {tr("Back")}</Button>}
+              {step === 1 && <Button variant="outline" size="sm" onClick={() => { setView('servers'); setWantsImport(true); finish(); }}><Download className="h-3.5 w-3.5" /> {tr("Import servers")}</Button>}
+              {last ? <Button size="sm" onClick={() => { setView('servers'); setWantsAdd(true); finish(); }}><Plus className="h-3.5 w-3.5" /> {tr("Add a server")}</Button>
+                : <Button size="sm" onClick={() => setStep(step + 1)}>{tr("Next")} <ArrowRight className="h-3.5 w-3.5" /></Button>}
             </div>
             <div className="mt-auto flex items-center justify-between gap-3 pt-6">
               <span aria-label={`Step ${step + 1} of ${STEPS.length}`} className="flex items-center gap-1.5">
@@ -115,7 +118,7 @@ export function Wizard({ onClose }: { onClose: () => void }) {
                   {i < step ? <Check className="h-3 w-3" /> : i + 1}
                 </span>)}
               </span>
-              <button className="rounded text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring" onClick={finish}>I’ll explore first</button>
+              <button className="rounded text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring" onClick={finish}>{tr("I’ll explore first")}</button>
             </div>
           </div>
         </div>

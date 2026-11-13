@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The dual-pane file browser: this machine on the left, the server on the right.
  *
@@ -28,6 +29,7 @@ interface PaneState {
 const EMPTY: PaneState = { path: '', files: [], loading: true, selected: new Set() };
 
 export function FilesPage({ server }: { server: string }) {
+  useLocale();
   const [panes, setPanes] = useState<Record<Side, PaneState>>({ local: EMPTY, remote: EMPTY });
   const [error, setError] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<TransferEvent | null>(null);
@@ -73,7 +75,7 @@ export function FilesPage({ server }: { server: string }) {
         // the operator navigated elsewhere while the transfer was running.
         void load(side, pathsRef.current[side]);
       }
-      if (progress.state === 'failed') setError(progress.error ?? 'The transfer failed');
+      if (progress.state === 'failed') setError(progress.error ?? tr("The transfer failed"));
     });
     return stop;
   }, [load]);
@@ -125,7 +127,7 @@ export function FilesPage({ server }: { server: string }) {
     if (files.length === 0) {
       // Directories would need a recursive walk on both sides; saying so beats
       // transferring nothing and looking broken.
-      setError('Directories cannot be transferred yet — select files.');
+      setError(tr("Directories cannot be transferred yet — select files."));
       return;
     }
     void transfers
@@ -155,7 +157,7 @@ export function FilesPage({ server }: { server: string }) {
   };
 
   const rename = (side: Side) => async (file: FileItem) => {
-    const next = window.prompt('New name', file.name);
+    const next = window.prompt(tr("New name"), file.name);
     if (!next || next === file.name) return;
     const parent = file.path.slice(0, file.path.lastIndexOf('/')) || '/';
     try {
@@ -168,7 +170,7 @@ export function FilesPage({ server }: { server: string }) {
   };
 
   const createFolder = (side: Side) => async () => {
-    const name = window.prompt('Name of the new directory');
+    const name = window.prompt(tr("Name of the new directory"));
     if (!name) return;
     const dir = pathsRef.current[side];
     try {
@@ -202,7 +204,7 @@ export function FilesPage({ server }: { server: string }) {
     onDelete: remove(side),
     onRename: rename(side),
     onTransfer: send(side),
-    transferLabel: side === 'local' ? 'Upload' : 'Download',
+    transferLabel: side === 'local' ? tr("Upload") : tr("Download"),
     // Dropping a selection carries it from the pane it was dragged out of, so
     // the direction is the opposite of the pane receiving the drop.
     onDropFiles: (items: FileItem[], destination?: string) =>
@@ -214,7 +216,7 @@ export function FilesPage({ server }: { server: string }) {
     // that is not there — so the ones that can be backed are wired here, and
     // FilePane hides the rest.
     onCreateFile: () => {
-      const name = window.prompt('Name for the new file');
+      const name = window.prompt(tr("Name for the new file"));
       if (!name?.trim()) return;
       const target = joinPath(pathsRef.current[side], name.trim());
       void (async () => {
@@ -253,12 +255,12 @@ export function FilesPage({ server }: { server: string }) {
       {error && (
         <div className="flex items-center justify-between border-b border-destructive/30 bg-destructive-light px-4 py-2 text-sm">
           <span>{error}</span>
-          <button className="text-xs underline" onClick={() => setError(null)}>dismiss</button>
+          <button className="text-xs underline" onClick={() => setError(null)}>{tr("dismiss")}</button>
         </div>
       )}
       {transfer && (
         <div className="border-b border-border bg-muted px-4 py-1.5 text-xs text-muted-foreground">
-          {transfer.direction === 'upload' ? 'Uploading' : 'Downloading'} — {transfer.done} of {transfer.total}
+          {transfer.direction === 'upload' ? tr("Uploading") : tr("Downloading")} — {transfer.done} {tr("of")} {transfer.total}
           {transfer.file && <span className="ml-2 font-mono">{transfer.file}</span>}
         </div>
       )}
@@ -266,7 +268,7 @@ export function FilesPage({ server }: { server: string }) {
       <div className="min-h-0 flex-1">
         <Allotment defaultSizes={[1, 1]}>
           <Allotment.Pane minSize={260}>
-            <FilePane title="This machine" {...paneProps('local')} onGoHome={() => void load('local')} />
+            <FilePane title={tr("This machine")} {...paneProps('local')} onGoHome={() => void load('local')} />
           </Allotment.Pane>
           <Allotment.Pane minSize={260}>
             <FilePane

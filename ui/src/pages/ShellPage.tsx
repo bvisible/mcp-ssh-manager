@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -23,6 +24,7 @@ import { CommandDialog } from '@/components/commands/CommandDialog';
  */
 export function ShellPage({ server, local = false, hidden = false }:
   { server: string; local?: boolean; hidden?: boolean }) {
+  useLocale();
   const hostRef = useRef<HTMLDivElement>(null);
   const resolved = useTheme(s => s.resolved);
   const [savingCommand, setSavingCommand] = useState(false);
@@ -115,7 +117,7 @@ export function ShellPage({ server, local = false, hidden = false }:
       <header className="flex items-center gap-2 border-b border-border px-6 py-3">
         <h1 className="text-sm font-medium">{server}</h1>
         <span className="text-xs text-muted-foreground">
-          {local ? 'a shell on this machine' : 'interactive shell'}
+          {local ? tr("a shell on this machine") : tr("interactive shell")}
         </span>
         {/* Saved commands belong to servers — they are chosen per server and
             stored against their names — so a local shell has none to offer. */}

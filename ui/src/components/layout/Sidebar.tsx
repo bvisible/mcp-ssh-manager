@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The rail, carried over from TransHub with the AI-chat parts removed.
  *
@@ -57,6 +58,7 @@ function getInitials(name: string): string {
 
 /** The application icon, drawn rather than loaded: it has to be crisp at 24px. */
 function BrandMark() {
+  useLocale();
   return (
     <svg width="24" height="24" viewBox="0 0 28 28" aria-hidden="true" className="shrink-0 text-foreground">
       {/* The ring is the text colour at low opacity: invisible on the light
@@ -69,6 +71,7 @@ function BrandMark() {
 }
 
 export function Sidebar() {
+  useLocale();
   const {
     view,
     tabs,
@@ -100,8 +103,8 @@ export function Sidebar() {
   const toggle = (
     <button
       onClick={toggleExpanded}
-      aria-label={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
-      title={sidebarExpanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
+      aria-label={sidebarExpanded ? tr("Collapse the sidebar") : tr("Expand the sidebar")}
+      title={sidebarExpanded ? tr("Collapse the sidebar") : tr("Expand the sidebar")}
       className="no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
     >
       {sidebarExpanded
@@ -152,17 +155,17 @@ export function Sidebar() {
         )}
       </div>
 
-      <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 scrollbar-none" aria-label="Main">
+      <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 scrollbar-none" aria-label={tr("Main")}>
         {NAV_GROUPS.map((group, index) => (
           <div key={group.label ?? index} className="flex flex-col gap-0.5">
             {group.label && (sidebarExpanded
-              ? <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{group.label}</div>
+              ? <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{tr(group.label)}</div>
               : <div className="mx-2 mb-1 border-t border-sidebar-border" />)}
             {group.items.map(item => (
               <SidebarItem
                 key={item.id}
                 icon={item.icon}
-                label={item.label}
+                label={tr(item.label)}
                 active={activeTabId === null && view === item.id}
                 expanded={sidebarExpanded}
                 badge={item.id === 'waiting' && pendingCount > 0 ? pendingCount : undefined}
@@ -177,7 +180,7 @@ export function Sidebar() {
         {tabs.length > 0 && (
           <div className="flex flex-col gap-0.5">
             {sidebarExpanded
-              ? <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Open</div>
+              ? <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{tr("Open")}</div>
               : <div className="mx-2 mb-1 border-t border-sidebar-border" />}
             {tabs.map((tab) => (
               <SessionItem
@@ -208,19 +211,19 @@ export function Sidebar() {
             <ArrowUpCircle className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
             <span className="min-w-0 flex-1">
               <span className="block font-bold">
-                {updateStatus === 'ready' ? 'Restart to update' : updateStatus === 'downloading' ? 'Downloading update' : 'Update available'}
+                {updateStatus === 'ready' ? tr("Restart to update") : updateStatus === 'downloading' ? tr("Downloading update") : tr("Update available")}
               </span>
               <span className="block truncate text-muted-foreground">
-                {updateStatus === 'downloading' ? `${update.percent ?? 0}%` : `Version ${update.version}`}
+                {updateStatus === 'downloading' ? `${update.percent ?? 0}%` : tr("Version {{v0}}", { v0: update.version })}
               </span>
             </span>
           </button>
         )}
         <SidebarItem
           icon={Settings}
-          label="Options"
+          label={tr("Options")}
           dot={updateStatus !== null}
-          dotLabel="update available"
+          dotLabel={tr("update available")}
           active={activeTabId === null && view === 'options'}
           expanded={sidebarExpanded}
           onClick={() => setView('options')}
@@ -256,6 +259,7 @@ function SidebarItem({
   /** What the mark means, for screen readers and the tooltip. */
   dotLabel?: string
 }) {
+  useLocale();
   const name = dot && dotLabel ? `${label} (${dotLabel})` : label
   const button = (
     <button
@@ -320,6 +324,7 @@ function SessionItem({
   onClose: () => void
   onRename: (newTitle: string) => void
 }) {
+  useLocale();
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(session.title)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -359,7 +364,7 @@ function SessionItem({
   }
 
   const Icon = session.type === 'dual-browser' ? FolderOpen : TerminalSquare
-  const kind = session.type === 'dual-browser' ? 'files' : 'shell'
+  const kind = session.type === 'dual-browser' ? tr('Files') : tr('Shell')
   const initials = getInitials(session.title)
 
   const button = (
@@ -416,7 +421,7 @@ function SessionItem({
           <span
             role="button"
             tabIndex={0}
-            aria-label={`Close ${session.title}`}
+            aria-label={tr("Close {{v0}}", { v0: session.title })}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()

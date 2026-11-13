@@ -1,25 +1,38 @@
-/**
- * Translations for the components carried over from TransHub.
- *
- * They call `t()` throughout, and stripping that out would have meant editing
- * every one of them — the opposite of what a port should do. The catalogue is
- * TransHub's own English strings, narrowed to the keys these components use.
- *
- * English only for now: the engine's own output has never been translated, and
- * a half-translated interface is worse than an untranslated one.
- */
 import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
+import { initReactI18next, useTranslation } from 'react-i18next';
 import en from '@/locales/en.json';
+import zh from '@/locales/zh-CN.json';
+import messagesEn from '@/locales/messages.en.json';
+import messagesZh from '@/locales/messages.zh-CN.json';
+import { readPreference, writePreference } from '@/lib/preferences';
 
+export type Language = 'zh-CN' | 'en';
+export const LANGUAGE_KEY = 'ssh-manager.language';
 void i18n.use(initReactI18next).init({
-  resources: { en: { translation: en } },
-  lng: 'en',
-  fallbackLng: 'en',
-  interpolation: { escapeValue: false },
-  // A missing key renders as the key itself, which is visible in review rather
-  // than silently blank.
-  returnEmptyString: false,
+  resources: {
+    en: { translation: en, messages: messagesEn },
+    'zh-CN': { translation: zh, messages: messagesZh },
+  },
+  lng: 'zh-CN', fallbackLng: 'en', supportedLngs: ['zh-CN', 'en'],
+  interpolation: { escapeValue: false }, returnEmptyString: false,
 });
-
+/** Literal message keys keep source text reviewable; identifiers and remote data never enter this function. */
+export function tr(message: string, values?: Record<string, string | number | undefined>): string {
+  return String(i18n.t(message, { ns: 'messages', keySeparator: false, nsSeparator: false, ...values }));
+}
+export function useLocale() {
+  const { i18n: instance } = useTranslation();
+  return instance.resolvedLanguage === 'en' ? 'en' : 'zh-CN';
+}
+export async function setLanguage(language: Language): Promise<void> {
+  writePreference(LANGUAGE_KEY, language);
+  await i18n.changeLanguage(language);
+  document.documentElement.lang = language;
+}
+/** Hydrated server preferences survive the control plane choosing a new port. */
+export async function initializeLanguage(): Promise<void> {
+  const saved = readPreference(LANGUAGE_KEY);
+  await i18n.changeLanguage(saved === 'en' ? 'en' : 'zh-CN');
+  document.documentElement.lang = saved === 'en' ? 'en' : 'zh-CN';
+}
 export default i18n;

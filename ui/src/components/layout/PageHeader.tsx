@@ -39,20 +39,20 @@ export function PageHeader({ title, count, hint, children, actions, className }:
   return (
     <header
       className={cn(
-        'page-header flex min-h-[72px] shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border py-3 pl-8',
+        'page-header flex min-h-[72px] min-w-0 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border py-3 pl-4 sm:pl-8',
         underTabs && 'under-tabs',
         headerIsTitleBar && !underTabs && 'drag-region',
         className,
       )}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 max-w-full">
         <h1 className="flex items-baseline gap-2 text-xl font-bold tracking-[-0.01em]">
           {title}
           {count !== undefined && count > 0 && (
             <span className="text-sm font-medium text-muted-foreground tabular-nums">{count}</span>
           )}
         </h1>
-        {hint && <p className="mt-0.5 truncate text-sm text-muted-foreground">{hint}</p>}
+        {hint && <p className="mt-0.5 text-sm text-muted-foreground [overflow-wrap:anywhere]">{hint}</p>}
       </div>
 
       {children}

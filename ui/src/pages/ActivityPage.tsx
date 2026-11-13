@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The audit trail: what was done, by whom, and what you answered.
  *
@@ -17,6 +18,7 @@ import { EmptyState } from '@/components/layout/EmptyState';
 type Tab = 'commands' | 'decisions';
 
 export function ActivityPage() {
+  useLocale();
   const [tab, setTab] = useState<Tab>('commands');
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [commands, setCommands] = useState<CommandLogEntry[]>([]);
@@ -49,8 +51,8 @@ export function ActivityPage() {
   }, []);
 
   const header = (
-    <PageHeader title="Activity" hint="What your agents ran, and what you decided.">
-      {([['commands', 'Commands', commands.length], ['decisions', 'Decisions', timeline.length]] as const)
+    <PageHeader title={tr("Activity")} hint={tr("What your agents ran, and what you decided.")}>
+      {([['commands', tr("Commands"), commands.length], ['decisions', tr("Decisions"), timeline.length]] as const)
         .map(([id, label, count], at) => (
           <button
             key={id}
@@ -69,13 +71,11 @@ export function ActivityPage() {
         <button
           className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
           onClick={async () => {
-            if (!window.confirm('Clear the command history on this machine?')) return;
+            if (!window.confirm(tr("Clear the command history on this machine?"))) return;
             await historyApi.clear();
             setCommands([]);
           }}
-        >
-          clear
-        </button>
+        > {tr("clear")} </button>
       )}
     </PageHeader>
   );
@@ -87,9 +87,9 @@ export function ActivityPage() {
         {commands.length === 0 ? (
           <EmptyState
             icon={Terminal}
-            title="No command recorded yet"
-            hint={'Everything your agents run is written down here, on this machine — nothing to configure on the servers.'
-              + (recordsOutput ? '' : ' Output is not kept; set SSH_MANAGER_LOG_OUTPUT=1 if you want it.')}
+            title={tr("No command recorded yet")}
+            hint={tr("Everything your agents run is written down here, on this machine — nothing to configure on the servers.")
+              + (recordsOutput ? '' : ' ' + tr('Output is not kept; set SSH_MANAGER_LOG_OUTPUT=1 if you want it.'))}
           />
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -112,7 +112,7 @@ export function ActivityPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-xs font-medium">{entry.server}</span>
                           <Badge variant={entry.code === 0 ? 'outline' : 'destructive'}>
-                            exit {entry.code ?? '—'}
+                            {tr("exit")} {entry.code ?? '—'}
                           </Badge>
                           {entry.durationMs !== undefined && (
                             <span className="text-[10px] text-muted-foreground tabular-nums">
@@ -148,8 +148,8 @@ export function ActivityPage() {
         {(
       <EmptyState
         icon={Activity}
-        title="Nothing recorded yet"
-        hint="Every approval you granted or refused appears here. What agents ran is under Commands."
+        title={tr("Nothing recorded yet")}
+        hint={tr("Every approval you granted or refused appears here. What agents ran is under Commands.")}
       />
     )}
       </div>

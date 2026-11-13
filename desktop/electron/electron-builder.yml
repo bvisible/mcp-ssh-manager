@@ -11,6 +11,9 @@ directories:
 # bindings at runtime and those cannot be read from inside an archive.
 files:
   - main.js
+  - locale.mjs
+  - native-menu.mjs
+  - native.zh-CN.json
   - local-shell.mjs
   - smoke-test.mjs
   - package.json

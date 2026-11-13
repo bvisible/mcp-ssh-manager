@@ -1,0 +1,62 @@
+import { test, expect, apiUrl } from './fixtures';
+
+test.use({ language: null, localShell: true });
+
+test('Chinese is the default and the language survives a new backend port', async ({ page, app }) => {
+  await page.goto(app.url);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+  await expect(page.getByRole('dialog')).toContainText('你的服务器，你的工作空间。');
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const language = page.getByLabel('语言 / Language');
+  await expect(language).toHaveValue('zh-CN');
+  await language.selectOption('en');
+  await expect(page.getByRole('heading', { name: 'Options', exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect.poll(async () => (await (await page.request.get(apiUrl(app, '/api/preferences'))).json()).preferences['ssh-manager.language']).toBe('en');
+  const old = new URL(app.url).port;
+  await app.restart();
+  expect(new URL(app.url).port).not.toBe(old);
+  await page.goto(app.url);
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(language).toHaveValue('en');
+  await language.selectOption('zh-CN');
+  await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '服务器', exact: true }).click();
+  await page.getByRole('button', { name: '添加服务器', exact: true }).first().click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('名称', { exact: true }).fill('language_fixture');
+  await dialog.getByLabel('主机地址', { exact: true }).fill('127.0.0.1');
+  await dialog.getByLabel('用户名', { exact: true }).fill('fixture_user');
+  await dialog.getByLabel('密码', { exact: true }).fill('test-only-password');
+  await dialog.getByLabel('权限模式').selectOption('readonly');
+  await dialog.getByLabel('审批策略').selectOption('always');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'language_fixture' })).toBeVisible();
+  const saved = await (await page.request.get(apiUrl(app, '/api/servers'))).json();
+  const server = saved.servers.find((entry: { name: string }) => entry.name === 'language_fixture');
+  expect(server.host).toBe('127.0.0.1');
+  expect(server.mode).toBe('readonly');
+  expect(server.approval).toBe('always');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await language.selectOption('en');
+  await page.getByRole('button', { name: 'Servers', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'language_fixture' })).toBeVisible();
+  await expect(page.getByText('Read only', { exact: true })).toBeVisible();
+  await expect(page.getByText('Approval: every request', { exact: true })).toBeVisible();
+});
+
+test('switching language preserves an open local terminal', async ({ page, app }) => {
+  await page.goto(app.url);
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+  await page.getByRole('button', { name: '终端', exact: true }).click();
+  await page.getByRole('button', { name: /本机/ }).first().click();
+  await expect(page.locator('.xterm')).toBeVisible();
+  const screen = page.locator('.xterm').elementHandle();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByLabel('语言 / Language').selectOption('en');
+  expect(await (await screen)!.evaluate(element => element.isConnected)).toBe(true);
+  await page.getByRole('button', { name: '本机', exact: true }).first().click();
+  await expect(page.locator('.xterm')).toBeVisible();
+});

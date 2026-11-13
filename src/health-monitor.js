@@ -48,7 +48,7 @@ function buildMemoryCheckCommand() {
 function buildDiskCheckCommand(mountPoint = '/') {
   // Returns JSON with disk usage for specific mount point or all
   if (mountPoint === 'all') {
-    return 'df -h | awk \'NR>1 {gsub(/%/,"",$5); printf "{\\"mount\\":\\"%s\\",\\"size\\":\\"%s\\",\\"used\\":\\"%s\\",\\"avail\\":\\"%s\\",\\"percent\\":%s}\\n", $6,$2,$3,$4,$5}\'';
+    return 'LC_ALL=C df -PTh | awk \'NR>1 {gsub(/%/,"",$6); printf "{\\"filesystem\\":\\"%s\\",\\"mount\\":\\"%s\\",\\"size\\":\\"%s\\",\\"used\\":\\"%s\\",\\"avail\\":\\"%s\\",\\"percent\\":%s}\\n", $2,$7,$3,$4,$5,$6}\'';
   }
   return `df -h "${mountPoint}" | awk 'NR>1 {gsub(/%/,"",$5); printf "{\\"mount\\":\\"%s\\",\\"size\\":\\"%s\\",\\"used\\":\\"%s\\",\\"avail\\":\\"%s\\",\\"percent\\":%s}", $6,$2,$3,$4,$5}'`;
 }
@@ -116,6 +116,10 @@ function parseDiskUsage(output) {
   for (const line of lines) {
     try {
       const disk = JSON.parse(line);
+      // Container layers share the backing disk's free space. RAM-backed and
+      // read-only image mounts are not independent persistent disks either.
+      // Keep / even when the monitored host itself runs inside a container.
+      if (disk.mount !== '/' && ['overlay', 'aufs', 'tmpfs', 'devtmpfs', 'squashfs'].includes(disk.filesystem)) continue;
       disk.status = disk.percent > 90 ? HEALTH_STATUS.CRITICAL : disk.percent > 80 ? HEALTH_STATUS.WARNING : HEALTH_STATUS.HEALTHY;
       disks.push(disk);
     } catch (error) {
@@ -322,7 +326,7 @@ export function buildLoadAlertConfigCommand(configPath = '/etc/ssh-manager-alert
 export function checkAlertThresholds(metrics, thresholds) {
   const alerts = [];
 
-  if (thresholds.cpu && metrics.cpu && metrics.cpu.percent > thresholds.cpu) {
+  if (thresholds.cpu && metrics.cpu && metrics.cpu.percent >= thresholds.cpu) {
     alerts.push({
       type: 'cpu',
       severity: 'warning',
@@ -332,7 +336,7 @@ export function checkAlertThresholds(metrics, thresholds) {
     });
   }
 
-  if (thresholds.memory && metrics.memory && metrics.memory.percent > thresholds.memory) {
+  if (thresholds.memory && metrics.memory && metrics.memory.percent >= thresholds.memory) {
     alerts.push({
       type: 'memory',
       severity: 'warning',
@@ -344,7 +348,7 @@ export function checkAlertThresholds(metrics, thresholds) {
 
   if (thresholds.disk && metrics.disks) {
     for (const disk of metrics.disks) {
-      if (disk.percent > thresholds.disk) {
+      if (disk.percent >= thresholds.disk) {
         alerts.push({
           type: 'disk',
           severity: 'warning',

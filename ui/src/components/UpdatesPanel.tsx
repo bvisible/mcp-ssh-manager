@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * Options → Updates: which version this is, whether there is a newer one, and
  * the clicks that act on it. Only drawn inside the desktop application (the
@@ -18,12 +19,13 @@ import { useWorkspace } from '@/stores/workspace';
 const RELEASES = 'https://github.com/bvisible/mcp-ssh-manager/releases';
 
 function when(iso: string | undefined): string {
-  if (!iso) return 'not yet';
+  if (!iso) return tr("not yet");
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? 'not yet' : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? tr("not yet") : date.toLocaleString();
 }
 
 export function UpdatesPanel() {
+  useLocale();
   const { info, busy, error, check, download, install } = useAppUpdate();
   const pending = useWorkspace(s => s.pendingCount);
   if (!info) return null;
@@ -36,54 +38,49 @@ export function UpdatesPanel() {
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="text-sm font-medium">SSH Manager {info.currentVersion}</h2>
-          {preview && <Badge variant="secondary">preview build</Badge>}
+          {preview && <Badge variant="secondary">{tr("preview build")}</Badge>}
         </div>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
           {preview
-            ? 'You are on a preview. You will be offered newer previews and the stable release when it comes out.'
-            : 'You receive stable releases.'}
+            ? tr("You are on a preview. You will be offered newer previews and the stable release when it comes out.")
+            : tr("You receive stable releases.")}
         </p>
       </div>
 
       <div className="rounded-lg border border-border bg-card p-4" aria-live="polite">
         {status === 'checking' && (
-          <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />Checking for updates…</p>
+          <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />{tr("Checking for updates…")}</p>
         )}
 
         {(status === 'idle' || status === 'error') && (
           <div className="flex flex-wrap items-center gap-3">
             <p className="flex min-w-0 flex-1 items-center gap-2 text-sm">
               <CheckCircle2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-              {info.error ? 'Could not check for updates.' : info.checkedAt ? 'You are up to date.' : 'Not checked yet.'}
+              {info.error ? tr("Could not check for updates.") : info.checkedAt ? tr("You are up to date.") : tr("Not checked yet.")}
             </p>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void check()}>
-              <RefreshCw className="h-3.5 w-3.5" />
-              Check now
-            </Button>
+              <RefreshCw className="h-3.5 w-3.5" /> {tr("Check now")} </Button>
           </div>
         )}
 
         {status === 'available' && (
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Version {info.version} is available</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Downloading does not change anything you are running; you choose when to restart.
-              </p>
+              <p className="text-sm font-medium">{tr("Version")} {info.version} {tr("is available")}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground"> {tr("Downloading does not change anything you are running; you choose when to restart.")} </p>
             </div>
             <Button size="sm" disabled={busy} onClick={() => void download()}>
-              <Download className="h-3.5 w-3.5" />
-              Download {info.version}
+              <Download className="h-3.5 w-3.5" /> {tr("Download")} {info.version}
             </Button>
           </div>
         )}
 
         {status === 'downloading' && (
           <div>
-            <p className="text-sm font-medium">Downloading {info.version}… {info.percent ?? 0}%</p>
+            <p className="text-sm font-medium">{tr("Downloading")} {info.version}… {info.percent ?? 0}%</p>
             <div
               role="progressbar"
-              aria-label="Download"
+              aria-label={tr("Download")}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={info.percent ?? 0}
@@ -98,28 +95,23 @@ export function UpdatesPanel() {
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Version {info.version} is ready to install</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  It installs when you restart, or by itself the next time you quit.
-                </p>
+                <p className="text-sm font-medium">{tr("Version")} {info.version} {tr("is ready to install")}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground"> {tr("It installs when you restart, or by itself the next time you quit.")} </p>
               </div>
               <Button size="sm" disabled={busy} onClick={() => void install()}>
-                <RotateCw className="h-3.5 w-3.5" />
-                Restart to update
-              </Button>
+                <RotateCw className="h-3.5 w-3.5" /> {tr("Restart to update")} </Button>
             </div>
             {pending > 0 && (
               <p role="alert" className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
-                {pending} command{pending === 1 ? ' is' : 's are'} waiting for your decision. Restarting drops {pending === 1 ? 'it' : 'them'}: the agent{pending === 1 ? '' : 's'} will be told no.
-              </p>
+                {tr('{{count}} commands are waiting. Restarting refuses these requests.', { count: pending })} </p>
             )}
           </div>
         )}
 
         <dl className="mt-3 grid gap-x-6 gap-y-1 border-t border-border-subtle pt-3 text-xs text-muted-foreground sm:grid-cols-2">
-          <div className="flex gap-2"><dt>Last checked</dt><dd className="text-foreground">{when(info.checkedAt)}</dd></div>
+          <div className="flex gap-2"><dt>{tr("Last checked")}</dt><dd className="text-foreground">{when(info.checkedAt)}</dd></div>
           <div className="flex gap-2">
-            <dt>Release notes</dt>
+            <dt>{tr("Release notes")}</dt>
             <dd>
               <a
                 className="inline-flex items-center gap-1 text-foreground underline underline-offset-2"
@@ -127,7 +119,7 @@ export function UpdatesPanel() {
                 target="_blank"
                 rel="noreferrer"
               >
-                {info.version ? `Version ${info.version}` : 'All releases'}
+                {info.version ? tr("Version {{v0}}", { v0: info.version }) : tr("All releases")}
                 <ExternalLink className="h-3 w-3" aria-hidden="true" />
               </a>
             </dd>
@@ -141,11 +133,7 @@ export function UpdatesPanel() {
         )}
       </div>
 
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        The application checks when it starts and every six hours, and tells you here, in the sidebar and
-        once per version in a notification. The npm engine, if you use one, is updated with npm and is not
-        part of this.
-      </p>
+      <p className="text-xs leading-relaxed text-muted-foreground"> {tr("The application checks when it starts and every six hours, and tells you here, in the sidebar and once per version in a notification. The npm engine, if you use one, is updated with npm and is not part of this.")} </p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
-import '@/lib/i18n';
+import { initializeLanguage } from '@/lib/i18n';
 import { hydratePreferences } from '@/lib/preferences';
 import { initializeTheme } from '@/stores/theme';
 import { initializeWorkspace } from '@/stores/workspace';
@@ -13,7 +13,8 @@ import './globals.css';
 // Vite's single-file bundle can evaluate store modules before an awaited
 // dynamic import. Initialise them explicitly after hydration, before React
 // paints, so restarting on a new port restores the same workspace.
-void hydratePreferences().then(() => {
+void hydratePreferences().then(async () => {
+  await initializeLanguage();
   initializeTheme();
   initializeWorkspace();
   initializeSettings();

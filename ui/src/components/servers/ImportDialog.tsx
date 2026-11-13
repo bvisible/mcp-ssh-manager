@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * Bringing servers in, from the interface.
  *
@@ -29,7 +30,7 @@ import { imports, type ImportPreview, type ImportSource } from '@/lib/api';
 function readAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    reader.onerror = () => reject(new Error(tr("Could not read {{v0}}", { v0: file.name })));
     reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
     reader.readAsDataURL(file);
   });
@@ -39,6 +40,7 @@ export function ImportDialog({ onClose, onImported }: {
   onClose: () => void;
   onImported: (count: number) => void;
 }) {
+  useLocale();
   const [sources, setSources] = useState<ImportSource[] | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -95,14 +97,14 @@ export function ImportDialog({ onClose, onImported }: {
             <Download className="h-4.5 w-4.5 text-primary" />
           </span>
           <div className="min-w-0 flex-1">
-            <DialogTitle className="text-sm font-medium">Import servers</DialogTitle>
+            <DialogTitle className="text-sm font-medium">{tr("Import servers")}</DialogTitle>
             <DialogDescription className="mt-0.5 text-xs text-muted-foreground">
               {preview
                 ? preview.source
-                : 'From another tool, or from a file. No password is ever read.'}
+                : tr("From another tool, or from a file. No password is ever read.")}
             </DialogDescription>
           </div>
-          <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}>
+          <Button variant="ghost" size="icon" aria-label={tr("Close")} onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -114,23 +116,19 @@ export function ImportDialog({ onClose, onImported }: {
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {busy && !preview && (
             <p className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Reading…
-            </p>
+              <Loader2 className="h-4 w-4 animate-spin" /> {tr("Reading…")} </p>
           )}
 
           {!preview && !busy && (
             <div className="space-y-4">
               {sources === null && (
                 <p className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Looking around…
-                </p>
+                  <Loader2 className="h-4 w-4 animate-spin" /> {tr("Looking around…")} </p>
               )}
 
               {sources && sources.length > 0 && (
                 <div>
-                  <h3 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground">
-                    Already on this machine
-                  </h3>
+                  <h3 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground"> {tr("Already on this machine")} </h3>
                   <div className="overflow-hidden rounded-lg border border-border">
                     {sources.map(source => (
                       <button
@@ -140,7 +138,7 @@ export function ImportDialog({ onClose, onImported }: {
                       >
                         <span className="min-w-0 flex-1 truncate text-sm">{source.label}</span>
                         <Badge variant="secondary" className="shrink-0">
-                          {source.count} server{source.count === 1 ? '' : 's'}
+                          {tr('{{count}} server(s)', { count: source.count })}
                         </Badge>
                       </button>
                     ))}
@@ -149,9 +147,7 @@ export function ImportDialog({ onClose, onImported }: {
               )}
 
               <div>
-                <h3 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground">
-                  From a file
-                </h3>
+                <h3 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground"> {tr("From a file")} </h3>
                 <input
                   ref={fileInput}
                   type="file"
@@ -160,13 +156,8 @@ export function ImportDialog({ onClose, onImported }: {
                   onChange={e => void pickFile(e.target.files?.[0])}
                 />
                 <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
-                  <Upload className="h-3.5 w-3.5" />
-                  Choose a file
-                </Button>
-                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                  A spreadsheet, a CSV, an OpenSSH config, or an export from FileZilla,
-                  PuTTY, Termius or MobaXterm. The format is worked out for you.
-                </p>
+                  <Upload className="h-3.5 w-3.5" /> {tr("Choose a file")} </Button>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground"> {tr("A spreadsheet, a CSV, an OpenSSH config, or an export from FileZilla, PuTTY, Termius or MobaXterm. The format is worked out for you.")} </p>
               </div>
             </div>
           )}
@@ -174,9 +165,7 @@ export function ImportDialog({ onClose, onImported }: {
           {preview && (
             <div className="space-y-3">
               {preview.fresh.length === 0 && preview.conflicts.length === 0 && (
-                <p className="py-6 text-center text-xs text-muted-foreground">
-                  Nothing to import from that.
-                </p>
+                <p className="py-6 text-center text-xs text-muted-foreground"> {tr("Nothing to import from that.")} </p>
               )}
 
               {[...preview.fresh, ...preview.conflicts].length > 0 && (
@@ -197,7 +186,7 @@ export function ImportDialog({ onClose, onImported }: {
                       <span className="w-4 shrink-0 text-center text-xs">=</span>
                       <span className="w-36 shrink-0 truncate text-sm">{server.name}</span>
                       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                        {replace ? 'will be replaced' : 'already configured — left alone'}
+                        {replace ? tr("will be replaced") : tr("already configured — left alone")}
                       </span>
                     </div>
                   ))}
@@ -206,22 +195,18 @@ export function ImportDialog({ onClose, onImported }: {
 
               {preview.conflicts.length > 0 && (
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <input type="checkbox" checked={replace} onChange={e => setReplace(e.target.checked)} />
-                  Replace the {preview.conflicts.length} that already exist
-                </label>
+                  <input type="checkbox" checked={replace} onChange={e => setReplace(e.target.checked)} /> {tr("Replace the")} {preview.conflicts.length} {tr("that already exist")} </label>
               )}
 
               {preview.warnings.length > 0 && (
                 <div className="rounded-lg border border-border bg-muted p-3">
-                  <h3 className="mb-1 text-xs font-medium">Notes</h3>
+                  <h3 className="mb-1 text-xs font-medium">{tr("Notes")}</h3>
                   <ul className="space-y-0.5">
                     {preview.warnings.slice(0, 8).map((note, i) => (
                       <li key={i} className="text-[11px] leading-relaxed text-muted-foreground">{note}</li>
                     ))}
                     {preview.warnings.length > 8 && (
-                      <li className="text-[11px] text-muted-foreground">
-                        …and {preview.warnings.length - 8} more
-                      </li>
+                      <li className="text-[11px] text-muted-foreground"> {tr("…and")} {preview.warnings.length - 8} {tr("more")} </li>
                     )}
                   </ul>
                 </div>
@@ -232,14 +217,11 @@ export function ImportDialog({ onClose, onImported }: {
 
         {preview && (
           <div className="flex items-center gap-2 border-t border-border px-5 py-3">
-            <Button variant="ghost" size="sm" onClick={() => { setPreview(null); setReplace(false); }}>
-              Back
-            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { setPreview(null); setReplace(false); }}> {tr("Back")} </Button>
             <span className="ml-auto flex items-center gap-2">
               <FileSpreadsheet className="h-3.5 w-3.5 text-muted-foreground" />
               <Button size="sm" disabled={busy || writing === 0} onClick={() => void write()}>
-                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Import {writing} server{writing === 1 ? '' : 's'}
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} {tr("Import")} {writing} {tr("server")}{writing === 1 ? '' : 's'}
               </Button>
             </span>
           </div>

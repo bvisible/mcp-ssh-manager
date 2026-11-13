@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * "SSH Manager is also a desktop app", in a browser tab, once.
  *
@@ -37,6 +38,7 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 export function DesktopBanner() {
+  useLocale();
   const [status, setStatus] = useState<DesktopStatus | null>(null);
   const [dismissed, setDismissed] = useState(() => readPreference(DISMISSED) === 'true');
   const [phase, setPhase] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export function DesktopBanner() {
     if (event.type !== 'desktop') return;
     if (event.phase === 'handover') { setHandedOver(true); return; }
     if (event.phase === 'error') {
-      setError(typeof event.error === 'string' ? event.error : 'The desktop app was not installed.');
+      setError(typeof event.error === 'string' ? event.error : tr("The desktop app was not installed."));
       setPhase(null);
       return;
     }
@@ -79,7 +81,7 @@ export function DesktopBanner() {
     return (
       <div role="status" className="flex shrink-0 items-center gap-3 border-b border-border bg-success-light px-8 py-3 text-sm text-success">
         <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span><b>Continued in the desktop app.</b> You can close this tab.</span>
+        <span><b>{tr("Continued in the desktop app.")}</b> {tr("You can close this tab.")}</span>
       </div>
     );
   }
@@ -119,19 +121,18 @@ export function DesktopBanner() {
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-8 py-3 text-sm">
       <AppWindow className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
       <p className="min-w-0 flex-[1_1_320px]">
-        <b>SSH Manager is also a desktop app:</b> menu bar, native notifications, updates itself.
-        {status.installed && status.version && <span className="text-muted-foreground"> Version {status.version} is installed.</span>}
+        <b>{tr("SSH Manager is also a desktop app:")}</b> {tr("menu bar, native notifications, updates itself.")} {status.installed && status.version && <span className="text-muted-foreground"> {tr("Version")} {status.version} {tr("is installed.")}</span>}
       </p>
 
       {busy && (
         <div className="ml-auto flex min-w-[220px] items-center gap-3" role="status" aria-live="polite">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />
-          <span className="text-muted-foreground">{PHASE_LABEL[phase ?? ''] ?? 'Working…'}</span>
+          <span className="text-muted-foreground">{tr(PHASE_LABEL[phase ?? ''] ?? 'Working…')}</span>
           {phase === 'download' && progress !== null && (
             <div
               className="h-1.5 w-28 overflow-hidden rounded-full bg-sunk"
               role="progressbar"
-              aria-label="Download"
+              aria-label={tr("Download")}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(progress * 100)}
@@ -146,25 +147,23 @@ export function DesktopBanner() {
         <div className="ml-auto flex items-center gap-2">
           {status.method === 'terminal' && !status.installed ? (
             <>
-              <code className="rounded-md border border-border bg-secondary px-2.5 py-1.5 font-mono text-[13px]">ssh-manager app</code>
+              <code className="rounded-md border border-border bg-secondary px-2.5 py-1.5 font-mono text-[13px]">{'ssh-manager app'}</code>
               <Button variant="outline" size="sm" onClick={() => void copyCommand()}>
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? 'Copied' : 'Copy'}
+                {copied ? tr("Copied") : tr("Copy")}
               </Button>
             </>
           ) : (
             <Button size="sm" className="font-bold" onClick={() => void run()}>
-              {status.installed ? 'Open the app' : 'Install the app'}
+              {status.installed ? tr("Open the app") : tr("Install the app")}
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={notNow}>
-            <X className="h-3.5 w-3.5" />
-            Not now
-          </Button>
+            <X className="h-3.5 w-3.5" /> {tr("Not now")} </Button>
         </div>
       )}
 
-      {error && <p className="w-full text-destructive" role="alert">{error} Nothing was installed.</p>}
+      {error && <p className="w-full text-destructive" role="alert">{error} {tr("Nothing was installed.")}</p>}
     </div>
   );
 }

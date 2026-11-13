@@ -1,4 +1,5 @@
 import React from 'react'
+import { tr, useLocale } from '@/lib/i18n'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings.store'
@@ -22,6 +23,7 @@ export const CategoryGroup = React.memo(function CategoryGroup({
   onEditServer,
   onDeleteServer
 }: CategoryGroupProps) {
+  useLocale();
   const collapsedCategories = useSettingsStore((s) => s.collapsedCategories)
   const toggleCategoryCollapse = useSettingsStore((s) => s.toggleCategoryCollapse)
   const collapsed = collapsedCategories.includes(name)
@@ -42,7 +44,7 @@ export const CategoryGroup = React.memo(function CategoryGroup({
           )}
         />
         <span className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          {name}
+          {name === 'Uncategorized' ? tr(name) : name}
         </span>
         <span className="text-xs font-medium text-muted-foreground tabular-nums">
           {servers.length}

@@ -1,3 +1,5 @@
+import { nativeText, nativeLanguage } from './locale.mjs';
+import { applicationMenuTemplate } from './native-menu.mjs';
 /**
  * The desktop application.
  *
@@ -194,7 +196,7 @@ function updateSnapshot() {
 const appUpdates = {
   snapshot: updateSnapshot,
   check: async () => {
-    if (!updaterActive) throw new Error('Updates are turned off in this build');
+    if (!updaterActive) throw new Error(nativeText("Updates are turned off in this build"));
     await electronUpdater.autoUpdater.checkForUpdates();
   },
   download: async () => { await electronUpdater.autoUpdater.downloadUpdate(); },
@@ -312,44 +314,11 @@ function createWindow(url) {
 
 /** A menu with the shortcuts a terminal-adjacent app is expected to have. */
 function buildMenu(url) {
-  const isMac = process.platform === 'darwin';
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(isMac ? [{ role: 'appMenu' }] : []),
-    {
-      label: 'File',
-      submenu: [
-        {
-          label: 'Open in browser',
-          accelerator: 'CmdOrCtrl+B',
-          // The tokenised URL is genuinely useful outside the app — a second
-          // screen, a different browser, devtools you are used to.
-          click: () => void shell.openExternal(url),
-        },
-        { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' },
-      ],
-    },
-    { role: 'editMenu' },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-      ],
-    },
-    { role: 'windowMenu' },
-    {
-      role: 'help',
-      submenu: [{ label: 'Check for Updates…', click: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }) }],
-    },
-  ]));
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate({
+    isMac: process.platform === 'darwin',
+    onOpenBrowser: () => void shell.openExternal(url),
+    onCheckUpdates: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }),
+  })));
 }
 
 /**
@@ -398,8 +367,8 @@ function announce(pending) {
 
     const notification = new Notification({
       title: request.destructive
-        ? `${request.server}: destructive command waiting`
-        : `${request.server}: waiting for your decision`,
+        ? nativeText("{{v0}}: destructive command waiting", { v0: request.server })
+        : nativeText("{{v0}}: waiting for your decision", { v0: request.server }),
       body: String(request.command || request.tool || '').slice(0, 220),
       // Destructive requests stay on screen. `rm -rf` on production and
       // `systemctl status` are not the same interruption, and a banner that
@@ -441,10 +410,11 @@ function refreshTray() {
   // timer, so only touch it when something actually moved.
   const signature = JSON.stringify([
     pending.map(r => r.id), shells.map(t => t.server),
-    running.map(s => s.id), servers, update.status, update.percent,
+    running.map(s => s.id), servers, update.status, update.percent, nativeLanguage(),
   ]);
   if (signature === trayState) return;
   trayState = signature;
+  buildMenu(plane.url);
 
   announce(pending);
 
@@ -468,7 +438,7 @@ function refreshTray() {
   const template = [...updateMenuItems()];
 
   if (pending.length) {
-    template.push({ label: `${pending.length} waiting for your decision`, enabled: false });
+    template.push({ label: nativeText("{{v0}} waiting for your decision", { v0: pending.length }), enabled: false });
     for (const request of pending.slice(0, 6)) {
       template.push({
         label: `    ${request.server} · ${brief(request.command)}`,
@@ -477,14 +447,14 @@ function refreshTray() {
     }
     template.push({ type: 'separator' });
   } else {
-    template.push({ label: 'Nothing is waiting', enabled: false });
+    template.push({ label: nativeText("Nothing is waiting"), enabled: false });
     template.push({ type: 'separator' });
   }
 
   if (shells.length || running.length) {
-    template.push({ label: 'Open right now', enabled: false });
+    template.push({ label: nativeText("Open right now"), enabled: false });
     for (const shell of shells.slice(0, 5)) {
-      template.push({ label: `    Shell on ${shell.server}`, click: focus });
+      template.push({ label: nativeText("    Shell on {{v0}}", { v0: shell.server }), click: focus });
     }
     for (const stream of running.slice(0, 5)) {
       template.push({
@@ -497,22 +467,22 @@ function refreshTray() {
 
   if (servers.length) {
     template.push({
-      label: `Servers (${servers.length})`,
+      label: nativeText("Servers ({{v0}})", { v0: servers.length }),
       submenu: servers.slice(0, 12).map(name => ({ label: name, click: focus })),
     });
     template.push({ type: 'separator' });
   }
 
   template.push(
-    { label: 'Show SSH Manager', click: focus },
-    { label: 'Open in browser', click: () => plane && void shell.openExternal(plane.url) },
+    { label: nativeText("Show SSH Manager"), click: focus },
+    { label: nativeText("Open in browser"), click: () => plane && void shell.openExternal(plane.url) },
     { type: 'separator' },
-    { label: 'Quit SSH Manager', click: () => app.quit() },
+    { label: nativeText("Quit SSH Manager"), click: () => app.quit() },
   );
 
   tray.setContextMenu(Menu.buildFromTemplate(template));
   tray.setToolTip(pending.length
-    ? `SSH Manager — ${pending.length} waiting for your decision`
+    ? nativeText("SSH Manager — {{v0}} waiting for your decision", { v0: pending.length })
     : 'SSH Manager');
 
   // The count beside the icon, and on the dock. Only when it is not zero: a
@@ -596,8 +566,8 @@ function announceUpdate(version) {
   try { fs.writeFileSync(marker, `${version}\n`); } catch { /* it will say it again next time; harmless */ }
   if (!Notification.isSupported()) return;
   const notification = new Notification({
-    title: `SSH Manager ${version} is available`,
-    body: 'Open Options → Updates to download it. Nothing is installed until you restart.',
+    title: nativeText("SSH Manager {{v0}} is available", { v0: version }),
+    body: nativeText("Open Options → Updates to download it. Nothing is installed until you restart."),
     silent: true,
   });
   notification.on('click', () => {
@@ -617,23 +587,23 @@ function updateMenuItems() {
   const { autoUpdater } = electronUpdater;
   switch (update.status) {
   case 'checking':
-    return [{ label: 'Checking for updates…', enabled: false }, { type: 'separator' }];
+    return [{ label: nativeText("Checking for updates…"), enabled: false }, { type: 'separator' }];
   case 'available':
     return [{
-      label: `Update to ${update.version}`,
+      label: nativeText("Update to {{v0}}", { v0: update.version }),
       click: () => autoUpdater.downloadUpdate().catch(() => { /* reported by the error handler */ }),
     }, { type: 'separator' }];
   case 'downloading':
-    return [{ label: `Downloading update… ${update.percent}%`, enabled: false },
+    return [{ label: nativeText("Downloading update… {{v0}}%", { v0: update.percent }), enabled: false },
       { type: 'separator' }];
   case 'ready':
     return [{
-      label: `Restart to update to ${update.version}`,
+      label: nativeText("Restart to update to {{v0}}", { v0: update.version }),
       click: () => autoUpdater.quitAndInstall(),
     }, { type: 'separator' }];
   default:
     return updaterActive
-      ? [{ label: 'Check for Updates…', click: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }) },
+      ? [{ label: nativeText("Check for Updates…"), click: () => void appUpdates.check().catch(() => { /* shown in Options → Updates */ }) },
         { type: 'separator' }]
       : [];
   }
@@ -738,7 +708,7 @@ app.whenReady().then(async () => {
     const { url } = await startControlPlane();
     if (smokeTest) {
       const { runSmokeTest } = await import('./smoke-test.mjs');
-      await runSmokeTest({ app, BrowserWindow, url, root: engineRoot(), localShellProvider });
+      await runSmokeTest({ app, BrowserWindow, Menu, url, root: engineRoot(), localShellProvider });
       app.quit();
       return;
     }

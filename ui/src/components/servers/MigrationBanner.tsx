@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * Offers to bring servers from a .env into the vault.
  *
@@ -19,6 +20,7 @@ import { readPreference, writePreference } from '@/lib/preferences';
 const DISMISSED_KEY = 'ssh-manager.migration-dismissed';
 
 export function MigrationBanner({ onImported }: { onImported: () => void }) {
+  const locale = useLocale();
   const [pending, setPending] = useState<PendingServer[] | null>(null);
   const [envPath, setEnvPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,17 +51,11 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
       <div className="flex items-start gap-3">
         <FileKey className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">
-            Your existing setup keeps working
-          </p>
+          <p className="text-sm font-medium"> {tr("Your existing setup keeps working")} </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {envPath && <><code className="font-mono">{envPath}</code> — </>}
-            {withSecrets > 0
-              ? `${withSecrets} of them keep${withSecrets > 1 ? '' : 's'} credentials in clear text. `
-              : ''}
-            Bring {pending.length} server{pending.length > 1 ? 's' : ''} into this workspace to edit
-            them here. Importing is optional and leaves the original configuration unchanged.
-          </p>
+            {withSecrets > 0 && tr('{{count}} connection(s) contain plaintext credentials. ', { count: withSecrets })}
+            {tr('Import {{count}} server(s) to edit them here. The original configuration stays unchanged.', { count: pending.length })} </p>
 
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {pending.map(server => (
@@ -71,7 +67,7 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
                 </span>
                 {server.secrets > 0 && (
                   <span className="ml-1.5 text-accent">
-                    {server.secrets} secret{server.secrets > 1 ? 's' : ''}
+                    {tr('{{count}} secret(s)', { count: server.secrets })}
                   </span>
                 )}
               </li>
@@ -96,25 +92,20 @@ export function MigrationBanner({ onImported }: { onImported: () => void }) {
                 }
               }}
             >
-              {busy ? 'Importing…' : `Import ${pending.length > 1 ? 'them' : 'it'}`}
+              {busy ? tr('Importing…') : locale === 'en' ? (pending.length === 1 ? 'Import it' : 'Import them') : tr('Import')}
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={dismiss}>
-              Not now
-            </Button>
+            <Button variant="ghost" size="sm" onClick={dismiss}> {tr("Not now")} </Button>
             <p className="text-[10px] text-muted-foreground">
               {/* Said here rather than after the fact: the vault's key belongs
                   to this machine, and that is the thing to know before it
-                  becomes the only copy of anything. */}
-              Afterwards, create a recovery backup in Options → Vault. Your encryption key
-              belongs to this machine; the backup lets you restore elsewhere.
-            </p>
+                  becomes the only copy of anything. */} {tr("Afterwards, create a recovery backup in Options → Vault. Your encryption key belongs to this machine; the backup lets you restore elsewhere.")} </p>
           </div>
           {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
         </div>
         <button
           onClick={dismiss}
-          aria-label="Dismiss"
+          aria-label={tr("Dismiss")}
           className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />

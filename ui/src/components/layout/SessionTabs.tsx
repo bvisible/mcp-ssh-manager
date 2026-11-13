@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The open sessions, as a strip of tabs above the pane.
  *
@@ -24,6 +25,7 @@ const ICONS = {
 } as const;
 
 export function SessionTabs() {
+  useLocale();
   const { tabs, activeTabId, activateTab, removeTab, setView } = useWorkspace();
   if (tabs.length === 0) return null;
 
@@ -49,14 +51,14 @@ export function SessionTabs() {
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            aria-label="Open another session"
+            aria-label={tr("Open another session")}
             onClick={() => setView('terminal')}
             className="flex w-9 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-accent/30 hover:text-foreground"
           >
             <Plus className="h-4 w-4" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Open another session</TooltipContent>
+        <TooltipContent side="bottom">{tr("Open another session")}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -68,6 +70,7 @@ function SessionTab({ tab, active, onActivate, onClose }: {
   onActivate: () => void;
   onClose: () => void;
 }) {
+  useLocale();
   const Icon = ICONS[tab.type];
   return (
     <div
@@ -86,7 +89,7 @@ function SessionTab({ tab, active, onActivate, onClose }: {
         <span className="truncate">{tab.title}</span>
       </button>
       <button
-        aria-label={`Close ${tab.title}`}
+        aria-label={tr("Close {{v0}}", { v0: tab.title })}
         onClick={onClose}
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-accent/40 group-hover:opacity-100 focus-visible:opacity-100"
       >

@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -111,6 +112,7 @@ export const FilePane = memo(function FilePane({
   onOpenTerminalHere,
   onNativeFileDrop
 }: FilePaneProps) {
+  useLocale();
   const { t } = useTranslation()
   const [showHidden, setShowHidden] = useState(false)
   const [sortField, setSortField] = useState<SortField>('name')

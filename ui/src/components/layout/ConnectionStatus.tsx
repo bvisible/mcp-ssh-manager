@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * Whether this page is still talking to the control plane.
  *
@@ -22,12 +23,13 @@ function useConnection(): string {
 }
 
 function describe(status: string): string {
-  return status === 'connected' ? 'Control plane connected'
-    : status === 'connecting' ? 'Connecting to the control plane…'
-      : 'Connection lost. Reconnecting — displayed activity may be out of date.';
+  return status === 'connected' ? tr("Control plane connected")
+    : status === 'connecting' ? tr("Connecting to the control plane…")
+      : tr("Connection lost. Reconnecting — displayed activity may be out of date.");
 }
 
 export function ConnectionBadge({ expanded }: { expanded: boolean }) {
+  useLocale();
   const handedOver = useWorkspace(s => s.handedOver);
   const live = useConnection();
   // After a hand-over the plane stops on purpose; "connection lost" would be
@@ -54,7 +56,7 @@ export function ConnectionBadge({ expanded }: { expanded: boolean }) {
       {/* The full sentence stays in the DOM when the rail is collapsed: it is
           what a screen reader announces when the connection drops. */}
       <span className={cn('min-w-0 truncate font-bold', !expanded && 'sr-only')}>
-        {connected ? 'Control plane connected' : status === 'connecting' ? 'Connecting…' : 'Connection lost'}
+        {connected ? tr("Control plane connected") : status === 'connecting' ? tr("Connecting…") : tr("Connection lost")}
         <span className="sr-only">{connected ? '' : ` — ${describe(status)}`}</span>
       </span>
     </div>
@@ -62,6 +64,7 @@ export function ConnectionBadge({ expanded }: { expanded: boolean }) {
 }
 
 export function ConnectionBanner() {
+  useLocale();
   const status = useConnection();
   // Stopping after handing over to the desktop application is the plan, not a
   // fault: the page already says it continued there.

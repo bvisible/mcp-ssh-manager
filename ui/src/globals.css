@@ -255,7 +255,11 @@ body {
 }
 
 .page-header {
-  padding-right: calc(2rem + var(--titlebar-controls));
+  padding-right: calc(1rem + var(--titlebar-controls));
+}
+
+@media (min-width: 640px) {
+  .page-header { padding-right: calc(2rem + var(--titlebar-controls)); }
 }
 
 /* Under the session tabs the header is no longer the top row: the tabs are,

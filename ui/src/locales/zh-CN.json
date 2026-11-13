@@ -1,0 +1,70 @@
+{
+  "actions": {
+    "browse": "浏览文件",
+    "cancel": "取消",
+    "connect": "连接 SSH",
+    "delete": "删除",
+    "edit": "编辑"
+  },
+  "files": {
+    "columnModified": "修改时间",
+    "columnName": "名称",
+    "columnSize": "大小",
+    "contextCompressZip": "压缩为 ZIP",
+    "contextCopyPath": "复制路径",
+    "contextDelete": "删除",
+    "contextDownload": "下载",
+    "contextExtractZip": "解压 ZIP",
+    "contextGetInfo": "显示信息",
+    "contextNewFile": "新建文件",
+    "contextNewFolder": "新建文件夹",
+    "contextOpen": "已打开",
+    "contextOpenTerminal": "打开终端",
+    "contextQuickLook": "快速预览",
+    "contextRefresh": "刷新",
+    "contextRename": "重命名",
+    "contextShowInFinder": "在访达中显示",
+    "contextUpload": "上传",
+    "copyPath": "复制路径",
+    "download": "下载",
+    "emptyDirectory": "空目录",
+    "goUp": "返回上级",
+    "hideHidden": "隐藏隐藏文件",
+    "home": "主目录 (~)",
+    "modified": "修改时间",
+    "name": "名称",
+    "newFolder": "新建文件夹",
+    "openInCode": "在 Code 中打开",
+    "openInEditor": "在编辑器中打开",
+    "openTerminal": "在此打开终端",
+    "permissions": "权限",
+    "refresh": "刷新",
+    "root": "根目录 (/)",
+    "setDefault": "设为默认目录",
+    "showHidden": "显示隐藏文件",
+    "size": "大小",
+    "statusHidden": "隐藏",
+    "statusItems": "项",
+    "statusLink": "链接",
+    "statusSelected": "已选择",
+    "upload": "上传"
+  },
+  "servers": {
+    "addFirst": "添加服务器",
+    "dupDialog": {
+      "description": "{{name}} 已有一个{{type}}会话。",
+      "goExisting": "前往已有会话",
+      "openNew": "新建会话",
+      "title": "连接已打开"
+    },
+    "emptyDescription": "连接 SSH 服务器，管理文件、运行命令并远程维护基础设施。",
+    "emptyTitle": "添加第一台服务器",
+    "import": "导入",
+    "noResults": "没有匹配的服务器",
+    "status": {
+      "browserActive": "文件窗口已打开",
+      "browserAndTerminal": "文件窗口和 SSH 终端已打开",
+      "terminalActive": "SSH 终端已打开"
+    }
+  }
+}

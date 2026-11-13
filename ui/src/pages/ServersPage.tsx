@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The server list. `ServerGrid`, `CategoryGroup` and `ServerCard` came from
  * TransHub; this page is the toolbar around them and the wiring to the vault.
@@ -22,9 +23,9 @@ import { ImportDialog } from '@/components/servers/ImportDialog';
 import { usePendingRequests } from '@/lib/use-pending';
 import { cn } from '@/lib/utils';
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 export function ServersPage() {
+  useLocale();
   const {
     servers, load, remove, error, searchQuery, setSearchQuery, viewMode, setViewMode, editMode, setEditMode,
     categoryFilter, setCategoryFilter,
@@ -85,18 +86,18 @@ export function ServersPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title="Servers"
+        title={tr("Servers")}
         hint={servers.length > 0
-          ? `${plural(servers.length, 'server')} in ${plural(groups.length, 'group')}. Your agents reach them through this engine.`
+          ? tr('{{servers}} server(s) in {{groups}} group(s). Your agents reach them through this engine.', { servers: servers.length, groups: groups.length })
           : undefined}
         actions={
           <>
             <Button
               variant={editMode ? 'secondary' : 'ghost'}
               size="icon"
-              aria-label="Toggle edit mode"
+              aria-label={tr("Toggle edit mode")}
               aria-pressed={editMode}
-              title={editMode ? 'Done editing' : 'Edit or remove servers'}
+              title={editMode ? tr("Done editing") : tr("Edit or remove servers")}
               onClick={() => setEditMode(!editMode)}
             >
               <Pencil className="h-4 w-4" />
@@ -105,13 +106,9 @@ export function ServersPage() {
                 the CLI, which made seven working format readers invisible to
                 anybody who had not read the source. */}
             <Button variant="outline" onClick={() => setImporting(true)}>
-              <Download className="h-4 w-4" />
-              Import
-            </Button>
+              <Download className="h-4 w-4" /> {tr("Import")} </Button>
             <Button className="font-bold" onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" />
-              Add a server
-            </Button>
+              <Plus className="h-4 w-4" /> {tr("Add a server")} </Button>
           </>
         }
       />
@@ -137,18 +134,18 @@ export function ServersPage() {
                   type="search"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search a name, host or user"
-                  aria-label="Search servers"
+                  placeholder={tr("Search a name, host or user")}
+                  aria-label={tr("Search servers")}
                   className="h-10 bg-card pl-9 text-sm"
                 />
               </div>
 
-              <div role="group" aria-label="Layout" className="ml-auto flex shrink-0 overflow-hidden rounded-lg border border-border bg-card">
+              <div role="group" aria-label={tr("Layout")} className="ml-auto flex shrink-0 overflow-hidden rounded-lg border border-border bg-card">
                 <button
                   type="button"
-                  aria-label="Show as a grid"
+                  aria-label={tr("Show as a grid")}
                   aria-pressed={viewMode === 'grid'}
-                  title="Cards"
+                  title={tr("Cards")}
                   onClick={() => setViewMode('grid')}
                   className={cn('flex h-[38px] w-10 items-center justify-center transition-colors',
                     viewMode === 'grid' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
@@ -157,9 +154,9 @@ export function ServersPage() {
                 </button>
                 <button
                   type="button"
-                  aria-label="Show as a list"
+                  aria-label={tr("Show as a list")}
                   aria-pressed={viewMode === 'list'}
-                  title="List"
+                  title={tr("List")}
                   onClick={() => setViewMode('list')}
                   className={cn('flex h-[38px] w-10 items-center justify-center border-l border-border transition-colors',
                     viewMode === 'list' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
@@ -171,22 +168,22 @@ export function ServersPage() {
 
             {/* Only worth showing with more than one group to choose from. */}
             {groups.length > 1 && (
-              <div role="group" aria-label="Filter by group" className="flex flex-wrap gap-1.5">
+              <div role="group" aria-label={tr("Filter by group")} className="flex flex-wrap gap-1.5">
                 <FilterChip
-                  label="All"
+                  label={tr("All")}
                   count={servers.length}
                   active={categoryFilter === null}
                   onClick={() => setCategoryFilter(null)}
-                  ariaLabel="Show every group"
+                  ariaLabel={tr("Show every group")}
                 />
                 {groups.map(([name, count]) => (
                   <FilterChip
                     key={name}
-                    label={name}
+                    label={name === 'Uncategorized' ? tr(name) : name}
                     count={count}
                     active={categoryFilter === name}
                     onClick={() => setCategoryFilter(categoryFilter === name ? null : name)}
-                    ariaLabel={`Show only ${name}`}
+                    ariaLabel={tr("Show only {{v0}}", { v0: name })}
                   />
                 ))}
               </div>
@@ -222,6 +219,7 @@ export function ServersPage() {
 }
 
 function WaitingBanner({ pending, onOpen }: { pending: PendingRequest[]; onOpen: () => void }) {
+  useLocale();
   // The longest-waiting first: it is the agent that has been blocked longest.
   const first = [...pending].sort((a, b) => b.waitingMs - a.waitingMs)[0];
   return (
@@ -233,13 +231,13 @@ function WaitingBanner({ pending, onOpen }: { pending: PendingRequest[]; onOpen:
       <Clock className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
       <span className="font-bold">
         {pending.length === 1
-          ? '1 command is waiting for your decision'
-          : `${pending.length} commands are waiting for your decision`}
+          ? tr("1 command is waiting for your decision")
+          : tr("{{v0}} commands are waiting for your decision", { v0: pending.length })}
       </span>
       <span className="min-w-0 flex-[1_1_240px] truncate font-mono text-[12.5px]">
         {first.server} · {first.command || first.tool}
       </span>
-      <span className="font-bold">Review →</span>
+      <span className="font-bold">{tr("Review →")}</span>
     </button>
   );
 }
@@ -251,6 +249,7 @@ function FilterChip({ label, count, active, onClick, ariaLabel }: {
   onClick: () => void;
   ariaLabel: string;
 }) {
+  useLocale();
   return (
     <button
       type="button"

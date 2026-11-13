@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 'use client'
 
 import * as React from 'react'
@@ -27,8 +28,8 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 }
 
 function CommandDialog({
-  title = 'Command Palette',
-  description = 'Search for a command to run...',
+  title = tr("Command Palette"),
+  description = tr("Search for a command to run..."),
   children,
   className,
   showCloseButton = true,
@@ -39,6 +40,7 @@ function CommandDialog({
   className?: string
   showCloseButton?: boolean
 }) {
+  useLocale();
   return (
     <Dialog {...props}>
       <DialogHeader className="sr-only">

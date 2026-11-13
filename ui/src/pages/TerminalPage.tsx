@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The terminal, as a place you can go rather than a button on a card.
  *
@@ -26,6 +27,7 @@ import { commands as commandsApi, state, type SavedCommand } from '@/lib/api';
 const newId = () => `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function TerminalPage() {
+  useLocale();
   const { servers, load } = useServersStore();
   const { tabs, addTab, activateTab } = useWorkspace();
   const [saved, setSaved] = useState<SavedCommand[]>([]);
@@ -84,20 +86,20 @@ export function TerminalPage() {
    * the ordinary way anybody uses a terminal.
    */
   const openLocalShell = () =>
-    addTab({ id: newId(), type: 'local-terminal', title: titleFor('This machine') });
+    addTab({ id: newId(), type: 'local-terminal', title: titleFor(tr("This machine")) });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title="Terminal"
+        title={tr("Terminal")}
         count={servers.length}
-        hint="A shell on any machine — and the commands you would rather not retype."
+        hint={tr("A shell on any machine — and the commands you would rather not retype.")}
       />
 
       <Tabs defaultValue="open" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mx-6 mt-4 w-fit shrink-0">
-          <TabsTrigger value="open">Open a shell</TabsTrigger>
-          <TabsTrigger value="commands">Saved commands</TabsTrigger>
+          <TabsTrigger value="open">{tr("Open a shell")}</TabsTrigger>
+          <TabsTrigger value="commands">{tr("Saved commands")}</TabsTrigger>
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -107,9 +109,7 @@ export function TerminalPage() {
                 below is still empty. */}
             {localShell && (
               <section>
-                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Here
-                </h2>
+                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground"> {tr("Here")} </h2>
                 <button
                   onClick={openLocalShell}
                   className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-card-hover sm:w-1/2 lg:w-1/3"
@@ -118,10 +118,8 @@ export function TerminalPage() {
                     <Monitor className="h-4.5 w-4.5 text-primary" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">This machine</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      Your own shell, as you have it configured
-                    </span>
+                    <span className="block truncate text-sm font-medium">{tr("This machine")}</span>
+                    <span className="block truncate text-xs text-muted-foreground"> {tr("Your own shell, as you have it configured")} </span>
                   </span>
                   <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </button>
@@ -130,15 +128,13 @@ export function TerminalPage() {
 
             <section>
               {localShell && (
-                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Somewhere else
-                </h2>
+                <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground"> {tr("Somewhere else")} </h2>
               )}
               {servers.length === 0 ? (
                 <EmptyState
                   icon={TerminalSquare}
-                  title="No servers yet"
-                  hint="Add one under Servers, or import what you already have with `ssh-manager import`."
+                  title={tr("No servers yet")}
+                  hint={tr('Add a connection under Servers, or import your existing configuration.')}
                 />
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -172,8 +168,8 @@ export function TerminalPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label={`Another shell on ${server.name}`}
-                          title={`Another shell on ${server.name}`}
+                          aria-label={tr("Another shell on {{v0}}", { v0: server.name })}
+                          title={tr("Another shell on {{v0}}", { v0: server.name })}
                           className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                           onClick={() => openShell(server.id, server.name, true)}
                         >
@@ -189,25 +185,19 @@ export function TerminalPage() {
 
           <TabsContent value="commands" className="mt-0 space-y-4">
             <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground">
-                Picked from a list inside any shell, instead of typed again.
-              </p>
+              <p className="text-xs text-muted-foreground"> {tr("Picked from a list inside any shell, instead of typed again.")} </p>
               <Button size="sm" className="ml-auto" onClick={() => setCreating(true)}>
-                <Plus className="h-3.5 w-3.5" />
-                New command
-              </Button>
+                <Plus className="h-3.5 w-3.5" /> {tr("New command")} </Button>
             </div>
 
             {saved.length === 0 ? (
               <EmptyState
                 icon={Play}
-                title="Nothing saved yet"
-                hint="Save the ones you type most. They appear in every shell, on the servers you choose."
+                title={tr("Nothing saved yet")}
+                hint={tr("Save the ones you type most. They appear in every shell, on the servers you choose.")}
                 action={
                   <Button size="sm" onClick={() => setCreating(true)}>
-                    <Plus className="h-3.5 w-3.5" />
-                    Save a command
-                  </Button>
+                    <Plus className="h-3.5 w-3.5" /> {tr("Save a command")} </Button>
                 }
               />
             ) : (
@@ -222,15 +212,15 @@ export function TerminalPage() {
                       {command.command}
                     </code>
                     {command.confirmBeforeRun && (
-                      <Badge variant="outline" className="shrink-0">asks first</Badge>
+                      <Badge variant="outline" className="shrink-0">{tr("asks first")}</Badge>
                     )}
                     <span className="shrink-0 text-[10px] text-muted-foreground">
                       {command.serverNames?.length
                         ? command.serverNames.join(', ')
-                        : 'every server'}
+                        : tr("every server")}
                     </span>
                     <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Button variant="ghost" size="icon" aria-label={`Edit ${command.name}`}
+                      <Button variant="ghost" size="icon" aria-label={tr("Edit {{v0}}", { v0: command.name })}
                         onClick={() => setEditing(command)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -250,9 +240,7 @@ export function TerminalPage() {
 
             {suggestions.length > 0 && (
               <div>
-                <h2 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground">
-                  Suggestions
-                </h2>
+                <h2 className="mb-2 text-xs font-medium tracking-wider uppercase text-muted-foreground"> {tr("Suggestions")} </h2>
                 {/* Offered, never installed. A list somebody did not choose is a
                     list they have to read past every time. */}
                 <div className="flex flex-wrap gap-1.5">

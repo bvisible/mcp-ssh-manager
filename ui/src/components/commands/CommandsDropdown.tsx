@@ -1,3 +1,4 @@
+import { tr, useLocale } from '@/lib/i18n';
 /**
  * The commands you keep, next to the terminal where you use them.
  *
@@ -27,6 +28,7 @@ export function CommandsDropdown({
   onPick: (command: SavedCommand) => void;
   onManage: () => void;
 }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<SavedCommand[] | null>(null);
   const [suggestions, setSuggestions] = useState<Omit<SavedCommand, 'id'>[]>([]);
@@ -59,7 +61,7 @@ export function CommandsDropdown({
 
   const pick = (command: SavedCommand) => {
     if (command.confirmBeforeRun && !window.confirm(
-      `${command.name}\n\n${command.command}\n\nPut this in the terminal on ${server}?`
+      tr("{{v0}}\n\n{{v1}}\n\nPut this in the terminal on {{v2}}?", { v0: command.name, v1: command.command, v2: server })
     )) return;
     onPick(command);
     setOpen(false);
@@ -68,9 +70,7 @@ export function CommandsDropdown({
   return (
     <div ref={container} className="relative">
       <Button variant="ghost" size="sm" onClick={() => setOpen(current => !current)}>
-        <Terminal className="h-3.5 w-3.5" />
-        Commands
-        <ChevronDown className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />
+        <Terminal className="h-3.5 w-3.5" /> {tr("Commands")} <ChevronDown className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />
       </Button>
 
       {open && (
@@ -92,13 +92,11 @@ export function CommandsDropdown({
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-medium">{command.name}</span>
                         {command.confirmBeforeRun && (
-                          <span className="rounded bg-destructive/10 px-1 text-[9px] text-destructive">
-                            asks first
-                          </span>
+                          <span className="rounded bg-destructive/10 px-1 text-[9px] text-destructive"> {tr("asks first")} </span>
                         )}
                         {command.serverNames.length > 0 && (
                           <span className="text-[9px] text-muted-foreground">
-                            {command.serverNames.length} server{command.serverNames.length > 1 ? 's' : ''}
+                            {tr('{{count}} server(s)', { count: command.serverNames.length })}
                           </span>
                         )}
                       </div>
@@ -125,9 +123,7 @@ export function CommandsDropdown({
 
                 {items.length === 0 && suggestions.length > 0 && (
                   <div className="p-3">
-                    <p className="mb-2 text-xs text-muted-foreground">
-                      Nothing saved yet. These are the ones people usually keep — pick any to add it.
-                    </p>
+                    <p className="mb-2 text-xs text-muted-foreground"> {tr("Nothing saved yet. These are the ones people usually keep — pick any to add it.")} </p>
                     <div className="grid gap-1">
                       {suggestions.map(suggestion => (
                         <button
@@ -160,9 +156,7 @@ export function CommandsDropdown({
                 onClick={() => { setOpen(false); onManage(); }}
                 className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground hover:bg-card-hover hover:text-foreground"
               >
-                <Plus className="h-3.5 w-3.5" />
-                Save a new command
-              </button>
+                <Plus className="h-3.5 w-3.5" /> {tr("Save a new command")} </button>
             </>
           )}
         </div>
