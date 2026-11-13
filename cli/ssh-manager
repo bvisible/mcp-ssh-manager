@@ -99,6 +99,8 @@ show_help() {
     vault status                  Where it and its key live
     vault add|remove <name>       One server in or out
     vault backup|restore <file>   A recovery file, under a passphrase
+    guard install|remove|status   Keep agents off raw ssh in their shell
+    guard print                   What install would write, nothing changed
     import <file>                 A spreadsheet, CSV, ~/.ssh/config, FileZilla,
                                   PuTTY, Termius or MobaXterm export (detected)
     import --from <tool>          ssh-config · filezilla · transmit
@@ -381,6 +383,11 @@ main() {
             # Node, because it writes through the same SecretStore the engine
             # reads — one code path, so the two cannot disagree.
             node "$SCRIPT_DIR/portability.js" "$command" "$@"
+            ;;
+        guard)
+            # Opt-in Claude Code hook against raw ssh. Node, like vault: it edits
+            # a JSON file, and the same code is what runs as the hook.
+            node "$SCRIPT_DIR/guard.js" "$@"
             ;;
         vault)
             # v4 encrypted credential store. Implemented in Node because it uses

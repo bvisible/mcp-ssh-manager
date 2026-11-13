@@ -87,22 +87,29 @@ parity with the `.env` form.
 ## Audit log
 
 When `AUDIT_LOG` (`.env`) or `audit_log` (TOML) is set to a file path, every
-**gated** tool invocation appends a JSONL record:
+tool that targets the server appends a JSONL record of what happened: the
+outcome of each one that ran, and the reason for each one that was refused.
 
 ```json
 {"ts":"2026-05-18T15:30:00.123Z","server":"prod","tool":"ssh_execute","args":{"command":"ls /tmp"},"allowed":true,"exitCode":0,"success":true}
 {"ts":"2026-05-18T15:30:14.789Z","server":"prod","tool":"ssh_execute","args":{"command":"rm /tmp/x"},"allowed":false,"reason":"Command refused on server \"prod\" (mode: readonly): matches built-in destructive pattern /(^|[\\s;&|])rm(\\s|$)/."}
+{"ts":"2026-05-18T15:31:02.004Z","server":"prod","tool":"ssh_tail","args":{"file":"/var/log/app.log","lines":5,"follow":false},"allowed":true,"success":true}
 ```
 
-Secrets (`password`, `passphrase`, `sudoPassword`, `token`, `secret`, `apikey`)
-are redacted to `***` before being written, even if a tool somehow passed them
-through args.
+- A tool that knows its exit code (`ssh_execute`, `ssh_execute_sudo`, `ssh_upload`,
+  `ssh_download`, group and session commands) records `exitCode` and `success`;
+  every other tool records `success`, with `error` when it failed.
+- Tools that only read or edit local state (`ssh_list_servers`, aliases, tunnel
+  lists, `ssh_history`…) leave no line: nothing reached a server.
+- A value whose key looks like a secret (`password`, `dbPassword`, `passphrase`,
+  `sudoPassword`, `token`, `secret`, `apiKey`, `credential`, `privateKey`…) is
+  replaced by `***` before it is written, and in the approval request too.
+- Before 4.2.0 only `ssh_execute` and `ssh_upload` (and, from 4.1.0, sudo,
+  downloads, group and session commands) recorded their outcome; a refusal was
+  recorded for every tool.
 
 Log rotation is not handled by `mcp-ssh-manager` — use `logrotate`, `vector`,
-or your log shipper of choice. v3.5.0 audits cover the gated tool set:
-`ssh_execute`, `ssh_upload`, `ssh_execute_sudo`, plus denials on every other
-mutating tool. Pure read tools (`ssh_health_check`, `ssh_db_query`, `ssh_tail`…)
-are not audited in v3.5.0 — open an issue if you need full coverage.
+or your log shipper of choice.
 
 ## Recipes
 

@@ -28,7 +28,7 @@ const isWindows = platform() === 'win32';
 const args = process.argv.slice(2);
 
 // These commands are native Node and also work on Windows without Git Bash.
-const nativeCommands = { control: 'control.js', vault: 'vault.js', import: 'portability.js', export: 'portability.js', app: 'app.js' };
+const nativeCommands = { control: 'control.js', vault: 'vault.js', import: 'portability.js', export: 'portability.js', app: 'app.js', guard: 'guard.js' };
 if (Object.hasOwn(nativeCommands, args[0])) {
   const commandArgs = ['import', 'export'].includes(args[0]) ? args : args.slice(1);
   const result = spawnSync(process.execPath, [join(__dirname, nativeCommands[args[0]]), ...commandArgs], { stdio: 'inherit' });
