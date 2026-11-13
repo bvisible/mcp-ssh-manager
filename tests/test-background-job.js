@@ -62,9 +62,16 @@ for (const shell of shells) {
   const started = parseBackgroundStart(launched.stdout);
   assert.ok(started, `${shell}: no pid in ${JSON.stringify(launched.stdout)}`);
   assert.ok(alive(started.pid), `${shell}: the job must still be running when the launcher returns`);
-  assert.equal(fs.statSync(started.logFile).mode & 0o777, 0o600, `${shell}: the log file is private`);
-  assert.ok(await waitFor(() => fs.readFileSync(started.logFile, 'utf8').includes('finished')), `${shell}: the job finishes`);
-  assert.equal(fs.readFileSync(started.logFile, 'utf8'), "out: it's 2\nfinished\n");
+  // One descriptor for the check and the reads: the file is looked at, not looked up twice.
+  const log = fs.openSync(started.logFile, 'r');
+  try {
+    assert.equal(fs.fstatSync(log).mode & 0o777, 0o600, `${shell}: the log file is private`);
+    let output = '';
+    assert.ok(await waitFor(() => { output += fs.readFileSync(log, 'utf8'); return output.includes('finished'); }), `${shell}: the job finishes`);
+    assert.equal(output, "out: it's 2\nfinished\n");
+  } finally {
+    fs.closeSync(log);
+  }
 }
 ok(`the job starts detached, keeps running and logs privately under ${shells.join(', ')}`);
 
