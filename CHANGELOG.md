@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ssh_sync` uses the system's `ssh`, which takes `IdentityFile` and
   `IdentitiesOnly yes` from your SSH configuration instead.
 
+### Fixed
+
+- **The audit log records what `sudo` commands did** (#133, reported by
+  @revert12; #134, thanks to @orshih6). With `AUDIT_LOG` set, only
+  `ssh_execute` and `ssh_upload` wrote their outcome: a command run through
+  `ssh_execute_sudo` that the policy allowed left no line at all. It now records
+  the exit code and success (the logged arguments are the command and the
+  working directory, never the password), and so do `ssh_download`,
+  `ssh_execute_group` (one line per server) and commands sent to a persistent
+  session (success only: sessions report no exit code). Other tools still record
+  only a denial or an approval decision.
+
 ### Security
 
 - **The desktop build uses a fixed `minimatch`.** `electron-builder`, the tool
@@ -32,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to 11.x; a build with it contains the same files as one without, the
   `package.json` line aside. Remove the entry once `app-builder-lib` itself
   requires `minimatch` 11.0.1 or later.
+
+- **`@hono/node-server` 2.1.8 in the lockfile** (GHSA-qv5m-9pm6-hqp3,
+  GHSA-jpvv-r467-5p4w, both moderate). The MCP SDK pulls it for its HTTP
+  transport; the stdio server this package runs never imports it, so nothing
+  was exposed.
 
 ## [4.0.3] - 2026-11-05
 
