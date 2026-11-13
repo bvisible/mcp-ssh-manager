@@ -24,7 +24,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![Desktop app downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdesktop.json&style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/bvisible/mcp-ssh-manager?style=flat-square&color=c04500)](https://github.com/bvisible/mcp-ssh-manager/stargazers)
-[![Version](https://img.shields.io/badge/release-4.1.0-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.1.0)
+[![Version](https://img.shields.io/badge/release-4.2.0-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.2.0)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -57,9 +57,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application (`4.1.0`):** one installation with its own runtime,
+**Desktop application (`4.2.0`):** one installation with its own runtime,
 terminal, file browser and server settings. No separate Node.js or npm
-installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.1.0):
+installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.2.0):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -67,7 +67,7 @@ installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases
 | Windows x64 / arm64 | `…-setup.exe` | **Not code-signed yet.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
 | Linux x64 | `.deb`, `.AppImage` | Unsigned, as Linux packages usually are |
 
-**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.1.0,
+**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.2.0,
 and the V4 engine runs without an interface, from your existing `.env`, TOML or
 process variables — no automatic import, no forced wizard, no approval prompt
 unless you enable one per server. The one behaviour that tightens is **SSH
@@ -712,6 +712,8 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 ---
 
 ## What's new
+
+**[4.2.0](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.2.0) — a Chinese interface, a fuller audit log, and a guard against raw ssh.** The interface and the desktop menus come in 简体中文 (*Options → Appearance → Language*; thanks to @xutianhao6). With `AUDIT_LOG` on, every tool now records what it did, not only a few. `ssh_execute` can start a long job in the background (`background: true`, an idea from @SEU-zhc), and the opt-in `ssh-manager guard` keeps an agent from running `ssh` in its own shell, where approval and audit do not apply (an idea from @fyq163). Fixed, thanks to @jaredshuai's fork: remote tunnels, which never worked, a database password that reached the audit log in clear text, and six simultaneous calls opening six connections. A tool that fails now sets `isError` in its reply. See the [CHANGELOG](CHANGELOG.md#420---2026-11-13).
 
 **[4.1.0](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.1.0) — choose the agent key per server, and sudo in the audit log.** A server can name the one key of your SSH agent it uses, so an agent that holds many keys (a password manager's, say) no longer runs into `MaxAuthTries` before the right one is offered (thanks to @RebornOnce, [#128](https://github.com/bvisible/mcp-ssh-manager/pull/128)); with `AUDIT_LOG` on, `ssh_execute_sudo`, downloads, group commands and commands sent to a session now record what they did, never the sudo password ([#134](https://github.com/bvisible/mcp-ssh-manager/pull/134), thanks to @orshih6, reported by @revert12); [`llms-install.md`](llms-install.md) lets an agent set the server up for you; dependencies refreshed. Nothing to change on upgrade. See the [CHANGELOG](CHANGELOG.md#410---2026-11-13).
 

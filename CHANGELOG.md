@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-11-13
+
+**A Chinese interface, a fuller audit log, and a guard against raw ssh.** Nothing
+to change on upgrade: the guard and the background mode are off unless you use
+them, and the audit log only gains lines when `AUDIT_LOG` is already on (the
+release pipeline upgrades 3.8.5, 3.8.6, 3.8.7 and every 4.0.x and 4.1.x from the
+registry to this version and back). Two things do behave differently without
+being asked: a tool that fails now sets `isError` in its reply, and the interface
+follows a Chinese system language until you choose one.
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 Many of these came from reading what the forks of this project changed: thanks
 to @jaredshuai, @SEU-zhc, @fyq163 and @xutianhao6 for the work and the ideas.
 

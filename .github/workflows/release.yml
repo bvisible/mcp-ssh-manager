@@ -57,6 +57,7 @@ jobs:
           node scripts/test-upgrade-from-published.mjs 4.0.1
           node scripts/test-upgrade-from-published.mjs 4.0.2
           node scripts/test-upgrade-from-published.mjs 4.0.3
+          node scripts/test-upgrade-from-published.mjs 4.1.0
       # The same two steps as test.yml: Playwright from ui/package-lock.json
       # (npx finds the installed one), never a version npm exec would resolve.
       - name: Install browser
