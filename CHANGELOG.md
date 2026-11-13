@@ -27,6 +27,17 @@ to @jaredshuai, @SEU-zhc, @fyq163 and @xutianhao6 for the work and the ideas.
 
 ### Added
 
+- **`ssh-manager codex setup` and `ssh-manager codex status`.** `setup` points
+  OpenAI Codex at this engine: only the `ssh-manager` table of
+  `~/.codex/config.toml` is replaced, the rest of the file stays, the entry names
+  the npm engine, and a second run changes nothing; without an npm install it says
+  how to get one and writes nothing. `status` says what Codex runs today. They were
+  documented (with `migrate`, `test` and `convert`, which have no meaning with the
+  V4 engine; `ssh-manager export servers.toml` writes the servers as TOML) and none
+  of them existed. The entry that `ConfigLoader.saveToCodexConfig` wrote named
+  `<current directory>/src/index.js`, a file that exists only in a source checkout,
+  so for an npm install Codex started no engine; it now names the module's own
+  folder. Found thanks to @jaredshuai's fork.
 - **A Chinese interface (简体中文).** Options → Appearance has a *Language / 语言*
   selector, for the desktop application and the web interface; the desktop menus,
   dialogs and notifications follow it. Until you choose, the interface follows the
@@ -72,6 +83,40 @@ to @jaredshuai, @SEU-zhc, @fyq163 and @xutianhao6 for the work and the ideas.
 
 ### Fixed
 
+- **A failed dump no longer reports success.** `mysqldump … | gzip > file` (and
+  `pg_dump`) reports the exit code of its last command: with a wrong password, a
+  missing database or a full disk the dump died, gzip still succeeded, and
+  `ssh_db_dump` and `ssh_backup_create` answered success with an empty archive of
+  20 bytes. The cron script made by `ssh_backup_schedule` did the same every night,
+  and its retention cleanup then deleted the good archives. A dump that fails now
+  fails, with the dump program's own message, and leaves no file; the dump still
+  streams, with no temporary file. The cron script has `set -o pipefail`, removes a
+  failed archive and stops before the cleanup. Found thanks to @jaredshuai's fork.
+- **A corrupt archive is no longer restored in part.** `gunzip -c dump.gz | mysql`
+  ran the database program on whatever gunzip had read, so a truncated archive was
+  restored half-way with no error. A gzip file is now tested whole before
+  `ssh_db_import` or `ssh_backup_restore` start the database program (MySQL and
+  PostgreSQL). A plain dump under a `.gz` name, which a backup made without
+  compression used to leave, is still restored.
+- **A MongoDB backup can be restored.** It was written as `<id>.tar.gz` but
+  measured and restored as `<id>.gz`: a size of 0 and no way back. One place now
+  knows the path, a restore checks the file is there before it starts, and
+  archives made by older versions (they were already `<id>.tar.gz`) become
+  restorable. `ssh_db_dump` reports the path it really wrote.
+- **`ssh-manager server remove prod` removes `prod`, not `prod_eu` too.** The CLI
+  matched a server's lines by the bare prefix `SSH_SERVER_PROD_`, which every
+  longer name starts with, so the other server lost its host, user and password.
+  Lines are now matched by the setting names the engine reads. Found thanks to
+  @jaredshuai's fork.
+- **Editing a server from the CLI keeps its settings.** It deleted all the
+  server's lines and wrote seven back, so a read-only server became unrestricted:
+  its mode, allow and deny patterns, audit log, group and proxy jump were dropped.
+  Only the settings the wizard asks for are replaced now, in place.
+- **A password with a `#` survives the CLI.** `ssh-manager server add` wrote
+  `a#b c"d` bare, and the engine read it back as `a` (dotenv starts a comment at
+  any `#`). A value is quoted only when dotenv would misread it, so every other
+  value is written exactly as before; one that cannot be carried is refused with a
+  reason and nothing is written.
 - **The health check no longer counts container layers as disks.** On a Docker
   host every `overlay` layer repeated the same usage, and `tmpfs`, `devtmpfs` and
   `squashfs` mounts counted as full disks (a snap mount is always at 100 %), which
