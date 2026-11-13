@@ -3,6 +3,7 @@ import TOML from '@iarna/toml';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { VALID_MODES } from './policy.js';
 import { SecretStore, defaultVaultPath } from './secret-store.js';
@@ -537,7 +538,10 @@ export class ConfigLoader {
 
     config.mcp_servers['ssh-manager'] = {
       command: 'node',
-      args: [path.join(process.cwd(), 'src', 'index.js')],
+      // This module's own folder, not the working directory: the entry has to name an
+      // engine that exists wherever the command is run from (an npm install has no
+      // src/ under the current directory).
+      args: [path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.js')],
       env: {
         SSH_CONFIG_PATH: path.join(os.homedir(), '.codex', 'ssh-config.toml')
       },
