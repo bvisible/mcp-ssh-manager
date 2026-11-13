@@ -887,6 +887,8 @@ registerToolConditional(
         duration: `${Date.now() - startTime}ms`
       });
 
+      await auditOk(serverName, 'ssh_download', { remotePath, localPath }, { success: true });
+
       return {
         content: [
           {
@@ -896,6 +898,10 @@ registerToolConditional(
         ],
       };
     } catch (error) {
+      await auditOk(serverName, 'ssh_download', { remotePath, localPath }, {
+        success: false,
+        error: error.message,
+      });
       logger.logTransfer('download', serverName, remotePath, localPath, {
         success: false,
         error: error.message
@@ -1701,6 +1707,9 @@ registerToolConditional(
     }
   },
   async ({ session: sessionId, command, timeout = 30000 }) => {
+    // Set once the policy allowed the command, so a failure after that point is
+    // audited as well.
+    let auditServer = null;
     try {
       const session = getSession(sessionId);
       const currentConfig = await getServerConfig(session.serverName);
@@ -1712,10 +1721,15 @@ registerToolConditional(
       // Resolve the session's underlying server to its policy.
       const denied = await applyServerPolicy(session.serverName, 'ssh_session_send', { session: sessionId, command }, command);
       if (denied) return denied;
+      auditServer = session.serverName;
 
       const startTime = Date.now();
       const result = await session.execute(command, { timeout });
       const duration = Date.now() - startTime;
+
+      await auditOk(session.serverName, 'ssh_session_send', { session: sessionId, command }, {
+        success: result.success,
+      });
 
       logger.info('Session command executed', {
         session: sessionId,
@@ -1751,6 +1765,12 @@ registerToolConditional(
         ]
       };
     } catch (error) {
+      if (auditServer) {
+        await auditOk(auditServer, 'ssh_session_send', { session: sessionId, command }, {
+          success: false,
+          error: error.message,
+        });
+      }
       logger.error('Failed to send command to session', {
         session: sessionId,
         command,
@@ -1981,6 +2001,10 @@ registerToolConditional(
           }
 
           const execResult = await execCommandWithTimeout(ssh, fullCommand, { platform }, 30000);
+          await auditOk(serverName, 'ssh_execute_group', { group: groupName, command, cwd }, {
+            code: execResult.code,
+            success: execResult.code === 0,
+          });
 
           return {
             stdout: execResult.stdout,
@@ -2433,6 +2457,11 @@ registerToolConditional(
       // response format is unchanged for existing callers.
       const maskedCommand = fullCommand;
 
+      await auditOk(server, 'ssh_execute_sudo', { command, cwd }, {
+        code: result.code,
+        success: result.code === 0,
+      });
+
       return {
         content: [
           {
@@ -2442,6 +2471,10 @@ registerToolConditional(
         ],
       };
     } catch (error) {
+      await auditOk(server, 'ssh_execute_sudo', { command, cwd }, {
+        success: false,
+        error: error.message,
+      });
       return {
         content: [
           {
