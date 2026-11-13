@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-13
+
+**Choose the agent key per server, and sudo in the audit log.** Nothing to
+change on upgrade: the new option is off unless you set it, and the audit log
+only gains lines when `AUDIT_LOG` is already on (the release pipeline upgrades
+3.8.5, 3.8.6, 3.8.7 and every 4.0.x from the registry to this version and back).
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Added
 
 - **Pick which key of the SSH agent a server uses** (#128, thanks to
@@ -20,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   certificate or agent forwarding, and nothing changes for servers without it.
   `ssh_sync` uses the system's `ssh`, which takes `IdentityFile` and
   `IdentitiesOnly yes` from your SSH configuration instead.
+- **`llms-install.md`**: the steps an agent follows to set the server up for its
+  user (Node, the client entry, servers described in `~/.ssh-manager/.env` with
+  a key and never a password typed into the conversation, then a check). It is
+  what the Cline MCP Marketplace asks for, and any agent can follow it.
 
 ### Fixed
 
