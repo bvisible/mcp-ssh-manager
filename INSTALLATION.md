@@ -143,6 +143,10 @@ export SSH_MANAGER_ENV="/path/to/your/.env"
 
 # Optional: Set default log level
 export SSH_LOG_LEVEL="INFO"
+
+# Optional: keep the engine silent on stderr, for a client that draws a terminal
+# interface on it. The log file (SSH_LOG_FILE) still receives the log lines.
+export SSH_LOG_STDERR=false
 ```
 
 ## 📦 Project Scope Installation

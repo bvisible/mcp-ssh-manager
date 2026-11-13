@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+// First, so that SSH_LOG_STDERR=false is honoured before any other module prints.
+import './quiet-stderr.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -150,6 +152,7 @@ import {
 } from './database-manager.js';
 import { loadToolConfig, isToolEnabled } from './tool-config-manager.js';
 import { evaluatePolicy } from './policy.js';
+import { buildBackgroundCommand, parseBackgroundStart } from './background-job.js';
 import { needsApproval, isControlPlaneListening, requestDecision, buildRequest, isApprovalExempt, isReadOnlyAction, HANDLER_GATED_TOOLS } from './approval.js';
 import { shellQuote, shellPath, safeInteger, withRemoteTimeout } from './shell-quote.js';
 import { openStream } from './live-stream.js';
@@ -319,11 +322,38 @@ async function applyServerPolicy(serverName, toolName, args, command) {
   return null;
 }
 
-// Convenience for the success-path audit: handlers call this after execution to
-// record the outcome. No-op when AUDIT_LOG is not configured.
+// A handler that records its own outcome (an exit code, one line per server)
+// calls this after execution. Calling it also tells the shared guard, which
+// audits every other tool itself, not to write a second line.
+// No-op when AUDIT_LOG is not configured.
 async function auditOk(serverName, toolName, args, executionResult) {
   const serverConfig = await getServerConfig(serverName);
+  const scope = toolContext.getStore()?.audit;
+  if (scope) scope.written = true;
   auditLog(serverConfig, toolName, args, { allowed: true }, executionResult);
+}
+
+/**
+ * The outcome line for a tool that passed the policy gate and did not write its
+ * own: success unless the handler threw or answered with isError. Only a denial
+ * or an approval decision used to be recorded for these tools, so most of what
+ * ran on a server left no trace. A broken audit file never changes the result.
+ * @param {any} serverConfig
+ * @param {string} toolName
+ * @param {any} args
+ * @param {any} result - The handler's reply, or null when it threw
+ * @param {Error|null} [error] - What the handler threw
+ */
+function auditOutcome(serverConfig, toolName, args, result, error = null) {
+  if (toolContext.getStore()?.audit?.written) return;
+  try {
+    const failed = !!error || result?.isError === true;
+    const text = error ? error.message
+      : failed ? String(result?.content?.find?.(item => item?.type === 'text')?.text ?? '') : '';
+    auditLog(serverConfig, toolName, args, { allowed: true }, failed ? { success: false, error: text } : { success: true });
+  } catch (auditError) {
+    logger.warn('Could not write the audit outcome', { tool: toolName, error: auditError.message });
+  }
 }
 
 // Execute command with timeout - using child_process timeout for real kill
@@ -668,23 +698,35 @@ function registerToolConditional(toolName, schema, handler) {
       // configuration (such as server listing) still load it explicitly.
       if (isApprovalExempt(toolName, args)) return handler(args, extra);
       const servers = await serverConfigManager.getServers();
-      return toolContext.run({ servers }, async () => {
+      return toolContext.run({ servers, audit: { written: false } }, async () => {
         if (HANDLER_GATED_TOOLS.has(toolName)) {
           return handler(args, extra);
         }
         // Fail closed for newly added remote tools with an unresolved target.
         // Local tools must be explicitly exempted above.
+        let config;
+        let canonicalArgs;
         try {
-          const config = await getServerConfig(args.server);
-          const canonicalArgs = { ...args, server: config.name };
+          config = await getServerConfig(args.server);
+          canonicalArgs = { ...args, server: config.name };
           const command = toolName === 'ssh_execute'
             ? expandCommandAlias(args.command) : args.command;
           const denied = await applyServerPolicy(config.name, toolName, canonicalArgs, command);
           if (denied) return denied;
-          return handler(canonicalArgs, extra);
         } catch (error) {
           return { isError: true, content: [{ type: 'text', text: error.message }] };
         }
+        // The handler runs outside the try above: what it throws still reaches
+        // the SDK as before; it is only recorded on the way.
+        let result;
+        try {
+          result = await handler(canonicalArgs, extra);
+        } catch (error) {
+          auditOutcome(config, toolName, canonicalArgs, null, error);
+          throw error;
+        }
+        auditOutcome(config, toolName, canonicalArgs, result);
+        return result;
       });
     };
     // The runtime zod schema validates args before this shared guard runs.
@@ -699,15 +741,16 @@ function registerToolConditional(toolName, schema, handler) {
 registerToolConditional(
   'ssh_execute',
   {
-    description: 'Runs a shell command over SSH on a named configured server and returns stdout, stderr, and exit code. Mutates remote state depending on the command; not read-only. Expands command aliases before running. Uses the cwd parameter or, if omitted, the server configured default directory; adapts syntax for Linux versus Windows PowerShell targets. Timeout defaults to 120000 ms and is capped at 300000 ms. Under readonly mode destructive commands like rm or dd are refused; under restricted mode the command must match allow patterns. Output is truncated when very large.',
+    description: 'Runs a shell command over SSH on a named configured server and returns stdout, stderr, and exit code. Mutates remote state depending on the command; not read-only. Expands command aliases before running. Uses the cwd parameter or, if omitted, the server configured default directory; adapts syntax for Linux versus Windows PowerShell targets. Timeout defaults to 120000 ms and is capped at 300000 ms. Under readonly mode destructive commands like rm or dd are refused; under restricted mode the command must match allow patterns. Output is truncated when very large. For a job that outlives the timeout (a training run, a long build) set background to true instead of using nohup yourself: it starts the command detached and returns at once with its pid and the log file it writes to; read that file with ssh_tail (follow: false) and check or stop the job with ssh_process_manager.',
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
       command: z.string().describe('Command to execute'),
       cwd: z.string().optional().describe('Working directory (optional, uses default if configured)'),
-      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 120000, max: 300000)')
+      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 120000, max: 300000)'),
+      background: z.boolean().optional().describe('Start the command detached and return at once with { pid, logFile } instead of waiting for it; the timeout does not apply. For long jobs; not available on Windows targets.')
     }
   },
-  async ({ server: serverName, command, cwd, timeout = TIMEOUTS.DEFAULT_COMMAND_TIMEOUT }) => {
+  async ({ server: serverName, command, cwd, timeout = TIMEOUTS.DEFAULT_COMMAND_TIMEOUT, background = false }) => {
     // Cap timeout at maximum allowed
     const cappedTimeout = Math.min(timeout, TIMEOUTS.MAX_COMMAND_TIMEOUT);
 
@@ -745,6 +788,38 @@ registerToolConditional(
         }
       } else {
         fullCommand = expandedCommand;
+      }
+
+      if (background) {
+        if (platform === 'windows') {
+          throw new Error('background is not supported on Windows targets: start the job with Start-Process in the command');
+        }
+        const started = await execCommandWithTimeout(ssh, buildBackgroundCommand(fullCommand), { platform }, 15000);
+        const job = parseBackgroundStart(started.stdout);
+        await auditOk(serverName, 'ssh_execute', { command, cwd, background: true }, {
+          code: started.code,
+          success: !!job,
+        });
+        return {
+          ...(job ? {} : { isError: true }),
+          content: [
+            {
+              type: 'text',
+              text: formatJSONResponse({
+                server: serverName,
+                command: fullCommand,
+                background: true,
+                success: !!job,
+                pid: job?.pid,
+                logFile: job?.logFile,
+                error: job ? undefined : truncateOutput(started.stderr || 'The job did not start', 1000),
+                note: job
+                  ? 'The job runs detached from this SSH session. Read its output with ssh_tail (file: logFile, follow: false); check on it or stop it with ssh_process_manager (pid).'
+                  : undefined,
+              }),
+            },
+          ],
+        };
       }
 
       // Log command execution
@@ -877,6 +952,7 @@ registerToolConditional(
         error: error.message
       });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -934,6 +1010,7 @@ registerToolConditional(
         error: error.message
       });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -977,6 +1054,7 @@ registerToolConditional(
           execSync('which sshpass', { stdio: 'ignore' });
         } catch (error) {
           return {
+            isError: true,
             content: [
               {
                 type: 'text',
@@ -1275,6 +1353,7 @@ registerToolConditional(
       });
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1383,6 +1462,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1556,6 +1636,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1658,6 +1739,7 @@ registerToolConditional(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1712,6 +1794,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1805,6 +1888,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1883,6 +1967,7 @@ registerToolConditional(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -1947,6 +2032,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2097,6 +2183,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2257,6 +2344,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2399,6 +2487,7 @@ registerToolConditional(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2503,6 +2592,7 @@ registerToolConditional(
         error: error.message,
       });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2604,6 +2694,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2696,6 +2787,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2776,6 +2868,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -2894,6 +2987,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3064,6 +3158,7 @@ registerToolConditional(
     } catch (error) {
       logger.error('Failed to list tunnels', { error: error.message });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3130,6 +3225,7 @@ registerToolConditional(
     } catch (error) {
       logger.error('Failed to close tunnel', { error: error.message });
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3378,6 +3474,7 @@ registerToolConditional(
       logger.error('SSH key management failed', { action, server, error: error.message });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3465,6 +3562,7 @@ registerToolConditional(
       }
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3690,6 +3788,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3762,6 +3861,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -3886,6 +3986,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4018,6 +4119,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4117,6 +4219,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4199,6 +4302,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4348,6 +4452,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4528,6 +4633,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4645,6 +4751,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4748,6 +4855,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4873,6 +4981,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',
@@ -4997,6 +5106,7 @@ registerToolConditional(
       });
 
       return {
+        isError: true,
         content: [
           {
             type: 'text',

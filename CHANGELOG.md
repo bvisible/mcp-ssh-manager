@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Many of these came from reading what the forks of this project changed: thanks
+to @jaredshuai, @SEU-zhc, @fyq163 and @xutianhao6 for the work and the ideas.
+
+### Added
+
+- **`ssh_execute` with `background: true`** starts a command detached from the
+  SSH session and returns at once with `{ pid, logFile }`, for a job that
+  outlives the timeout (a training run, a long build). Read its output with
+  `ssh_tail` (`follow: false`), check or stop it with `ssh_process_manager`.
+  The log file is never chosen by the caller: a free path would let a command
+  that passes the `readonly` policy overwrite any file the SSH user can write,
+  so the engine creates a private one with `mktemp`. The launcher works under a
+  csh or tcsh login shell; Windows targets are refused with a clear error. The
+  idea is @SEU-zhc's.
+- **`ssh-manager guard`**, an opt-in hook for Claude Code that refuses (or, with
+  `--mode ask`, asks about) `ssh`, `scp`, `sftp` and a remote `rsync` run from the
+  agent's own shell, where the approval, the policy and the audit log do not
+  apply, and tells the agent which MCP tool to use. `install` edits only its own
+  entry in `~/.claude/settings.json` (a copy is kept the first time), `remove`
+  restores the file, `print` and `status` write nothing. It reads the command
+  text: a guard against accidents, not a security boundary. The idea is
+  @fyq163's, whose hook only reminded.
+- **`SSH_LOG_STDERR=false`** keeps the engine silent on stderr, for a client that
+  draws a terminal interface on that stream (OpenCode and Kilo were the
+  reports). The log file still receives the log lines; nothing changes unless
+  the variable is set. The idea is @fyq163's.
+
+### Changed
+
+- **With `AUDIT_LOG` set, every tool that targets the server records its
+  outcome**, not only a denial or an approval decision: `ssh_tail`, `ssh_sync`,
+  `ssh_deploy`, `ssh_db_*`, `ssh_backup_*`, `ssh_process_manager` and the rest now
+  leave a line with `success`, and `error` when they failed. A tool that records
+  its own exit code still writes exactly one line. Tools that only read local
+  state (server list, aliases, tunnel list) leave none. The design is
+  @jaredshuai's.
+- **A tool that fails now says so in the MCP reply**: the 36 tools that answered
+  "❌ … failed" as plain text now also set `isError`, which is what a client
+  expects (and what the audit log needs to tell a failure from a success).
+
+### Fixed
+
+- **Remote tunnels (`ssh_tunnel_create` with `type: "remote"`, `ssh -R`) never
+  worked**: they failed with `this.ssh.forwardIn is not a function`, because the
+  connection wrapper only had `forwardOut`. They work now, and closing one
+  cancels the forward and removes its listener. A failed creation is reported as
+  an error. Found thanks to @jaredshuai's fork.
+- **Six simultaneous calls on a cold engine opened six SSH connections**, all kept
+  open and five of them unreachable, a burst of logins that a server's
+  `MaxStartups` or fail2ban can refuse. Callers now wait for the connection being
+  established; a failed attempt is not remembered. Found thanks to
+  @jaredshuai's fork.
+
+### Security
+
+- **A database password no longer reaches the audit log or the approval request
+  in clear text.** `dbPassword` and `db_password` (taken by the backup, restore,
+  dump and import tools) were missing from a list of names to redact, so a
+  refused or approved call wrote the password into the audit file and showed it
+  in the approval request. The audit log now redacts any key that looks like a
+  secret, with the same rule as the logger. Found thanks to @jaredshuai's fork.
+
 ## [4.1.0] - 2026-11-13
 
 **Choose the agent key per server, and sudo in the audit log.** Nothing to

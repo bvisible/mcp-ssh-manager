@@ -21,6 +21,27 @@ const FIELDS = ['name', 'host', 'user', 'password', 'keyPath', 'passphrase', 'po
   'proxyCommand', 'forwardAgent', 'mode', 'allowPatterns', 'denyPatterns', 'auditLog', 'source'];
 let passed = 0;
 const ok = label => console.log(`✓ ${++passed}. ${label}`);
+// Optional input properties a release may ADD to an existing tool. The check
+// below still fails on anything else that differs from the previous release: a
+// removed or renamed property, a changed type or description, a required
+// property that was not there. An old client can trip on those; it cannot on a
+// property it never sends. List an addition here on purpose, with its release.
+const ADDED_OPTIONAL_INPUTS = {
+  ssh_execute: ['background'], // 4.2.0
+};
+/** The schemas with the declared additions taken out, each checked to be optional. */
+function withoutDeclaredAdditions(schemas) {
+  const copy = structuredClone(schemas);
+  for (const [tool, names] of Object.entries(ADDED_OPTIONAL_INPUTS)) {
+    for (const name of names) {
+      const schema = copy[tool];
+      if (!schema?.properties || !(name in schema.properties)) continue;
+      assert.ok(!(schema.required || []).includes(name), `${tool}.${name} was added as required: an old client would fail`);
+      delete schema.properties[name];
+    }
+  }
+  return copy;
+}
 const canonical = value => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 
@@ -210,8 +231,9 @@ async function main() {
       const after = { protocol: await interrogate(item, path.join(installed, 'src/index.js')), loader: loaderSnapshot(installed, item) };
       assert.deepEqual(after.loader, before[item.name].loader, `${item.name}: effective ConfigLoader field fingerprints differ`);
       assert.deepEqual(after.protocol.listing, before[item.name].protocol.listing, `${item.name}: MCP listing changed`);
-      assert.deepEqual(after.protocol.schemas, before[item.name].protocol.schemas, `${item.name}: MCP tool names or input schemas changed`);
-      ok(`${item.name}: effective fields, MCP listing and all 37 tool input schemas unchanged`);
+      assert.deepEqual(withoutDeclaredAdditions(after.protocol.schemas), withoutDeclaredAdditions(before[item.name].protocol.schemas), `${item.name}: MCP tool names or input schemas changed`);
+      const added = Object.entries(ADDED_OPTIONAL_INPUTS).flatMap(([tool, names]) => names.filter(name => after.protocol.schemas[tool]?.properties?.[name] && !before[item.name].protocol.schemas[tool]?.properties?.[name]).map(name => `${tool}.${name}`));
+      ok(`${item.name}: effective fields, MCP listing and all 37 tool input schemas unchanged${added.length ? ` (declared optional additions: ${added.join(', ')})` : ''}`);
     }
     untouched(scenarios); ok('upgrade leaves original config bytes intact and starts no UI, listener, prompt or vault');
     installPrevious(); assert.equal(packageVersion(), PREVIOUS);

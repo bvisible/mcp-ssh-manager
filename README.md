@@ -319,6 +319,19 @@ AES-256-GCM, master key in your OS keychain (a `0600` file where there is none �
 
 **The key belongs to this machine.** A vault copied to a new laptop is ciphertext nobody can open — `vault backup` writes a copy encrypted under a passphrase you choose, which is what makes the move survivable. Your `.env` is never modified, not by `import`, not by the interface, and a setup half in each is a normal state rather than a broken one. Upgrading changes nothing on its own: see **[docs/MIGRATION.md](docs/MIGRATION.md)**.
 
+### Keep the agent on the tools
+
+Approval, modes and the audit log only see what goes through these tools. An agent that also has a terminal can run `ssh prod rm -rf …` there and none of it applies. For Claude Code, an opt-in hook closes that door:
+
+```bash
+ssh-manager guard install        # refuse ssh, scp, sftp and remote rsync in the agent's shell
+ssh-manager guard install --mode ask   # …or ask you each time
+ssh-manager guard print          # show what it would write, change nothing
+ssh-manager guard remove
+```
+
+The agent is told why and which tool to use instead (`ssh_execute`, `ssh_upload`, `ssh_sync`, `ssh_tunnel_create`). It is a guard against accidents, not a security boundary: it reads the command text. Keep SSH keys and agent sockets away from the account the agent runs as. Nothing is installed unless you run `install`; it edits only its own entry in `~/.claude/settings.json`, and keeps a copy of the file as it was.
+
 ### The unglamorous parts, which are the ones that bite
 
 - **Your sudo password never reaches the remote command line.** It travels on the SSH channel's stdin, so it isn't visible in `ps`, in `/proc/<pid>/cmdline`, or in an `auditd` trail — unlike the `echo "$pass" | sudo -S` pattern common in this category ([#34](https://github.com/bvisible/mcp-ssh-manager/issues/34)).
