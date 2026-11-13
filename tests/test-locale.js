@@ -86,7 +86,18 @@ try {
     .flatMap(entry => entry.isDirectory() ? walk(dir + '/' + entry.name) : /\.tsx?$/.test(entry.name) ? [dir + '/' + entry.name] : []);
   const literal = String.raw`(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")`;
   const sentences = new Set();
-  const add = (single, double) => sentences.add(JSON.parse('"' + (single !== undefined ? single.replace(/\\'/g, "'").replace(/"/g, '\\"') : double) + '"'));
+  // Read the body of a JavaScript string literal character by character, never by pattern: every escape sequence
+  // is passed on to JSON as it is (backslashes included) except an escaped single quote, which loses its backslash,
+  // and a bare double quote is escaped for JSON.
+  const decode = body => {
+    let json = '';
+    for (let i = 0; i < body.length; i++) {
+      if (body[i] === '\\') { const escaped = body[++i]; json += escaped === "'" ? "'" : '\\' + escaped; }
+      else json += body[i] === '"' ? '\\"' : body[i];
+    }
+    return JSON.parse('"' + json + '"');
+  };
+  const add = (single, double) => sentences.add(decode(single !== undefined ? single : double));
   for (const file of walk('ui/src')) {
     const source = read(file);
     for (const match of source.matchAll(new RegExp(String.raw`\btr\(\s*` + literal, 'g'))) add(match[1], match[2]);

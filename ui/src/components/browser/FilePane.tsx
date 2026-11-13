@@ -20,7 +20,7 @@ import { Breadcrumb } from './Breadcrumb'
 import { FilePaneContextMenu } from './FilePaneContextMenu'
 import { FilePaneRow } from './FilePaneRow'
 import { cn } from '@/lib/utils'
-import { tr, useLocale } from '@/lib/i18n'
+import { useLocale } from '@/lib/i18n'
 
 export interface FileItem {
   name: string
