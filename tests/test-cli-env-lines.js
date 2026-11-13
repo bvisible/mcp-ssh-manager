@@ -35,6 +35,11 @@ function cli(envFile, snippet, ...args) {
   });
 }
 const read = file => dotenv.parse(fs.readFileSync(file));
+/** The mode and the text of a file from one open: it is looked at, not looked up twice. */
+function look(file) {
+  const fd = fs.openSync(file, 'r');
+  try { return { mode: fs.fstatSync(fd).mode & 0o777, text: fs.readFileSync(fd, 'utf8') }; } finally { fs.closeSync(fd); }
+}
 const servers = file => Object.keys(read(file)).filter(key => key.endsWith('_HOST')).map(key => key.slice(11, -5)).sort();
 
 const seed = `# Server: prod
@@ -72,7 +77,7 @@ try {
     assert.deepEqual(servers(file), ['PROD_EU', 'PROD_EU_2'], 'only prod is gone');
     for (const key of Object.keys(before).filter(key => key.startsWith('SSH_SERVER_PROD_EU'))) assert.equal(after[key], before[key], `${key} survived intact`);
     assert.ok(!Object.keys(after).some(key => key.startsWith('SSH_SERVER_PROD_') && !key.startsWith('SSH_SERVER_PROD_EU')), 'every setting of prod is gone, mode and audit log included');
-    assert.equal(fs.statSync(file).mode & 0o777, 0o640, 'the file keeps its mode');
+    assert.equal(look(file).mode, 0o640, 'the file keeps its mode');
     cli(file, 'remove_server_from_env prod_eu');
     assert.deepEqual(servers(file), ['PROD_EU_2'], 'removing prod_eu leaves prod_eu_2');
     assert.notEqual(cli(file, 'remove_server_from_env prod_eu').status, 0, 'a server that is not there is reported');
@@ -97,8 +102,8 @@ try {
       assert.equal(after[`SSH_SERVER_PROD_${key}`], before[`SSH_SERVER_PROD_${key}`], `${key} is not lost by an edit`);
     }
     for (const key of Object.keys(before).filter(key => key.startsWith('SSH_SERVER_PROD_EU'))) assert.equal(after[key], before[key], `${key} of another server is untouched`);
-    assert.equal(fs.statSync(file).mode & 0o777, 0o640);
-    const text = fs.readFileSync(file, 'utf8');
+    const { mode, text } = look(file);
+    assert.equal(mode, 0o640, 'the file keeps its mode');
     assert.equal(text.match(/^# Server: prod$/gm).length, 1, 'the server keeps its one comment');
     assert.ok(text.indexOf('SSH_SERVER_PROD_HOST') < text.indexOf('# Server: prod_eu\n'), 'and its place in the file');
 
