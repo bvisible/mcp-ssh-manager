@@ -746,8 +746,8 @@ registerToolConditional(
       server: z.string().describe('Server name from configuration'),
       command: z.string().describe('Command to execute'),
       cwd: z.string().optional().describe('Working directory (optional, uses default if configured)'),
-      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 120000, max: 300000). Ignored when background is true.'),
-      background: z.boolean().optional().describe('Start the command detached and return at once with { pid, logFile } instead of waiting for it. For long jobs; not available on Windows targets.')
+      timeout: z.number().optional().describe('Command timeout in milliseconds (default: 120000, max: 300000)'),
+      background: z.boolean().optional().describe('Start the command detached and return at once with { pid, logFile } instead of waiting for it; the timeout does not apply. For long jobs; not available on Windows targets.')
     }
   },
   async ({ server: serverName, command, cwd, timeout = TIMEOUTS.DEFAULT_COMMAND_TIMEOUT, background = false }) => {
