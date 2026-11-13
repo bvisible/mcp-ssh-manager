@@ -8,10 +8,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import ssh2 from 'ssh2';
+import { ed25519Pair } from './helpers/ssh2-keys.js';
 
 const { AgentProtocol, Server, createAgent, utils } = ssh2;
-const hostKey = utils.generateKeyPairSync('ed25519').private;
-const unrelated = Array.from({ length: 6 }, () => utils.parseKey(utils.generateKeyPairSync('ed25519').private));
+const hostKey = ed25519Pair().private;
+const unrelated = Array.from({ length: 6 }, () => utils.parseKey(ed25519Pair().private));
 // RSA exercises AgentProtocol's RSA-SHA2 signing flags as well as selection.
 const targetPair = utils.generateKeyPairSync('rsa', { bits: 2048 });
 const targetKey = utils.parseKey(targetPair.private);

@@ -9,6 +9,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ssh2 from 'ssh2';
 import SSHManager from '../src/ssh-manager.js';
+import { ed25519Pair } from './helpers/ssh2-keys.js';
 
 test('select an identity from a real OpenSSH ssh-agent', { timeout: 15000 }, async t => {
   if (process.platform === 'win32'
@@ -40,7 +41,7 @@ test('select an identity from a real OpenSSH ssh-agent', { timeout: 15000 }, asy
     if (agent.exitCode !== null || i >= 100) throw new Error('Test ssh-agent did not start');
     await new Promise(resolve => setTimeout(resolve, 20));
   }
-  const keys = Array.from({ length: 3 }, () => ssh2.utils.generateKeyPairSync('ed25519'));
+  const keys = Array.from({ length: 3 }, () => ed25519Pair());
   for (const [i, key] of keys.entries()) {
     const file = path.join(scratch, `key-${i}`);
     fs.writeFileSync(file, key.private, { mode: 0o600 });
@@ -51,7 +52,7 @@ test('select an identity from a real OpenSSH ssh-agent', { timeout: 15000 }, asy
   fs.writeFileSync(publicPath, keys.at(-1).public);
   let verified = 0;
   const offered = [];
-  server = new ssh2.Server({ hostKeys: [ssh2.utils.generateKeyPairSync('ed25519').private] }, client => {
+  server = new ssh2.Server({ hostKeys: [ed25519Pair().private] }, client => {
     clients.add(client);
     client.on('close', () => clients.delete(client));
     client.on('error', () => {});

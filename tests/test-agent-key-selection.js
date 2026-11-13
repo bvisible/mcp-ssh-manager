@@ -6,12 +6,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FilteredAgent } from '../src/filtered-agent.js';
+import { ed25519Pair } from './helpers/ssh2-keys.js';
 
 const { BaseAgent, utils } = ssh2;
 
 // FilteredAgent unit fixtures stay in memory and use no Agent sockets or network.
-const firstPublic = utils.generateKeyPairSync('ed25519').public;
-const selectedPublic = utils.generateKeyPairSync('ed25519').public;
+const firstPublic = ed25519Pair().public;
+const selectedPublic = ed25519Pair().public;
 const parsedFirst = utils.parseKey(firstPublic);
 const parsedSelected = utils.parseKey(selectedPublic);
 assert(!(parsedFirst instanceof Error));
@@ -211,7 +212,7 @@ test('unconfigured selection preserves private-key authentication with an Agent'
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-agent-config-'));
   try {
     const privatePath = path.join(scratch, 'ephemeral-key');
-    const privateKey = utils.generateKeyPairSync('ed25519').private;
+    const privateKey = ed25519Pair().private;
     fs.writeFileSync(privatePath, privateKey);
     const options = await captureConnection({ keyPath: privatePath }, '/fixture/agent.sock');
     assert.equal(options.agent, '/fixture/agent.sock');
