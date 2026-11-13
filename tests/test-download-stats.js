@@ -1,7 +1,7 @@
 // The download counts behind the README badges: what is counted, what is not,
 // and how a number is written. No network: the release list is a fixture.
 import assert from 'node:assert/strict';
-import { badge, classifyAsset, compact, summarize } from '../scripts/download-stats.mjs';
+import { badge, classifyAsset, compact, count, summarize } from '../scripts/download-stats.mjs';
 
 let passed = 0;
 const ok = label => { passed++; console.log(`\x1b[32m✓\x1b[0m ${passed}. ${label}`); };
@@ -38,6 +38,14 @@ assert.deepEqual(summary.github, { installer: 19, appUpdate: 5, tarball: 3, upda
 assert.equal(summary.desktop, 24);
 assert.equal(summary.total, 1027);
 ok('the total adds npm, the desktop app and the tarballs, and leaves out 940 update checks and blockmaps');
+
+for (const bad of ['12', '12<script>', -1, 1.5, Number.NaN, 2 ** 60, null, undefined, { n: 1 }]) {
+  assert.throws(() => count(bad, 'fixture'), /not a download count/, String(bad));
+  assert.throws(() => summarize({ npm: 0, releases: [{ assets: [{ name: 'x.dmg', download_count: bad }] }] }), /not a download count/);
+  assert.throws(() => summarize({ npm: bad, releases: [] }), /not a download count/);
+}
+assert.equal(count(0, 'fixture'), 0);
+ok('anything but a non-negative whole number from an API stops the run instead of reaching a file');
 
 for (const [n, text] of [[0, '0'], [423, '423'], [999, '999'], [1000, '1k'], [1234, '1.2k'], [9949, '9.9k'],
   [9950, '10k'], [46243, '46k'], [999499, '999k'], [999500, '1M'], [1250000, '1.3M'], [12_400_000, '12M']]) {

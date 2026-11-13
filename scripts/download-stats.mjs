@@ -42,6 +42,20 @@ export function classifyAsset(name) {
 }
 
 /**
+ * A download count read from an API: a non-negative safe integer, or the run
+ * stops. Only numbers checked here, and labels of our own, reach the files.
+ * @param {unknown} value
+ * @param {string} where
+ * @returns {number}
+ */
+export function count(value, where) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${where}: not a download count`);
+  }
+  return value;
+}
+
+/**
  * Totals from the npm count and the releases' assets.
  * @param {{npm: number, releases: {assets: {name: string, download_count: number}[]}[]}} input
  */
@@ -49,15 +63,16 @@ export function summarize({ npm, releases }) {
   const github = { installer: 0, appUpdate: 0, tarball: 0, updateFeed: 0, other: 0 };
   for (const release of releases) {
     for (const asset of release.assets || []) {
-      github[classifyAsset(asset.name)] += asset.download_count || 0;
+      github[classifyAsset(String(asset.name))] += count(asset.download_count, 'GitHub release asset');
     }
   }
   const desktop = github.installer + github.appUpdate;
+  const npmTotal = count(npm, 'npm');
   return {
-    npm,
+    npm: npmTotal,
     desktop,
     github,
-    total: npm + desktop + github.tarball,
+    total: npmTotal + desktop + github.tarball,
   };
 }
 
@@ -104,7 +119,7 @@ async function npmDownloads() {
   while (start <= today) {
     const end = new Date(Math.min(start.getTime() + (WINDOW_DAYS - 1) * 86400000, today.getTime()));
     const range = await getJSON(`https://api.npmjs.org/downloads/range/${day(start)}:${day(end)}/${PACKAGE}`);
-    total += range.downloads.reduce((sum, entry) => sum + entry.downloads, 0);
+    total += range.downloads.reduce((sum, entry) => sum + count(entry.downloads, 'npm downloads'), 0);
     start = new Date(end.getTime() + 86400000);
   }
   return total;
