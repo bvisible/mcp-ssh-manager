@@ -1,0 +1,13 @@
+{
+  "updated": "2026-11-14T05:27:33.760Z",
+  "npm": 45785,
+  "desktop": 473,
+  "github": {
+    "installer": 364,
+    "appUpdate": 109,
+    "tarball": 35,
+    "updateFeed": 1157,
+    "other": 359
+  },
+  "total": 46293
+}
