@@ -11,8 +11,9 @@
  * should not look like the one that can.
  */
 import { useState } from 'react';
-import { AlertTriangle, Check, Clock, Copy, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock, ShieldCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CommandBlock } from '@/components/CommandBlock';
 import { state } from '@/lib/api';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
@@ -36,7 +37,6 @@ export function WaitingPage() {
   const setView = useWorkspace(state => state.setView);
   const { pending, drop } = usePendingRequests();
   const [deciding, setDeciding] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
 
   const decide = async (id: string, approved: boolean) => {
     setDeciding(id);
@@ -45,16 +45,6 @@ export function WaitingPage() {
       drop(id);
     } finally {
       setDeciding(null);
-    }
-  };
-
-  const copy = async (id: string, command: string) => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(id);
-      setTimeout(() => setCopied(current => (current === id ? null : current)), 1500);
-    } catch {
-      /* the command is on screen in full; a failed copy costs nothing */
     }
   };
 
@@ -117,22 +107,7 @@ export function WaitingPage() {
             {/* Wrapped, not truncated: half a command is how you approve the
                 wrong thing. */}
             <div className="px-5 py-4">
-              <div className="flex items-start gap-2 rounded-lg border border-border bg-secondary py-3 pl-4 pr-2">
-                <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[14.5px] leading-relaxed">
-                  {request.command || tr("(no command)")}
-                </pre>
-                {request.command && (
-                  <button
-                    type="button"
-                    aria-label={copied === request.id ? tr("Copied") : tr("Copy the command")}
-                    title={copied === request.id ? tr("Copied") : tr("Copy the command")}
-                    onClick={() => void copy(request.id, request.command!)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-                  >
-                    {copied === request.id ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </button>
-                )}
-              </div>
+              <CommandBlock command={request.command} className="rounded-lg border border-border py-3 pl-4 pr-2" />
             </div>
 
             <div className="flex flex-wrap justify-end gap-2.5 px-5 pb-4">

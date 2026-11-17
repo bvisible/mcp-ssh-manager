@@ -16,6 +16,7 @@ import { ChevronDown, ChevronRight, Radio } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { state, type LiveStream } from '@/lib/api';
 import { TerminalOutput } from '@/components/terminal/TerminalOutput';
+import { CommandBlock } from '@/components/CommandBlock';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
 import { tr, useLocale } from '@/lib/i18n';
@@ -84,7 +85,7 @@ export function LivePage() {
               >
                 {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
                 <span className="shrink-0 text-xs font-medium">{stream.server}</span>
-                <code className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                <code title={stream.command} className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
                   {stream.command}
                 </code>
                 {stream.code === null ? (
@@ -96,13 +97,20 @@ export function LivePage() {
                 )}
               </button>
 
-              {/* Rendered by a terminal emulator, not as text: the scrollback
-                  is what the program actually wrote, escape sequences included,
-                  and a <pre> shows `[32m✓[0m` where the operator should see a
-                  green tick. What the agent ran then looks exactly like what
-                  you would have seen had you typed it yourself. */}
+              {/* The row above keeps a one-line overview, so the command is
+                  repeated here in full. Outside the toggle on purpose: text
+                  inside that button collapses the row when you click to select
+                  it.
+
+                  The output is rendered by a terminal emulator, not as text:
+                  the scrollback is what the program actually wrote, escape
+                  sequences included, and a <pre> shows `[32m✓[0m` where the
+                  operator should see a green tick. What the agent ran then
+                  looks exactly like what you would have seen had you typed it
+                  yourself. */}
               {open && (
                 <div className="border-t border-border-subtle">
+                  <CommandBlock command={stream.command} size="compact" className="border-b border-border-subtle py-1 pl-3 pr-2" />
                   <TerminalOutput content={stream.scrollback || '(no output yet)\r\n'} />
                 </div>
               )}

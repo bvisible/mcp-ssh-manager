@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const entry = fileURLToPath(new URL('./control-plane.mjs', import.meta.url));
 export const legacyConfig = 'SSH_SERVER_LEGACY_HOST=127.0.0.1\nSSH_SERVER_LEGACY_PORT=9\nSSH_SERVER_LEGACY_USER=fixture\nSSH_SERVER_LEGACY_PASSWORD=fixture-only-secret\nSSH_SERVER_LEGACY_PROXYJUMP=bastion\nSSH_SERVER_LEGACY_MODE=restricted\nSSH_SERVER_LEGACY_ALLOW_PATTERNS=^uptime$\n';
 
-type App = { url: string; home: string; restart: () => Promise<void>; stop: () => Promise<void> };
+type App = { url: string; home: string; approvalSocket: string; restart: () => Promise<void>; stop: () => Promise<void> };
 export const test = base.extend<{ app: App; legacy: boolean; offerDesktop: boolean; appUpdates: boolean; localShell: boolean; language: string | null }>({
   legacy: [false, { option: true }],
   language: ['en', { option: true }],
@@ -30,7 +30,9 @@ export const test = base.extend<{ app: App; legacy: boolean; offerDesktop: boole
     if (legacy) await fs.writeFile(path.join(home, '.env'), legacyConfig);
     let child: ChildProcess;
     let output = '';
-    const app: App = { home, url: '', restart: async () => { await app.stop(); await start(); }, stop: async () => {
+    // Handed to tests that stand in for an engine: approval requests go to this
+    // socket, and stream events to the one beside it (src/live-stream.js).
+    const app: App = { home, url: '', approvalSocket, restart: async () => { await app.stop(); await start(); }, stop: async () => {
       if (!child || child.exitCode !== null || child.signalCode !== null) return;
       await new Promise<void>(resolve => {
         const deadline = setTimeout(() => child.kill('SIGKILL'), 5000);
