@@ -2,16 +2,18 @@ import { test, expect, apiUrl } from './fixtures';
 
 const chineseWelcome = '你的服务器，你的工作空间。';
 const englishWelcome = 'Your servers. Your workspace.';
+const japaneseWelcome = 'あなたのサーバー。あなたのワークスペース。';
+const welcomes = { en: englishWelcome, 'zh-CN': chineseWelcome, ja: japaneseWelcome };
 
-// Until somebody chooses a language, the browser's decides: Chinese for any zh locale, English for the rest.
+// Until somebody chooses a language, the browser's decides; unsupported locales use English.
 // Nothing is saved by that, so the interface keeps following the system.
-for (const [locale, language] of [['zh-CN', 'zh-CN'], ['zh-TW', 'zh-CN'], ['en-US', 'en'], ['fr-FR', 'en'], ['de-DE', 'en']] as const) {
+for (const [locale, language] of [['zh-CN', 'zh-CN'], ['zh-TW', 'zh-CN'], ['ja-JP', 'ja'], ['en-US', 'en'], ['fr-FR', 'en'], ['de-DE', 'en']] as const) {
   test.describe(`a ${locale} browser, no language chosen yet`, () => {
     test.use({ language: null, locale });
     test(`shows ${language} and saves nothing`, async ({ page, app }) => {
       await page.goto(app.url);
       await expect(page.locator('html')).toHaveAttribute('lang', language);
-      await expect(page.getByRole('dialog')).toContainText(language === 'en' ? englishWelcome : chineseWelcome);
+      await expect(page.getByRole('dialog')).toContainText(welcomes[language]);
       const preferences = (await (await page.request.get(apiUrl(app, '/api/preferences'))).json()).preferences;
       expect(preferences['ssh-manager.language']).toBeUndefined();
     });
@@ -20,13 +22,13 @@ for (const [locale, language] of [['zh-CN', 'zh-CN'], ['zh-TW', 'zh-CN'], ['en-U
 
 // A saved choice always wins over the browser's language.
 test.describe('a saved choice', () => {
-  for (const [saved, locale, shown] of [['en', 'zh-CN', 'en'], ['zh-CN', 'en-US', 'zh-CN']] as const) {
+  for (const [saved, locale, shown] of [['en', 'zh-CN', 'en'], ['zh-CN', 'en-US', 'zh-CN'], ['ja', 'en-US', 'ja'], ['en', 'ja-JP', 'en']] as const) {
     test.describe(`${saved} in a ${locale} browser`, () => {
       test.use({ language: saved, locale });
       test('wins', async ({ page, app }) => {
         await page.goto(app.url);
         await expect(page.locator('html')).toHaveAttribute('lang', shown);
-        await expect(page.getByRole('dialog')).toContainText(shown === 'en' ? englishWelcome : chineseWelcome);
+        await expect(page.getByRole('dialog')).toContainText(welcomes[shown]);
       });
     });
   }
@@ -35,19 +37,19 @@ test.describe('a saved choice', () => {
 test.describe('choosing a language', () => {
   test.use({ language: null, locale: 'zh-CN', localShell: true });
 
-  test('the selector is bilingual, the choice is saved, and it survives a new backend port', async ({ page, app }) => {
+  test('the selector is multilingual, the choice is saved, and it survives a new backend port', async ({ page, app }) => {
     await page.goto(app.url);
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     await page.getByRole('button', { name: '设置', exact: true }).click();
-    const language = page.getByLabel('Language / 语言');
+    const language = page.getByLabel('Language / 语言 / 言語');
     await expect(language).toHaveValue('zh-CN');
     // Each language is named in itself, so it can be found from the wrong one.
-    await expect(language.locator('option')).toHaveText(['English', '简体中文']);
+    await expect(language.locator('option')).toHaveText(['English', '简体中文', '日本語']);
     await language.selectOption('en');
     await expect(page.getByRole('heading', { name: 'Options', exact: true })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await expect(language.locator('option')).toHaveText(['English', '简体中文']);
+    await expect(language.locator('option')).toHaveText(['English', '简体中文', '日本語']);
     await expect.poll(async () => (await (await page.request.get(apiUrl(app, '/api/preferences'))).json()).preferences['ssh-manager.language']).toBe('en');
     const old = new URL(app.url).port;
     await app.restart();
@@ -95,7 +97,7 @@ test.describe('choosing a language', () => {
     await expect(page.locator('.xterm')).toBeVisible();
     const screen = page.locator('.xterm').elementHandle();
     await page.getByRole('button', { name: '设置', exact: true }).click();
-    await page.getByLabel('Language / 语言').selectOption('en');
+    await page.getByLabel('Language / 语言 / 言語').selectOption('en');
     expect(await (await screen)!.evaluate(element => element.isConnected)).toBe(true);
     // The tab keeps the title it was opened with: a title is a name, like a server's, and is not retranslated.
     await page.getByRole('button', { name: '本机', exact: true }).first().click();

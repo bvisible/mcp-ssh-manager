@@ -3,12 +3,16 @@ import os from 'node:os';
 import path from 'node:path';
 
 // Strings of the application's own native surfaces (menus, tray, notifications)
-// in Chinese. English is the key itself, so English needs no catalogue.
-const messages = JSON.parse(fs.readFileSync(new URL('./native.zh-CN.json', import.meta.url), 'utf8'));
+// in Chinese and Japanese. English is the key itself, so it needs no catalogue.
+const messages = Object.fromEntries(['zh-CN', 'ja'].map(language => [
+  language,
+  JSON.parse(fs.readFileSync(new URL(`./native.${language}.json`, import.meta.url), 'utf8')),
+]));
 
-/** The language a system locale asks for: Chinese for any `zh` tag, English otherwise. */
+/** Map a system locale tag to a supported language. */
 export function languageForLocale(locale) {
-  return /^zh(?:[-_]|$)/i.test(String(locale ?? '')) ? 'zh-CN' : 'en';
+  if (/^zh(?:[-_]|$)/i.test(String(locale ?? ''))) return 'zh-CN';
+  return /^ja(?:[-_]|$)/i.test(String(locale ?? '')) ? 'ja' : 'en';
 }
 
 /**
@@ -23,12 +27,12 @@ export function nativeLanguage({ home = process.env.SSH_MANAGER_HOME || path.joi
   try {
     const preferences = JSON.parse(fs.readFileSync(path.join(home, 'preferences.json'), 'utf8'));
     const saved = preferences['ssh-manager.language'];
-    if (saved === 'en' || saved === 'zh-CN') return saved;
+    if (saved === 'en' || saved === 'zh-CN' || saved === 'ja') return saved;
   } catch { /* no preferences yet, or unreadable: fall through to the system */ }
   return languageForLocale(systemLocale);
 }
 
 export function nativeText(message, values = {}, language = nativeLanguage()) {
-  const text = language === 'en' ? message : messages[message] || message;
+  const text = messages[language]?.[message] || message;
   return text.replace(/\{\{(\w+)\}\}/g, (match, key) => String(values[key] ?? match));
 }

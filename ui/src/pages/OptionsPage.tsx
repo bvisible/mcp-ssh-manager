@@ -236,11 +236,11 @@ export function OptionsPage() {
         <TabsContent value="appearance" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
             <Palette className="h-3.5 w-3.5" />{tr("Appearance")}</h2>
-          {/* The label and the options are bilingual on purpose, and never go
+          {/* The label and the options are multilingual on purpose, and never go
               through tr(): somebody who landed in the wrong language must be
               able to find this in the language they do read. */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">Language / 语言</label>
+            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">Language / 语言 / 言語</label>
             <select
               id="interface-language"
               value={language}
@@ -249,6 +249,7 @@ export function OptionsPage() {
             >
               <option value="en">English</option>
               <option value="zh-CN">简体中文</option>
+              <option value="ja">日本語</option>
             </select>
           </div>
           <ThemePicker />

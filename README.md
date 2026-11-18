@@ -194,6 +194,11 @@ ssh-manager control          # prints a local URL — or `ssh-manager app` for t
 
 One thing in two wrappers. `ssh-manager control` runs the whole interface in a browser tab with nothing extra to install; the desktop builds for macOS, Windows and Linux are that same page with the engine inside them, so they need neither Node nor the npm package.
 
+The interface, desktop menus and notifications support English, 简体中文 and 日本語.
+Choose **Options → Appearance → Language / 语言 / 言語** to switch languages.
+Until you choose, Chinese and Japanese system locales select their corresponding
+language; other locales use English. Your saved choice takes precedence.
+
 The desktop build adds the two things a browser tab cannot do:
 
 - **It lives in the menu bar.** The icon carries a count when something is waiting, and its menu lists what is blocked on you, which shells and commands are open right now, and your servers — so "is anything waiting on me?" costs a glance instead of a window switch. Closing the window leaves it there rather than quitting.

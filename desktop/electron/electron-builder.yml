@@ -14,6 +14,7 @@ files:
   - locale.mjs
   - native-menu.mjs
   - native.zh-CN.json
+  - native.ja.json
   - local-shell.mjs
   - smoke-test.mjs
   - package.json
@@ -123,6 +124,7 @@ win:
   artifactName: ${productName}-${version}-setup.${ext}
 
 nsis:
+  installerLanguages: [en_US, zh_CN, ja_JP]
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

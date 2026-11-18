@@ -44,6 +44,17 @@ There is nothing to commit after a change here: `npm run build:ui` (or `npm pack
 rebuilds `dist/ui` from the sources, so the shipped interface cannot drift from
 them.
 
+## Translations
+
+English, Simplified Chinese and Japanese share the i18next instance in
+`src/lib/i18n.ts`. Each language has a component catalogue (`src/locales/ja.json`,
+for example) and a sentence catalogue (`src/locales/messages.ja.json`). Native
+desktop menus and notifications use `../desktop/electron/native.ja.json`.
+
+Preserve every key and `{{placeholder}}` when translating. Run
+`npm run test:locale` from the repository root to check coverage and placeholders.
+The Windows installer includes Japanese as well.
+
 ## What is deliberately absent
 
 Everything that served TransHub's AI chat: the chat itself, the browser

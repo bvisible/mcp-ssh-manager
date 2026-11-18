@@ -127,15 +127,19 @@ export async function verifyEngineAnswers(engine, { timeoutMs = 30000, stage = (
 export async function runSmokeTest({ app, BrowserWindow, Menu, url, root, localShellProvider }) {
   const stage = createStages();
   stage('control plane started');
-  for (const language of ['zh-CN', 'en']) {
+  for (const [language, help, quit] of [
+    ['zh-CN', '帮助', '退出 SSH Manager'],
+    ['ja', 'ヘルプ', 'SSH Managerを終了'],
+    ['en', 'Help', 'Quit SSH Manager'],
+  ]) {
     const menu = Menu.buildFromTemplate(applicationMenuTemplate({ isMac: process.platform === 'darwin', language }));
     const items = menu.items.flatMap(item => [item, ...(item.submenu?.items || [])]);
-    assert.ok(items.some(item => item.label === (language === 'zh-CN' ? '帮助' : 'Help')), 'localized native help menu');
+    assert.ok(items.some(item => item.label === help), 'localized native help menu: ' + language);
     if (process.platform === 'darwin') {
-      assert.ok(items.some(item => item.label === (language === 'zh-CN' ? '退出 SSH Manager' : 'Quit SSH Manager')), 'localized native application submenu');
+      assert.ok(items.some(item => item.label === quit), 'localized native application submenu: ' + language);
     }
   }
-  stage('native menus built in Chinese and English');
+  stage('native menus built in Chinese, Japanese and English');
   const page = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } });
   const failures = [];
   page.webContents.on('render-process-gone', (_event, details) => failures.push(details.reason));
