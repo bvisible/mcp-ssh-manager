@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-11-19
+
+**French and Japanese interfaces, the SSH agent key in the server form, and long
+commands shown in full.** Nothing to change on upgrade: the tools of the engine are
+the same (its only change is one boolean added to the interface's `/api/options`),
+and the release pipeline upgrades 3.8.5, 3.8.6, 3.8.7, every 4.0.x, 4.1.0 and 4.2.0
+from the registry to this version and back. One thing does behave differently
+without being asked: the interface and the desktop menus follow a French or a
+Japanese system language until you choose one, as they already did for Chinese.
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
+Three of these came from people who read the project closely: thanks to
+@zenk-sugimoto (the Japanese interface), @TillNano (the agent key in the form) and
+@congzhou09 (whole commands in Live and Activity).
+
 ### Added
 
 - **A French interface (Français), and a way to add any other language in minutes.**
