@@ -1,0 +1,74 @@
+{
+  "language": {
+    "name": "日本語",
+    "label": "言語"
+  },
+  "actions": {
+    "browse": "ファイルを参照",
+    "cancel": "キャンセル",
+    "connect": "SSHで接続",
+    "delete": "削除",
+    "edit": "編集"
+  },
+  "files": {
+    "columnModified": "更新日時",
+    "columnName": "名前",
+    "columnSize": "サイズ",
+    "contextCompressZip": "Zipに圧縮",
+    "contextCopyPath": "パスをコピー",
+    "contextDelete": "削除",
+    "contextDownload": "ダウンロード",
+    "contextExtractZip": "Zipを展開",
+    "contextGetInfo": "情報を見る",
+    "contextNewFile": "新規ファイル",
+    "contextNewFolder": "新規フォルダー",
+    "contextOpen": "開く",
+    "contextOpenTerminal": "ターミナルを開く",
+    "contextQuickLook": "クイックルック",
+    "contextRefresh": "更新",
+    "contextRename": "名前を変更",
+    "contextShowInFinder": "Finderに表示",
+    "contextUpload": "アップロード",
+    "copyPath": "パスをコピー",
+    "download": "ダウンロード",
+    "emptyDirectory": "空のディレクトリ",
+    "goUp": "上の階層へ",
+    "hideHidden": "隠しファイルを非表示",
+    "home": "ホーム (~)",
+    "modified": "更新日時",
+    "name": "名前",
+    "newFolder": "新規フォルダー",
+    "openInCode": "Codeで開く",
+    "openInEditor": "エディターで開く",
+    "openTerminal": "ここでターミナルを開く",
+    "permissions": "アクセス権",
+    "refresh": "更新",
+    "root": "ルート (/)",
+    "setDefault": "既定のディレクトリに設定",
+    "showHidden": "隠しファイルを表示",
+    "size": "サイズ",
+    "statusHidden": "非表示",
+    "statusItems": "項目",
+    "statusLink": "リンク",
+    "statusSelected": "選択中",
+    "upload": "アップロード"
+  },
+  "servers": {
+    "addFirst": "サーバーを追加",
+    "dupDialog": {
+      "description": "{{name}}の{{type}}セッションはすでに開いています。",
+      "goExisting": "既存のセッションへ",
+      "openNew": "新しく開く",
+      "title": "接続済みです"
+    },
+    "emptyDescription": "SSHサーバーに接続して、ファイルの管理、コマンドの実行、インフラへのリモートアクセスを行えます。",
+    "emptyTitle": "最初のサーバーを追加",
+    "import": "インポート",
+    "noResults": "検索条件に一致するサーバーがありません",
+    "status": {
+      "browserActive": "ファイルブラウザー使用中",
+      "browserAndTerminal": "ファイルブラウザーとSSHターミナル使用中",
+      "terminalActive": "SSHターミナル使用中"
+    }
+  }
+}

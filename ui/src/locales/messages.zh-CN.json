@@ -399,5 +399,11 @@
   "Production servers": "生产服务器",
   "Staging/test servers": "预发布/测试服务器",
   "Development servers": "开发服务器",
-  "Servers configured with group = \"{{name}}\"": "配置为 group = \"{{name}}\" 的服务器"
+  "Servers configured with group = \"{{name}}\"": "配置为 group = \"{{name}}\" 的服务器",
+  "Not used with an agent key": "不与认证代理密钥一起使用",
+  "Agent public key": "认证代理公钥",
+  "Clear the password, the private key and agent forwarding to use an agent key.": "使用认证代理密钥前，请清空密码、私钥路径和转发 SSH 认证代理选项。",
+  "Use one identity held by your SSH agent: the private key never reaches this application. Path of its .pub file.": "使用 SSH 认证代理中保存的一个身份：私钥不会传给本应用。请填写其 .pub 文件的路径。",
+  "No SSH agent is visible to this application (SSH_AUTH_SOCK is empty): the connection will fail until one is running.": "本应用无法检测到 SSH 认证代理（SSH_AUTH_SOCK 为空）：在认证代理运行之前，连接将失败。",
+  "Saving removes the password and the private key saved for this server: an agent key cannot be combined with them.": "保存后将删除为此服务器保存的密码和私钥路径：认证代理密钥不能与它们同时使用。"
 }

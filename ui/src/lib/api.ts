@@ -81,6 +81,10 @@ export interface ServerConfig {
   proxyCommand?: string;
   platform?: string;
   forwardAgent?: boolean;
+  /** The public key of the one SSH-agent identity to use; the private key never enters the engine. */
+  agentPublicKeyPath?: string;
+  /** A password is saved in the vault (its value never leaves it). */
+  hasPassword?: boolean;
   allowPatterns?: string[];
   denyPatterns?: string[];
   auditLog?: string;
@@ -117,6 +121,7 @@ interface VaultServer {
   proxyCommand?: string;
   platform?: string;
   forwardAgent?: boolean;
+  agentPublicKeyPath?: string;
   allowPatterns?: string[];
   denyPatterns?: string[];
   auditLog?: string;
@@ -150,6 +155,8 @@ function toServerConfig(server: VaultServer): ServerConfig {
     proxyCommand: server.proxyCommand,
     platform: server.platform,
     forwardAgent: server.forwardAgent,
+    agentPublicKeyPath: server.agentPublicKeyPath,
+    hasPassword: server.hasPassword,
     allowPatterns: server.allowPatterns,
     denyPatterns: server.denyPatterns,
     auditLog: server.auditLog,
@@ -190,6 +197,7 @@ export const servers = {
   },
 
   async save(config: ServerConfig): Promise<void> {
+    const agentKey = config.agentPublicKeyPath?.trim();
     await post('/api/servers', {
       name: config.name,
       host: config.host,
@@ -207,9 +215,15 @@ export const servers = {
       proxyCommand: config.proxyCommand,
       platform: config.platform,
       forwardAgent: config.forwardAgent,
+      // Explicit '' when it was cleared, so a lower-priority .env cannot fill it back in.
+      agentPublicKeyPath: config.agentPublicKeyPath === undefined ? undefined : agentKey ?? '',
       allowPatterns: config.allowPatterns,
       denyPatterns: config.denyPatterns,
       auditLog: config.auditLog,
+      // An agent key cannot be combined with a password, a private key or agent
+      // forwarding: the engine refuses the connection if the vault holds both. The form
+      // says so before saving; saving removes them (null removes a saved secret).
+      ...(agentKey ? { password: null, keyPath: '', forwardAgent: false } : {}),
     });
   },
 
@@ -637,6 +651,8 @@ export interface Options {
    * possible — and, over a network, would not be desirable either.
    */
   localShell: boolean;
+  /** Whether this process can see an SSH agent (SSH_AUTH_SOCK is set). */
+  agentSocket?: boolean;
 }
 
 export const hostKeys = {

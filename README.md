@@ -194,6 +194,12 @@ ssh-manager control          # prints a local URL — or `ssh-manager app` for t
 
 One thing in two wrappers. `ssh-manager control` runs the whole interface in a browser tab with nothing extra to install; the desktop builds for macOS, Windows and Linux are that same page with the engine inside them, so they need neither Node nor the npm package.
 
+The interface, desktop menus and notifications support English, Français, 简体中文 and 日本語.
+Choose **Options → Appearance → Language** to switch languages.
+Until you choose, your system or browser language selects the matching one; other
+languages use English. Your saved choice takes precedence. A new language is three
+files and one command (`npm run lang -- add <code>`): see [Adding a language](ui/README.md#adding-a-language).
+
 The desktop build adds the two things a browser tab cannot do:
 
 - **It lives in the menu bar.** The icon carries a count when something is waiting, and its menu lists what is blocked on you, which shells and commands are open right now, and your servers — so "is anything waiting on me?" costs a glance instead of a window switch. Closing the window leaves it there rather than quitting.
@@ -578,7 +584,7 @@ user = "admin"
 agent_public_key_path = "~/.ssh/id_ed25519.pub"
 ```
 
-The `.env` equivalent is `SSH_SERVER_[NAME]_AGENT_PUBLIC_KEY_PATH`; the internal configuration field is `agentPublicKeyPath`. This option fails if the public key file is missing or invalid, the agent is unavailable, or the agent does not offer a matching identity. It cannot be combined with `key_path`, `password`, `cert_path`, or enabled `forward_agent`; conflicting configuration is rejected. Omitting the option preserves the existing authentication behavior. `ssh_sync` uses system OpenSSH and does not apply this filter: configure its `IdentityFile` and `IdentitiesOnly yes` in your SSH client configuration separately.
+In the desktop application and the browser interface it is the *Agent public key* field of the server form, which also closes the password, private key and agent-forwarding inputs while it is set. The `.env` equivalent is `SSH_SERVER_[NAME]_AGENT_PUBLIC_KEY_PATH`; the internal configuration field is `agentPublicKeyPath`. This option fails if the public key file is missing or invalid, the agent is unavailable, or the agent does not offer a matching identity. It cannot be combined with `key_path`, `password`, `cert_path`, or enabled `forward_agent`; conflicting configuration is rejected. Omitting the option preserves the existing authentication behavior. `ssh_sync` uses system OpenSSH and does not apply this filter: configure its `IdentityFile` and `IdentitiesOnly yes` in your SSH client configuration separately.
 
 **OpenSSH user certificates** — for servers that trust a certificate authority (`TrustedUserCAKeys`), point `CERTPATH` / `cert_path` at the certificate signed for `KEYPATH` (usually `<key>-cert.pub`). It is read on every connection, so a short-lived certificate renewed on disk needs no restart, and a missing file fails the connection instead of falling back to the bare key. It takes effect once `ssh2` ships certificate support ([mscdex/ssh2#1495](https://github.com/mscdex/ssh2/pull/1495)); until then the plain key is offered, as before. `ssh_sync` uses the system `ssh`, which finds `<key>-cert.pub` next to the key on its own.
 

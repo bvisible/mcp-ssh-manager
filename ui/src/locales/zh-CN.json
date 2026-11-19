@@ -1,4 +1,8 @@
 {
+  "language": {
+    "name": "简体中文",
+    "label": "语言"
+  },
   "actions": {
     "browse": "浏览文件",
     "cancel": "取消",

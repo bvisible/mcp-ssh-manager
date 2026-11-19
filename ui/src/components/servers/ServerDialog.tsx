@@ -1,9 +1,9 @@
-import { cloneElement, useId, useState, type ReactElement } from 'react';
+import { cloneElement, useEffect, useId, useState, type ReactElement } from 'react';
 import { ChevronDown, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { servers as api, type ServerConfig } from '@/lib/api';
+import { servers as api, state, type ServerConfig } from '@/lib/api';
 import { tr, useLocale } from '@/lib/i18n';
 
 const BLANK: ServerConfig = { id: '', name: '', host: '', port: 22, username: '', mode: 'unrestricted', approval: 'never' };
@@ -20,6 +20,18 @@ export function ServerDialog({ server, prefill, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof ServerConfig>(key: K, value: ServerConfig[K]) => setDraft(current => ({ ...current, [key]: value }));
+
+  // An agent key (the public key of one identity the SSH agent holds) cannot be combined with a
+  // password, a private key or agent forwarding: the engine refuses the connection. The form
+  // makes the choice once, here, instead of letting the connection fail later.
+  const usesAgentKey = Boolean(draft.agentPublicKeyPath?.trim());
+  const hasOtherCredential = Boolean(draft.password || draft.privateKey?.trim() || draft.forwardAgent);
+  const willDropSaved = usesAgentKey && Boolean(draft.hasPassword || server?.privateKey?.trim());
+  const [agentSocket, setAgentSocket] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!usesAgentKey || agentSocket !== null) return;
+    void state.options().then(options => setAgentSocket(options.agentSocket !== false)).catch(() => {});
+  }, [usesAgentKey, agentSocket]);
 
   const save = async () => {
     setSaving(true); setError(null);
@@ -47,10 +59,22 @@ export function ServerDialog({ server, prefill, onClose, onSaved }: {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label={tr("User")}><Input required value={draft.username} autoComplete="off" onChange={e => set('username', e.target.value)} /></Field>
-            <Field label={tr("Password")}><Input type="password" autoComplete="new-password" placeholder={server ? tr("unchanged") : tr("optional")} onChange={e => set('password', e.target.value)} /></Field>
+            <Field label={tr("Password")}><Input type="password" autoComplete="new-password" disabled={usesAgentKey}
+              placeholder={usesAgentKey ? tr("Not used with an agent key") : server ? tr("unchanged") : tr("optional")} onChange={e => set('password', e.target.value)} /></Field>
           </div>
-          <Field label={tr("Private key")}><Input value={draft.privateKey ?? ''} placeholder="~/.ssh/id_ed25519" onChange={e => set('privateKey', e.target.value)} /></Field>
+          <Field label={tr("Private key")}><Input value={usesAgentKey ? '' : draft.privateKey ?? ''} disabled={usesAgentKey}
+            placeholder={usesAgentKey ? tr("Not used with an agent key") : "~/.ssh/id_ed25519"} onChange={e => set('privateKey', e.target.value)} /></Field>
           <Field label={tr("Key passphrase")}><Input type="password" autoComplete="new-password" placeholder={server ? tr("unchanged") : tr("if your key is encrypted")} onChange={e => set('passphrase', e.target.value)} /></Field>
+          <Field label={tr("Agent public key")}
+            hint={hasOtherCredential && !usesAgentKey
+              ? tr("Clear the password, the private key and agent forwarding to use an agent key.")
+              : tr("Use one identity held by your SSH agent: the private key never reaches this application. Path of its .pub file.")}>
+            <Input value={draft.agentPublicKeyPath ?? ''} disabled={hasOtherCredential && !usesAgentKey} placeholder="~/.ssh/id_ed25519.pub"
+              onChange={e => set('agentPublicKeyPath', e.target.value)} /></Field>
+          {usesAgentKey && agentSocket === false && <p role="status" className="text-xs text-destructive">
+            {tr("No SSH agent is visible to this application (SSH_AUTH_SOCK is empty): the connection will fail until one is running.")}</p>}
+          {willDropSaved && <p role="status" className="text-xs text-muted-foreground">
+            {tr("Saving removes the password and the private key saved for this server: an agent key cannot be combined with them.")}</p>}
           <Field label={tr("Default directory")}><Input value={draft.defaultDirectory ?? ''} placeholder="/var/www" onChange={e => set('defaultDirectory', e.target.value)} /></Field>
 
           <fieldset className="grid gap-3 rounded-lg border border-border bg-sidebar p-3">
@@ -83,7 +107,7 @@ export function ServerDialog({ server, prefill, onClose, onSaved }: {
               <Field label={tr("Remote platform")}><select className={inputClass} value={draft.platform ?? 'linux'} onChange={e => set('platform', e.target.value)}>
                 <option value="linux">Linux / Unix</option><option value="windows">Windows</option><option value="darwin">macOS</option>
               </select></Field>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.forwardAgent ?? false} onChange={e => set('forwardAgent', e.target.checked)} /> {tr("Forward the SSH agent")}</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={usesAgentKey ? false : draft.forwardAgent ?? false} disabled={usesAgentKey} onChange={e => set('forwardAgent', e.target.checked)} /> {tr("Forward the SSH agent")}</label>
               <Field label={tr("Audit log path")}><Input value={draft.auditLog ?? ''} placeholder="/path/to/audit.jsonl" onChange={e => set('auditLog', e.target.value)} /></Field>
             </div>
           </details>

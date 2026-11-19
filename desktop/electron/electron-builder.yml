@@ -13,7 +13,8 @@ files:
   - main.js
   - locale.mjs
   - native-menu.mjs
-  - native.zh-CN.json
+  # One file per language, found by locale.mjs at start: a new language needs no change here.
+  - native.*.json
   - local-shell.mjs
   - smoke-test.mjs
   - package.json
@@ -123,6 +124,7 @@ win:
   artifactName: ${productName}-${version}-setup.${ext}
 
 nsis:
+  installerLanguages: [en_US, zh_CN, ja_JP, fr_FR]
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

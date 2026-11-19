@@ -399,5 +399,11 @@
   "Production servers": "Production servers",
   "Staging/test servers": "Staging/test servers",
   "Development servers": "Development servers",
-  "Servers configured with group = \"{{name}}\"": "Servers configured with group = \"{{name}}\""
+  "Servers configured with group = \"{{name}}\"": "Servers configured with group = \"{{name}}\"",
+  "Not used with an agent key": "Not used with an agent key",
+  "Agent public key": "Agent public key",
+  "Clear the password, the private key and agent forwarding to use an agent key.": "Clear the password, the private key and agent forwarding to use an agent key.",
+  "Use one identity held by your SSH agent: the private key never reaches this application. Path of its .pub file.": "Use one identity held by your SSH agent: the private key never reaches this application. Path of its .pub file.",
+  "No SSH agent is visible to this application (SSH_AUTH_SOCK is empty): the connection will fail until one is running.": "No SSH agent is visible to this application (SSH_AUTH_SOCK is empty): the connection will fail until one is running.",
+  "Saving removes the password and the private key saved for this server: an agent key cannot be combined with them.": "Saving removes the password and the private key saved for this server: an agent key cannot be combined with them."
 }

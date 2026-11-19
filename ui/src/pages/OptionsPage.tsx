@@ -23,7 +23,7 @@ import { AgentsPanel } from '@/components/AgentsPanel';
 import { UpdatesPanel } from '@/components/UpdatesPanel';
 import { useAppUpdate } from '@/stores/appUpdate.store';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
+import { languages, setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
 
 
 /** A tab's own height, so a wrapped row keeps the size of the first. */
@@ -64,7 +64,7 @@ function ThemePicker() {
               <Icon className={cn('h-4 w-4', active ? 'text-primary' : 'text-muted-foreground')} />
               <span className="text-sm font-medium">{tr(theme.label)}</span>
               {theme.id === 'system' && (
-                <span className="ml-auto text-[10px] text-muted-foreground">{resolved === 'dark' ? tr('currently dark') : tr('currently light')}</span>
+                <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">{resolved === 'dark' ? tr('currently dark') : tr('currently light')}</span>
               )}
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">{tr(theme.hint)}</p>
@@ -236,19 +236,19 @@ export function OptionsPage() {
         <TabsContent value="appearance" className="mt-0 space-y-4">
           <h2 className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
             <Palette className="h-3.5 w-3.5" />{tr("Appearance")}</h2>
-          {/* The label and the options are bilingual on purpose, and never go
+          {/* The label and the options are multilingual on purpose, and never go
               through tr(): somebody who landed in the wrong language must be
-              able to find this in the language they do read. */}
+              able to find this in the language they do read. Both come from the
+              language files themselves, so a new language appears here by existing. */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">Language / 语言</label>
+            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">{languages.map(item => item.label).join(' / ')}</label>
             <select
               id="interface-language"
               value={language}
               onChange={event => void setLanguage(event.target.value as Language)}
               className="w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring"
             >
-              <option value="en">English</option>
-              <option value="zh-CN">简体中文</option>
+              {languages.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
             </select>
           </div>
           <ThemePicker />

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { selectorLabel } from './languages';
 
 test.use({ language: 'zh-CN' });
 const longMount = '/srv/customer-data/' + 'a'.repeat(128) + '/backup';
@@ -66,7 +67,7 @@ test('health cards contain long paths, bars, warnings and backgrounds at every d
 
   await page.setViewportSize({ width: 1100, height: 800 });
   await page.getByRole('button', { name: '设置', exact: true }).click();
-  await page.getByLabel('Language / 语言').selectOption('en');
+  await page.getByLabel(selectorLabel, { exact: true }).selectOption('en');
   await page.getByRole('button', { name: 'Health', exact: true }).click();
   await page.getByRole('button', { name: 'Check every server', exact: true }).click();
   // English is shown exactly as it always was: the engine's own alert, memory rounded to whole gigabytes.

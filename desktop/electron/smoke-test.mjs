@@ -1,6 +1,7 @@
 // Runs only through --release-smoke-test, with an isolated directory supplied
 // by scripts/smoke-desktop.mjs. Exercise the packaged code, UI and native PTY.
 import assert from 'node:assert/strict';
+import { nativeLanguages, nativeText } from './locale.mjs';
 import { applicationMenuTemplate } from './native-menu.mjs';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -127,15 +128,18 @@ export async function verifyEngineAnswers(engine, { timeoutMs = 30000, stage = (
 export async function runSmokeTest({ app, BrowserWindow, Menu, url, root, localShellProvider }) {
   const stage = createStages();
   stage('control plane started');
-  for (const language of ['zh-CN', 'en']) {
+  // Every language the application ships, found from its catalogues: the menu is built in each one.
+  for (const language of nativeLanguages) {
+    const help = nativeText('Help', {}, language);
+    const quit = nativeText('Quit SSH Manager', {}, language);
     const menu = Menu.buildFromTemplate(applicationMenuTemplate({ isMac: process.platform === 'darwin', language }));
     const items = menu.items.flatMap(item => [item, ...(item.submenu?.items || [])]);
-    assert.ok(items.some(item => item.label === (language === 'zh-CN' ? '帮助' : 'Help')), 'localized native help menu');
+    assert.ok(items.some(item => item.label === help), 'localized native help menu: ' + language);
     if (process.platform === 'darwin') {
-      assert.ok(items.some(item => item.label === (language === 'zh-CN' ? '退出 SSH Manager' : 'Quit SSH Manager')), 'localized native application submenu');
+      assert.ok(items.some(item => item.label === quit), 'localized native application submenu: ' + language);
     }
   }
-  stage('native menus built in Chinese and English');
+  stage('native menus built in ' + nativeLanguages.join(', '));
   const page = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } });
   const failures = [];
   page.webContents.on('render-process-gone', (_event, details) => failures.push(details.reason));

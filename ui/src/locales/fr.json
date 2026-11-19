@@ -1,0 +1,74 @@
+{
+  "language": {
+    "name": "Français",
+    "label": "Langue"
+  },
+  "actions": {
+    "browse": "Parcourir les fichiers",
+    "cancel": "Annuler",
+    "connect": "Se connecter en SSH",
+    "delete": "Supprimer",
+    "edit": "Modifier"
+  },
+  "files": {
+    "columnModified": "Modifié",
+    "columnName": "Nom",
+    "columnSize": "Taille",
+    "contextCompressZip": "Compresser en Zip",
+    "contextCopyPath": "Copier le chemin",
+    "contextDelete": "Supprimer",
+    "contextDownload": "Télécharger",
+    "contextExtractZip": "Extraire le Zip",
+    "contextGetInfo": "Lire les informations",
+    "contextNewFile": "Nouveau fichier",
+    "contextNewFolder": "Nouveau dossier",
+    "contextOpen": "Ouvrir",
+    "contextOpenTerminal": "Ouvrir le terminal",
+    "contextQuickLook": "Aperçu rapide",
+    "contextRefresh": "Actualiser",
+    "contextRename": "Renommer",
+    "contextShowInFinder": "Afficher dans le Finder",
+    "contextUpload": "Téléverser",
+    "copyPath": "Copier le chemin",
+    "download": "Télécharger",
+    "emptyDirectory": "Dossier vide",
+    "goUp": "Remonter",
+    "hideHidden": "Masquer les fichiers cachés",
+    "home": "Accueil (~)",
+    "modified": "Modifié",
+    "name": "Nom",
+    "newFolder": "Nouveau dossier",
+    "openInCode": "Ouvrir dans Code",
+    "openInEditor": "Ouvrir dans l’éditeur",
+    "openTerminal": "Ouvrir un terminal ici",
+    "permissions": "Permissions",
+    "refresh": "Actualiser",
+    "root": "Racine (/)",
+    "setDefault": "Définir comme répertoire par défaut",
+    "showHidden": "Afficher les fichiers cachés",
+    "size": "Taille",
+    "statusHidden": "masqués",
+    "statusItems": "éléments",
+    "statusLink": "lien",
+    "statusSelected": "sélectionné(s)",
+    "upload": "Téléverser"
+  },
+  "servers": {
+    "addFirst": "Ajouter un serveur",
+    "dupDialog": {
+      "description": "Une session {{type}} est déjà ouverte pour {{name}}.",
+      "goExisting": "Aller à la connexion existante",
+      "openNew": "Ouvrir une nouvelle connexion",
+      "title": "Connexion déjà ouverte"
+    },
+    "emptyDescription": "Connectez-vous à vos serveurs SSH pour gérer des fichiers, exécuter des commandes et accéder à votre infrastructure à distance.",
+    "emptyTitle": "Ajoutez votre premier serveur",
+    "import": "Importer",
+    "noResults": "Aucun serveur ne correspond à votre recherche",
+    "status": {
+      "browserActive": "Explorateur de fichiers actif",
+      "browserAndTerminal": "Explorateur de fichiers + terminal SSH",
+      "terminalActive": "Terminal SSH actif"
+    }
+  }
+}

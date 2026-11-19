@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A French interface (Français), and a way to add any other language in minutes.**
+  *Options → Appearance → Language* now offers Français, and the desktop menus,
+  dialogs and notifications follow it (the Windows installer has a French page).
+  Languages are no longer listed anywhere in the code: the interface and the desktop
+  application find their catalogues in their folders, the selector is built from what
+  they find, and the tests loop over what exists. `npm run lang -- add <code>` creates
+  a language's three files from the English text, and `npm run lang -- status` shows
+  how much of each is still English; the steps are in `ui/README.md`, "Adding a
+  language". A system language is matched by its exact tag, else its family (`fr-CH`
+  uses French), else English; nothing changes for a language that is not shipped.
+- **The server form can name an SSH agent key** (#148, thanks to @TillNano).
+  *Agent public key*, in the authentication section, takes the path of a `.pub`
+  file: the engine then offers only that identity from your SSH agent and signs
+  with it, so the private key never reaches the engine (the setting existed since
+  4.1.0, but only in `.env`, TOML or the environment, which left a server managed
+  in the interface with no way to use it). The engine refuses an agent key
+  together with a password, a private key or agent forwarding, so the form
+  disables the others while one is chosen, says why when the agent key field is
+  the one that is closed, and tells you that saving removes a password or a key
+  already saved for that server. It warns when this application sees no SSH agent
+  (`SSH_AUTH_SOCK` empty): the interface's `/api/options` now says whether one is
+  visible. Nothing changes for a server that does not use it.
+- **A Japanese interface (日本語).** *Options → Appearance → Language* now offers
+  English, 简体中文 and 日本語, for the desktop application and the web interface;
+  the desktop menus, dialogs and notifications follow it, and the Windows installer
+  has Japanese and Chinese pages. Until you choose, a Japanese system or browser
+  language selects Japanese, as a Chinese one selects Chinese; the choice is
+  remembered and English is exactly as it was. The translation is @zenk-sugimoto's
+  (#149): thank you. Japanese is set in Japanese fonts only, Chinese in Chinese
+  fonts only, because the same Han characters are drawn differently in the two.
+
+### Fixed
+
+- **Live and Activity show the whole command.** A long command was cut off with an
+  ellipsis on both pages, and an Activity → Commands entry could only be opened when
+  its output had been recorded (`SSH_MANAGER_LOG_OUTPUT=1`, off by default), so in
+  practice you could not read what an agent had run. A row keeps its one-line
+  overview, with the full command as its tooltip; opening it shows the command in
+  full, wrapped, with the copy button of the approval card. Every Commands entry now
+  opens, several can stay open together, and an open entry no longer collapses or
+  loses a text selection when a new one arrives. By @congzhou09 (#151): thank you.
+
 ## [4.2.0] - 2026-11-13
 
 **A Chinese interface, a fuller audit log, and a guard against raw ssh.** Nothing
