@@ -50,7 +50,12 @@ function discover(folder, prefix) {
 }
 
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
-const writeJson = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
+/** `flag: 'wx'` creates the file and fails if it exists, in one step. */
+const writeJson = (file, data, flag = 'w') => fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n', { flag });
+/** The file's text, or undefined when it is not there: one read, so nothing can change between a check and the use. */
+function readIfPresent(file) {
+  try { return fs.readFileSync(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return undefined; throw error; }
+}
 const flatten = (object, prefix = '') => Object.entries(object)
   .flatMap(([key, value]) => (value && typeof value === 'object' ? flatten(value, `${prefix}${key}.`) : [[`${prefix}${key}`, value]]));
 
@@ -84,12 +89,12 @@ export function addLanguage(root, code, { name, label } = {}) {
     [path.join(where.locales, `messages.${code}.json`), sentences],
     [path.join(where.electron, `native.${code}.json`), native],
   ];
-  for (const [file, content] of written) writeJson(file, content);
+  for (const [file, content] of written) writeJson(file, content, 'wx');
 
   const installer = installerLocaleFor(code);
   let installerAdded = false;
-  if (installer && fs.existsSync(where.builder)) {
-    const text = fs.readFileSync(where.builder, 'utf8');
+  const text = installer ? readIfPresent(where.builder) : undefined;
+  if (text !== undefined) {
     const line = /^(\s*installerLanguages:\s*\[)([^\]]*)(\])/m.exec(text);
     if (line) {
       const pages = line[2].split(',').map(page => page.trim()).filter(Boolean);
@@ -111,8 +116,8 @@ export function languageStatus(root) {
     const labels = readJson(path.join(where.locales, `${code}.json`));
     const labelEntries = flatten(labels).filter(([key]) => !key.startsWith('language.'));
     const sentences = Object.entries(readJson(path.join(where.locales, `messages.${code}.json`)));
-    const nativePath = path.join(where.electron, `native.${code}.json`);
-    const menus = fs.existsSync(nativePath) ? Object.entries(readJson(nativePath)) : [];
+    const nativeText = readIfPresent(path.join(where.electron, `native.${code}.json`));
+    const menus = nativeText === undefined ? [] : Object.entries(JSON.parse(nativeText));
     result.push({
       code,
       name: labels.language?.name ?? code,

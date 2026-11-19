@@ -16,9 +16,10 @@ export interface Language {
   welcome: string;
 }
 
-export const languages: Language[] = fs.readdirSync(folder)
+const present = new Set(fs.readdirSync(folder));
+export const languages: Language[] = [...present]
   .map(file => /^([A-Za-z0-9-]+)\.json$/.exec(file)?.[1])
-  .filter((code): code is string => Boolean(code) && fs.existsSync(`${folder}messages.${code}.json`))
+  .filter((code): code is string => Boolean(code) && present.has(`messages.${code}.json`))
   .sort((a, b) => (a === 'en' ? -1 : b === 'en' ? 1 : a.localeCompare(b)))
   .map(code => ({
     code,
