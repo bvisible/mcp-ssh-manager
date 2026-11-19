@@ -1,13 +1,15 @@
 import { test, expect, apiUrl } from './fixtures';
+import { languages, selectorLabel, selectorNames, unsupportedLocale } from './languages';
 
-const chineseWelcome = '你的服务器，你的工作空间。';
-const englishWelcome = 'Your servers. Your workspace.';
-const japaneseWelcome = 'あなたのサーバー。あなたのワークスペース。';
-const welcomes = { en: englishWelcome, 'zh-CN': chineseWelcome, ja: japaneseWelcome };
+const welcomes = Object.fromEntries(languages.map(language => [language.code, language.welcome]));
 
 // Until somebody chooses a language, the browser's decides; unsupported locales use English.
 // Nothing is saved by that, so the interface keeps following the system.
-for (const [locale, language] of [['zh-CN', 'zh-CN'], ['zh-TW', 'zh-CN'], ['ja-JP', 'ja'], ['en-US', 'en'], ['fr-FR', 'en'], ['de-DE', 'en']] as const) {
+const followed: [string, string][] = [
+  ...languages.map(language => [language.code, language.code] as [string, string]),
+  ['zh-TW', 'zh-CN'], ['ja-JP', 'ja'], ['en-US', 'en'], [unsupportedLocale, 'en'],
+];
+for (const [locale, language] of followed) {
   test.describe(`a ${locale} browser, no language chosen yet`, () => {
     test.use({ language: null, locale });
     test(`shows ${language} and saves nothing`, async ({ page, app }) => {
@@ -47,13 +49,18 @@ for (const [language, locale, own, foreign] of [
 
 // A saved choice always wins over the browser's language.
 test.describe('a saved choice', () => {
-  for (const [saved, locale, shown] of [['en', 'zh-CN', 'en'], ['zh-CN', 'en-US', 'zh-CN'], ['ja', 'en-US', 'ja'], ['en', 'ja-JP', 'en']] as const) {
+  const choices = new Map<string, [string, string]>();
+  for (const { code } of languages) {
+    if (code !== 'en') choices.set(`${code} in en-US`, [code, 'en-US']);
+    choices.set(`en in ${code === 'en' ? 'ja-JP' : code}`, ['en', code === 'en' ? 'ja-JP' : code]);
+  }
+  for (const [saved, locale] of choices.values()) {
     test.describe(`${saved} in a ${locale} browser`, () => {
       test.use({ language: saved, locale });
       test('wins', async ({ page, app }) => {
         await page.goto(app.url);
-        await expect(page.locator('html')).toHaveAttribute('lang', shown);
-        await expect(page.getByRole('dialog')).toContainText(welcomes[shown]);
+        await expect(page.locator('html')).toHaveAttribute('lang', saved);
+        await expect(page.getByRole('dialog')).toContainText(welcomes[saved]);
       });
     });
   }
@@ -67,14 +74,14 @@ test.describe('choosing a language', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     await page.getByRole('button', { name: '设置', exact: true }).click();
-    const language = page.getByLabel('Language / 语言 / 言語');
+    const language = page.getByLabel(selectorLabel, { exact: true });
     await expect(language).toHaveValue('zh-CN');
     // Each language is named in itself, so it can be found from the wrong one.
-    await expect(language.locator('option')).toHaveText(['English', '简体中文', '日本語']);
+    await expect(language.locator('option')).toHaveText(selectorNames);
     await language.selectOption('en');
     await expect(page.getByRole('heading', { name: 'Options', exact: true })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await expect(language.locator('option')).toHaveText(['English', '简体中文', '日本語']);
+    await expect(language.locator('option')).toHaveText(selectorNames);
     await expect.poll(async () => (await (await page.request.get(apiUrl(app, '/api/preferences'))).json()).preferences['ssh-manager.language']).toBe('en');
     const old = new URL(app.url).port;
     await app.restart();
@@ -122,7 +129,7 @@ test.describe('choosing a language', () => {
     await expect(page.locator('.xterm')).toBeVisible();
     const screen = page.locator('.xterm').elementHandle();
     await page.getByRole('button', { name: '设置', exact: true }).click();
-    await page.getByLabel('Language / 语言 / 言語').selectOption('en');
+    await page.getByLabel(selectorLabel, { exact: true }).selectOption('en');
     expect(await (await screen)!.evaluate(element => element.isConnected)).toBe(true);
     // The tab keeps the title it was opened with: a title is a name, like a server's, and is not retranslated.
     await page.getByRole('button', { name: '本机', exact: true }).first().click();

@@ -23,7 +23,7 @@ import { AgentsPanel } from '@/components/AgentsPanel';
 import { UpdatesPanel } from '@/components/UpdatesPanel';
 import { useAppUpdate } from '@/stores/appUpdate.store';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
+import { languages, setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
 
 
 /** A tab's own height, so a wrapped row keeps the size of the first. */
@@ -238,18 +238,17 @@ export function OptionsPage() {
             <Palette className="h-3.5 w-3.5" />{tr("Appearance")}</h2>
           {/* The label and the options are multilingual on purpose, and never go
               through tr(): somebody who landed in the wrong language must be
-              able to find this in the language they do read. */}
+              able to find this in the language they do read. Both come from the
+              language files themselves, so a new language appears here by existing. */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">Language / 语言 / 言語</label>
+            <label htmlFor="interface-language" className="mb-2 block text-sm font-medium">{languages.map(item => item.label).join(' / ')}</label>
             <select
               id="interface-language"
               value={language}
               onChange={event => void setLanguage(event.target.value as Language)}
               className="w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring"
             >
-              <option value="en">English</option>
-              <option value="zh-CN">简体中文</option>
-              <option value="ja">日本語</option>
+              {languages.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
             </select>
           </div>
           <ThemePicker />

@@ -1,4 +1,8 @@
 {
+  "language": {
+    "name": "日本語",
+    "label": "言語"
+  },
   "actions": {
     "browse": "ファイルを参照",
     "cancel": "キャンセル",

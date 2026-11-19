@@ -46,14 +46,55 @@ them.
 
 ## Translations
 
-English, Simplified Chinese and Japanese share the i18next instance in
-`src/lib/i18n.ts`. Each language has a component catalogue (`src/locales/ja.json`,
-for example) and a sentence catalogue (`src/locales/messages.ja.json`). Native
-desktop menus and notifications use `../desktop/electron/native.ja.json`.
+A language is three files, and nothing else names it. The interface finds its
+catalogues when it is built, the desktop application finds its own when it starts,
+and the language selector in Options is generated from what they find.
 
-Preserve every key and `{{placeholder}}` when translating. Run
-`npm run test:locale` from the repository root to check coverage and placeholders.
-The Windows installer includes Japanese as well.
+| File | What it holds |
+|---|---|
+| `src/locales/<code>.json` | the labels of the components carried over from TransHub (`t('files.contextOpen')`), and `language.name` (the language written in itself, "Français") and `language.label` (the word for "Language") |
+| `src/locales/messages.<code>.json` | every sentence written for this project. The **keys are the English sentences**, read through `tr()` and `trn()` |
+| `../desktop/electron/native.<code>.json` | the desktop application's own menus, tray and notifications (also keyed by the English text) |
+
+`en` is the source and the fallback, and has no file of its own for the last two.
+
+### Adding a language
+
+From the repository root:
+
+```bash
+npm run lang -- add fr --name "Français" --label "Langue"
+```
+
+That creates the three files with every value still the English text, and adds the
+language's page to the Windows installer when it has one. Then:
+
+1. Translate the **values**. Never change a key of `messages.<code>.json` or
+   `native.<code>.json` (the key is how the code finds the sentence), and keep every
+   `{{placeholder}}` as it is.
+2. `npm run lang -- status` shows how many entries are still the English text (a few are
+   right to be: product names, "OK").
+3. `npm run test:locale` checks that every key exists, every placeholder survived, every
+   `tr('…')` sentence of the source has a translation, every menu label is translated and
+   the installer has the page. `npm run test:ui` runs the language scenarios of the
+   interface in each language found.
+4. Look at it: `npm run build:ui`, then `ssh-manager control` from a checkout (with an
+   isolated `SSH_MANAGER_HOME`), and pick the language in Options → Appearance.
+
+Until somebody chooses, the system or browser language decides: the exact tag
+(`pt-BR`), else the first language of the same family (`fr-CH` → `fr`), else English.
+Nothing in the code lists the languages; no test lists them either.
+
+Things worth knowing when translating:
+
+- **Plurals.** `trn(count, one, other)` carries two forms, the English ones. A language
+  with no plural (Chinese, Japanese) puts the same text in both entries; French, German
+  or Spanish translate each. A language that needs more than two forms is not covered.
+- **Fonts.** A language written in Han characters needs its own font stack, because the
+  same characters are drawn differently in Chinese and in Japanese: see `:root:lang(ja)`
+  in `src/globals.css`. Other scripts need nothing unless the system's fonts do not cover them.
+- **What is not translated.** Server names, commands, paths, and anything a remote
+  machine or the engine prints stay as they are.
 
 ## What is deliberately absent
 

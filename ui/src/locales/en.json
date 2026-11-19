@@ -1,4 +1,8 @@
 {
+  "language": {
+    "name": "English",
+    "label": "Language"
+  },
   "actions": {
     "browse": "Browse files",
     "cancel": "Cancel",

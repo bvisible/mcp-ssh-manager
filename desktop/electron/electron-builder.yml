@@ -13,8 +13,8 @@ files:
   - main.js
   - locale.mjs
   - native-menu.mjs
-  - native.zh-CN.json
-  - native.ja.json
+  # One file per language, found by locale.mjs at start: a new language needs no change here.
+  - native.*.json
   - local-shell.mjs
   - smoke-test.mjs
   - package.json
