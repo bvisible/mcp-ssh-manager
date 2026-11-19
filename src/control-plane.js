@@ -2325,6 +2325,11 @@ export class ControlPlane {
       localShell: Boolean(this.localShell),
       // Whether /api/desktop exists: true only under `ssh-manager control`.
       offerDesktop: Boolean(this.offerDesktop),
+      // Whether this process can see an SSH agent. A server that names an agent key
+      // (agentPublicKeyPath) needs one; the form says so when there is none. It is
+      // this process's environment, which is the engine's inside the desktop
+      // application and a good hint for an engine started by an AI tool.
+      agentSocket: Boolean(process.env.SSH_AUTH_SOCK),
     });
   }
 

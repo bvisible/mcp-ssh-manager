@@ -399,5 +399,11 @@
   "Production servers": "本番サーバー",
   "Staging/test servers": "ステージング・テストサーバー",
   "Development servers": "開発サーバー",
-  "Servers configured with group = \"{{name}}\"": "group = \"{{name}}\"が設定されたサーバー"
+  "Servers configured with group = \"{{name}}\"": "group = \"{{name}}\"が設定されたサーバー",
+  "Not used with an agent key": "SSHエージェントの鍵では使用しません",
+  "Agent public key": "SSHエージェントの公開鍵",
+  "Clear the password, the private key and agent forwarding to use an agent key.": "SSHエージェントの鍵を使うには、パスワード、秘密鍵、SSHエージェントの転送をクリアしてください。",
+  "Use one identity held by your SSH agent: the private key never reaches this application. Path of its .pub file.": "SSHエージェントが保持する ID を一つ使用します。秘密鍵がこのアプリケーションに渡ることはありません。その .pub ファイルのパスを入力してください。",
+  "No SSH agent is visible to this application (SSH_AUTH_SOCK is empty): the connection will fail until one is running.": "このアプリケーションから SSHエージェントが見つかりません（SSH_AUTH_SOCK が空です）。エージェントが起動するまで接続は失敗します。",
+  "Saving removes the password and the private key saved for this server: an agent key cannot be combined with them.": "保存すると、このサーバーに保存されているパスワードと秘密鍵が削除されます。SSHエージェントの鍵は、これらと併用できません。"
 }

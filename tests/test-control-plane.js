@@ -496,6 +496,21 @@ async function testOptionsAndHostKeys() {
   assert.ok(Array.isArray(body.hostKeys), 'hostKeys must be an array even when known_hosts is absent');
   ok('options are served, with empty arrays rather than errors when nothing exists');
 
+  // The server form warns when an agent key is chosen and there is no agent to answer: it needs to
+  // know whether this process can see one. Read at request time, so it follows the environment.
+  const agentBefore = process.env.SSH_AUTH_SOCK;
+  try {
+    delete process.env.SSH_AUTH_SOCK;
+    assert.strictEqual((await (await call(base, `/api/options?${q}`)).json()).agentSocket, false, 'no agent in the environment');
+    process.env.SSH_AUTH_SOCK = path.join(scratch, 'agent.sock');
+    assert.strictEqual((await (await call(base, `/api/options?${q}`)).json()).agentSocket, true, 'an agent in the environment');
+    process.env.SSH_AUTH_SOCK = '';
+    assert.strictEqual((await (await call(base, `/api/options?${q}`)).json()).agentSocket, false, 'an empty SSH_AUTH_SOCK is no agent');
+  } finally {
+    if (agentBefore === undefined) delete process.env.SSH_AUTH_SOCK; else process.env.SSH_AUTH_SOCK = agentBefore;
+  }
+  ok('options say whether an SSH agent is visible, and never its path');
+
   // Forgetting a host key is how a changed-key warning gets silenced, so it
   // must be honest about whether it did anything.
   const missing = await call(base, `/api/hostkey?${q}&host=nothing.invalid&port=22`, { method: 'DELETE' });

@@ -9,8 +9,11 @@ const entry = fileURLToPath(new URL('./control-plane.mjs', import.meta.url));
 export const legacyConfig = 'SSH_SERVER_LEGACY_HOST=127.0.0.1\nSSH_SERVER_LEGACY_PORT=9\nSSH_SERVER_LEGACY_USER=fixture\nSSH_SERVER_LEGACY_PASSWORD=fixture-only-secret\nSSH_SERVER_LEGACY_PROXYJUMP=bastion\nSSH_SERVER_LEGACY_MODE=restricted\nSSH_SERVER_LEGACY_ALLOW_PATTERNS=^uptime$\n';
 
 type App = { url: string; home: string; restart: () => Promise<void>; stop: () => Promise<void> };
-export const test = base.extend<{ app: App; legacy: boolean; offerDesktop: boolean; appUpdates: boolean; localShell: boolean; language: string | null }>({
+export const test = base.extend<{ app: App; legacy: boolean; offerDesktop: boolean; appUpdates: boolean; localShell: boolean; agentSocket: boolean; language: string | null }>({
   legacy: [false, { option: true }],
+  // An SSH agent visible to the control plane (SSH_AUTH_SOCK set), as a desktop application on
+  // macOS or Linux usually has one; the default is none, as on Windows without an agent.
+  agentSocket: [false, { option: true }],
   language: ['en', { option: true }],
   // A control plane started as `ssh-manager control` starts it: offering the
   // desktop application, here a stand-in that installs nothing.
@@ -20,7 +23,7 @@ export const test = base.extend<{ app: App; legacy: boolean; offerDesktop: boole
   // A shell on this machine, as the desktop application offers one; a stand-in
   // that records what it is sent in typed.txt.
   localShell: [false, { option: true }],
-  app: async ({ legacy, offerDesktop, appUpdates, localShell, language }, use) => {
+  app: async ({ legacy, offerDesktop, appUpdates, localShell, agentSocket, language }, use) => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-v4-'));
     if (language) await fs.writeFile(path.join(home, 'preferences.json'), JSON.stringify({ 'ssh-manager.language': language }));
     // Windows's default named pipe is global, even when HOME is isolated.
@@ -51,6 +54,7 @@ export const test = base.extend<{ app: App; legacy: boolean; offerDesktop: boole
           ...(offerDesktop ? { UI_TEST_OFFER_DESKTOP: '1' } : {}),
           ...(appUpdates ? { UI_TEST_APP_UPDATES: '1' } : {}),
           ...(localShell ? { UI_TEST_LOCAL_SHELL: '1' } : {}),
+          ...(agentSocket ? { SSH_AUTH_SOCK: path.join(home, 'agent.sock') } : {}),
         },
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       });

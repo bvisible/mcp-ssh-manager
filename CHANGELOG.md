@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The server form can name an SSH agent key** (#148, thanks to @TillNano).
+  *Agent public key*, in the authentication section, takes the path of a `.pub`
+  file: the engine then offers only that identity from your SSH agent and signs
+  with it, so the private key never reaches the engine (the setting existed since
+  4.1.0, but only in `.env`, TOML or the environment, which left a server managed
+  in the interface with no way to use it). The engine refuses an agent key
+  together with a password, a private key or agent forwarding, so the form
+  disables the others while one is chosen, says why when the agent key field is
+  the one that is closed, and tells you that saving removes a password or a key
+  already saved for that server. It warns when this application sees no SSH agent
+  (`SSH_AUTH_SOCK` empty): the interface's `/api/options` now says whether one is
+  visible. Nothing changes for a server that does not use it.
 - **A Japanese interface (日本語).** *Options → Appearance → Language* now offers
   English, 简体中文 and 日本語, for the desktop application and the web interface;
   the desktop menus, dialogs and notifications follow it, and the Windows installer
