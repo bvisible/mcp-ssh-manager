@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A French interface (Français), and a way to add any other language in minutes.**
+  *Options → Appearance → Language* now offers Français, and the desktop menus,
+  dialogs and notifications follow it (the Windows installer has a French page).
+  Languages are no longer listed anywhere in the code: the interface and the desktop
+  application find their catalogues in their folders, the selector is built from what
+  they find, and the tests loop over what exists. `npm run lang -- add <code>` creates
+  a language's three files from the English text, and `npm run lang -- status` shows
+  how much of each is still English; the steps are in `ui/README.md`, "Adding a
+  language". A system language is matched by its exact tag, else its family (`fr-CH`
+  uses French), else English; nothing changes for a language that is not shipped.
 - **The server form can name an SSH agent key** (#148, thanks to @TillNano).
   *Agent public key*, in the authentication section, takes the path of a `.pub`
   file: the engine then offers only that identity from your SSH agent and signs

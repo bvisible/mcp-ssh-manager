@@ -124,7 +124,7 @@ win:
   artifactName: ${productName}-${version}-setup.${ext}
 
 nsis:
-  installerLanguages: [en_US, zh_CN, ja_JP]
+  installerLanguages: [en_US, zh_CN, ja_JP, fr_FR]
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

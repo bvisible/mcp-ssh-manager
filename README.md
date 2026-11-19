@@ -194,10 +194,11 @@ ssh-manager control          # prints a local URL — or `ssh-manager app` for t
 
 One thing in two wrappers. `ssh-manager control` runs the whole interface in a browser tab with nothing extra to install; the desktop builds for macOS, Windows and Linux are that same page with the engine inside them, so they need neither Node nor the npm package.
 
-The interface, desktop menus and notifications support English, 简体中文 and 日本語.
-Choose **Options → Appearance → Language / 语言 / 言語** to switch languages.
-Until you choose, Chinese and Japanese system locales select their corresponding
-language; other locales use English. Your saved choice takes precedence.
+The interface, desktop menus and notifications support English, Français, 简体中文 and 日本語.
+Choose **Options → Appearance → Language** to switch languages.
+Until you choose, your system or browser language selects the matching one; other
+languages use English. Your saved choice takes precedence. A new language is three
+files and one command (`npm run lang -- add <code>`): see [Adding a language](ui/README.md#adding-a-language).
 
 The desktop build adds the two things a browser tab cannot do:
 
