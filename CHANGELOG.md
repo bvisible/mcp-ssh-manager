@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A Japanese interface (日本語).** *Options → Appearance → Language* now offers
+  English, 简体中文 and 日本語, for the desktop application and the web interface;
+  the desktop menus, dialogs and notifications follow it, and the Windows installer
+  has Japanese and Chinese pages. Until you choose, a Japanese system or browser
+  language selects Japanese, as a Chinese one selects Chinese; the choice is
+  remembered and English is exactly as it was. The translation is @zenk-sugimoto's
+  (#149): thank you. Japanese is set in Japanese fonts only, Chinese in Chinese
+  fonts only, because the same Han characters are drawn differently in the two.
+
 ## [4.2.0] - 2026-11-13
 
 **A Chinese interface, a fuller audit log, and a guard against raw ssh.** Nothing
