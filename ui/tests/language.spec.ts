@@ -20,6 +20,31 @@ for (const [locale, language] of [['zh-CN', 'zh-CN'], ['zh-TW', 'zh-CN'], ['ja-J
   });
 }
 
+// The same Han characters are drawn differently in Chinese and in Japanese, so each language
+// sets the page in its own fonts: Chinese fonts for Chinese, Japanese fonts for Japanese, and
+// never both in one list (a character both languages write would take the first font's form,
+// and the characters only one of them has would fall to another font in the same line).
+for (const [language, locale, own, foreign] of [
+  ['zh-CN', 'zh-CN', 'PingFang SC', ['Hiragino', 'Yu Gothic']],
+  ['ja', 'ja-JP', 'Hiragino Kaku Gothic ProN', ['PingFang', 'YaHei', 'CJK SC']],
+] as const) {
+  test.describe(`the ${language} interface fonts`, () => {
+    test.use({ language, locale });
+    test('use that language\'s CJK fonts and none of the other\'s', async ({ page, app }) => {
+      await page.goto(app.url);
+      await expect(page.locator('html')).toHaveAttribute('lang', language);
+      for (const variable of ['--font-body', '--font-mono']) {
+        const stack = await page.evaluate(name => getComputedStyle(document.documentElement).getPropertyValue(name), variable);
+        expect(stack, `${variable} in ${language}`).toContain(own);
+        for (const other of foreign) expect(stack, `${variable} in ${language} must not name ${other}`).not.toContain(other);
+      }
+      // What the page is actually set in, not only what the variable says.
+      const body = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
+      expect(body).toContain(own);
+    });
+  });
+}
+
 // A saved choice always wins over the browser's language.
 test.describe('a saved choice', () => {
   for (const [saved, locale, shown] of [['en', 'zh-CN', 'en'], ['zh-CN', 'en-US', 'zh-CN'], ['ja', 'en-US', 'ja'], ['en', 'ja-JP', 'en']] as const) {

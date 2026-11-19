@@ -42,11 +42,13 @@
    Variable naming follows shadcn/ui conventions */
 @theme {
   --font-display: 'Forum', serif;
-  /* The Chinese and Japanese interfaces need glyphs Karla and JetBrains Mono do not have.
+  /* The Chinese interface needs glyphs Karla and JetBrains Mono do not have.
      The system's own CJK fonts follow as fallbacks only; Latin text is
-     unchanged, and no web font is added. */
-  --font-body: 'Karla', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans CJK JP', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans CJK JP', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace;
+     unchanged, and no web font is added. The Japanese interface has its own
+     fonts first (the :root:lang(ja) rule below): the same Han characters are
+     drawn differently in Chinese and in Japanese, so one list cannot serve both. */
+  --font-body: 'Karla', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', monospace;
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -217,6 +219,14 @@
   *, ::before, ::after, ::backdrop {
     border-color: var(--color-border);
   }
+}
+
+/* Japanese: its own fonts, and not the Chinese ones, so a character both languages
+   write (令, 直, 骨...) takes its Japanese form and a line is not set in two fonts.
+   documentElement.lang follows the chosen language (ui/src/lib/i18n.ts). */
+:root:lang(ja) {
+  --font-body: 'Karla', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans CJK JP', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans CJK JP', monospace;
 }
 
 body {

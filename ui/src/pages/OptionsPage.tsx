@@ -64,7 +64,7 @@ function ThemePicker() {
               <Icon className={cn('h-4 w-4', active ? 'text-primary' : 'text-muted-foreground')} />
               <span className="text-sm font-medium">{tr(theme.label)}</span>
               {theme.id === 'system' && (
-                <span className="ml-auto text-[10px] text-muted-foreground">{resolved === 'dark' ? tr('currently dark') : tr('currently light')}</span>
+                <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">{resolved === 'dark' ? tr('currently dark') : tr('currently light')}</span>
               )}
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">{tr(theme.hint)}</p>
