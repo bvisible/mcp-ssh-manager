@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.1] - 2026-11-20
+
+**A security release: upgrade.** An `ssh_deploy` request showed no command on the
+approval card, so what it was going to do could not be read
+([GHSA-vx67-5jmh-4xq2](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-vx67-5jmh-4xq2),
+moderate, reported by @Fastyyy123). Every release from 3.0.0 is affected; nothing
+else changes (the release pipeline upgrades 3.8.5, 3.8.6, 3.8.7, every 4.0.x,
+4.1.0, 4.2.0 and 4.3.0 from the registry to this version and back).
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Security
 
 - **The approval card shows what a deploy or an upload is going to do**

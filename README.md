@@ -24,7 +24,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![Desktop app downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdesktop.json&style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/bvisible/mcp-ssh-manager?style=flat-square&color=c04500)](https://github.com/bvisible/mcp-ssh-manager/stargazers)
-[![Version](https://img.shields.io/badge/release-4.3.0-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.0)
+[![Version](https://img.shields.io/badge/release-4.3.1-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.1)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -57,9 +57,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application (`4.3.0`):** one installation with its own runtime,
+**Desktop application (`4.3.1`):** one installation with its own runtime,
 terminal, file browser and server settings. No separate Node.js or npm
-installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.0):
+installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.1):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -67,7 +67,7 @@ installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases
 | Windows x64 / arm64 | `…-setup.exe` | **Not code-signed yet.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
 | Linux x64 | `.deb`, `.AppImage` | Unsigned, as Linux packages usually are |
 
-**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.3.0,
+**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.3.1,
 and the V4 engine runs without an interface, from your existing `.env`, TOML or
 process variables — no automatic import, no forced wizard, no approval prompt
 unless you enable one per server. The one behaviour that tightens is **SSH
@@ -718,6 +718,8 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 ---
 
 ## What's new
+
+**[4.3.1](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.1) — a security fix: the approval card shows what a deploy or an upload will do.** A request without a command line used to read "(no command)", so a deploy could be approved without seeing its files, their target paths or its `restart` command. The card now shows them. Nothing else changes; upgrade. Reported by @Fastyyy123 (GHSA-vx67-5jmh-4xq2). See the [CHANGELOG](CHANGELOG.md#431---2026-11-20).
 
 **[4.3.0](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.0) — French and Japanese interfaces, and the agent key in the server form.** The interface and the desktop menus now come in Français and 日本語 next to English and 简体中文 (*Options → Appearance → Language*; the Japanese is @zenk-sugimoto's), and a new language is three files and one command (`npm run lang -- add <code>`, see [Adding a language](ui/README.md#adding-a-language)). The server form has an *Agent public key* field, so a server can use one identity of your SSH agent without its private key reaching the engine (asked for by @TillNano), and Live and Activity show a command in full instead of cutting it off (@congzhou09). See the [CHANGELOG](CHANGELOG.md#430---2026-11-19).
 
