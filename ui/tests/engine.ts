@@ -33,12 +33,17 @@ export async function reportCommand(approvalSocket: string, command: string, out
  * shows on the Waiting page until it is decided, then in Activity → Decisions.
  * @returns The id to decide on, and the decision once it is made.
  */
-export function requestApproval(approvalSocket: string, command: string) {
+export function requestApproval(
+  approvalSocket: string,
+  command: string | undefined,
+  /** A tool other than ssh_execute, and the arguments the engine would send with it. */
+  extra: { tool?: string; args?: Record<string, unknown> } = {},
+) {
   const id = crypto.randomUUID();
   const decision = new Promise<{ decision: string }>((resolve, reject) => {
     let buffer = '';
     const socket = net.createConnection(approvalSocket, () => {
-      socket.write(`${JSON.stringify({ id, server: 'fixture', tool: 'ssh_execute', command })}\n`);
+      socket.write(`${JSON.stringify({ id, server: 'fixture', tool: extra.tool ?? 'ssh_execute', command, args: extra.args })}\n`);
     });
     socket.once('error', reject);
     socket.on('data', chunk => { buffer += chunk; });

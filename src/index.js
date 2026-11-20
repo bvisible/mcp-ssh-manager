@@ -2393,7 +2393,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_deploy',
   {
-    description: 'Deploys a list of local files to remote paths on the named server, uploading each to a temporary location first and then moving it into place. Mutates remote state. By default it backs up any existing target file before overwriting; backup can be disabled per call. Options can set owner and permissions, supply a sudo password, and name a single service to restart afterward. Detects sensible owner and permission defaults from the remote path. Runs pre and post deploy hooks. Blocked entirely on servers in readonly or restricted security mode.',
+    description: 'Deploys a list of local files to remote paths on the named server, uploading each to a temporary location first and then moving it into place. Mutates remote state. By default it backs up any existing target file before overwriting; backup can be disabled per call. Options can set owner and permissions, supply a sudo password, and give a shell command to run afterward (restart, for example "sudo systemctl restart nginx"), which runs as written on the server as the SSH user and is shown in full to whoever approves the deploy. Detects sensible owner and permission defaults from the remote path. Runs pre and post deploy hooks. Blocked entirely on servers in readonly or restricted security mode.',
     inputSchema: {
       server: z.string().describe('Server name or alias'),
       files: z.array(z.object({

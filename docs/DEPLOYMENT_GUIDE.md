@@ -43,6 +43,14 @@ Deploy files with automatic permission handling and backup.
 }
 ```
 
+`restart` is a shell command, not a service name: it runs as written on the
+server, as the SSH user, after the file is in place (so a bare `nginx` is run as
+the `nginx` program). It is the one part of a deploy that is not quoted for you,
+on purpose, because `cd /opt/app && ./bin/restart` is a legitimate value. With
+approval turned on, the approval card shows the files, their target paths and
+this command in full. `readonly` and `restricted` servers refuse `ssh_deploy`
+altogether.
+
 ### 2. `ssh_execute_sudo` - Execute with Sudo
 
 Run commands with sudo privileges securely.

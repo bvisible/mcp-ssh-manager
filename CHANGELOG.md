@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The approval card shows what a deploy or an upload is going to do**
+  (GHSA-vx67-5jmh-4xq2, reported by @Fastyyy123). A request without a command line
+  read "(no command)", so someone approving an `ssh_deploy` could not see its files,
+  their target paths, or its `restart` option, which runs as a shell command on the
+  server as the SSH user (the Deployment Guide has always shown it as one, while the
+  tool description called it a service). The card now shows the arguments the engine
+  sent, with every secret already removed, and the tool description and the guide
+  say what `restart` is. `restart` itself is unchanged, because existing deployments
+  pass commands such as `cd /opt/app && ./bin/restart`; `readonly` and `restricted`
+  servers still refuse `ssh_deploy`.
+
 ## [4.3.0] - 2026-11-19
 
 **French and Japanese interfaces, the SSH agent key in the server form, and long

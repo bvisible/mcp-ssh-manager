@@ -32,6 +32,19 @@ function formatWait(ms: number): string {
 
 const MODE_LABEL = { readonly: 'read only', restricted: 'restricted', unrestricted: 'unrestricted' } as const;
 
+/**
+ * What a request without a command line asks for: its arguments. A deploy or an
+ * upload has no command, and a card that said only "(no command)" asked for a
+ * decision on files, target paths and, for a deploy, the command it runs
+ * afterwards, none of which the person could read. The server is left out: the
+ * card's header already names it.
+ */
+function argumentsText(args?: Record<string, unknown>): string | undefined {
+  if (!args || typeof args !== 'object') return undefined;
+  const { server: _server, ...rest } = args;
+  return Object.keys(rest).length ? JSON.stringify(rest, null, 2) : undefined;
+}
+
 export function WaitingPage() {
   useLocale();
   const setView = useWorkspace(state => state.setView);
@@ -107,7 +120,7 @@ export function WaitingPage() {
             {/* Wrapped, not truncated: half a command is how you approve the
                 wrong thing. */}
             <div className="px-5 py-4">
-              <CommandBlock command={request.command} className="rounded-lg border border-border py-3 pl-4 pr-2" />
+              <CommandBlock command={request.command || argumentsText(request.args)} className="rounded-lg border border-border py-3 pl-4 pr-2" />
             </div>
 
             <div className="flex flex-wrap justify-end gap-2.5 px-5 pb-4">

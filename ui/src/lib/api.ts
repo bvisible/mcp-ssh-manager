@@ -556,6 +556,12 @@ export interface ApprovalRequest {
   mode: 'unrestricted' | 'readonly' | 'restricted';
   tool: string;
   command?: string;
+  /**
+   * The tool's arguments as the engine sent them, with every secret already
+   * replaced (the audit log's own redaction). It is what a request without a
+   * command, such as a deploy or an upload, asks to do.
+   */
+  args?: Record<string, unknown>;
   destructive: boolean;
 }
 

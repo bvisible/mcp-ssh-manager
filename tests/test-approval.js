@@ -203,6 +203,36 @@ async function testNoSecretInTheRequest() {
   ok('the request shows the command and host but carries no secret');
 }
 
+async function testDeployRequestCarriesWhatItDoes() {
+  // A deploy has no command line. What the person approves is in its arguments:
+  // the files, the target paths and the command it runs afterwards. The
+  // interface shows them when there is no command, so the request must carry them
+  // (and, as always, carry no secret).
+  const SECRET = 'deploy-sudo-password-7';
+  const restart = 'sudo systemctl restart app && touch /tmp/after-deploy';
+  let received = null;
+  const socketPath = await startControlPlane(req => {
+    received = req;
+    return { id: req.id, decision: 'deny' };
+  });
+  const args = {
+    server: 'prod',
+    files: [{ local: '/work/app.js', remote: '/srv/app/app.js' }],
+    options: { owner: 'deploy:deploy', backup: true, restart, sudoPassword: SECRET },
+  };
+  await requestDecision(
+    buildRequest({ name: 'prod', host: 'p.internal' }, 'ssh_deploy', sanitize(args), undefined),
+    { socketPath, timeoutMs: 3000 }
+  );
+
+  assert.strictEqual(received.command, undefined, 'a deploy has no command of its own');
+  assert.strictEqual(received.args.options.restart, restart, 'the command it runs afterwards must reach the person');
+  assert.deepStrictEqual(received.args.files, [{ local: '/work/app.js', remote: '/srv/app/app.js' }], 'the files and their targets must reach the person');
+  assert.ok(!JSON.stringify(received).includes(SECRET), 'and still no secret');
+  assert.strictEqual(received.destructive, true, 'a deploy is asked about under "destructive"');
+  ok('a deploy request carries its files, paths and restart command, and no secret');
+}
+
 function testListeningDetection() {
   assert.strictEqual(isControlPlaneListening(path.join(scratch, 'absent.sock')), false);
   // A regular file is not a control plane, and connecting to one would hang.
@@ -283,6 +313,7 @@ async function main() {
     await testOperatorDecisions();
     await testFailureModesAllDeny();
     await testNoSecretInTheRequest();
+    await testDeployRequestCarriesWhatItDoes();
     testListeningDetection();
     console.log(`\n✅ approval tests passed (${passed} checks)`);
   } finally {
