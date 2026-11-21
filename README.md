@@ -24,6 +24,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/mcp-ssh-manager.svg?style=flat-square&logo=npm&color=c04500)](https://www.npmjs.com/package/mcp-ssh-manager)
 [![Desktop app downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdesktop.json&style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/bvisible/mcp-ssh-manager?style=flat-square&color=c04500)](https://github.com/bvisible/mcp-ssh-manager/stargazers)
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.bvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/io.github.bvisible%2Fmcp-ssh-manager)
 [![Version](https://img.shields.io/badge/release-4.3.2-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.2)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
@@ -771,8 +772,6 @@ Made with ❤️ for the Claude Code community
 <a href="https://glama.ai/mcp/servers/@bvisible/mcp-ssh-manager">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@bvisible/mcp-ssh-manager/badge" alt="SSH Manager MCP server" />
 </a>
-
-[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fbvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/glama%2Fbvisible%2Fmcp-ssh-manager)
 
 </div>
 
