@@ -79,6 +79,7 @@ class LiveStream {
     /** @type {import('net').Socket|null} */
     this.socket = null;
     this.closed = false;
+    this.ended = false;
 
     try {
       this.socket = net.createConnection(streamSocketPath());
@@ -114,11 +115,19 @@ class LiveStream {
   }
 
   /**
-   * Close the stream and report how the command ended.
-   * @param {number|null} code - Exit code
+   * Close the stream and report how the command ended. Safe to call twice.
+   *
+   * The page shows a command as running for as long as its code is null, so an
+   * end without an exit code (the call threw: a timeout, a dropped connection)
+   * is reported as -1, the code the agent's own reply carries in that case,
+   * never as null.
+   *
+   * @param {number|null|undefined} code - Exit code, when there is one
    */
   end(code) {
-    this.#send({ type: 'end', code, ts: new Date().toISOString() });
+    if (this.ended) return;
+    this.ended = true;
+    this.#send({ type: 'end', code: Number.isInteger(code) ? code : -1, ts: new Date().toISOString() });
     try { this.socket?.end(); } catch { /* already gone */ }
     this.closed = true;
   }
@@ -235,6 +244,8 @@ export function listenForStreams(registry, socketPath = streamSocketPath()) {
 
   const server = net.createServer(socket => {
     let buffer = '';
+    // Streams this connection started and has not yet ended.
+    const open = new Set();
     socket.on('data', chunk => {
       buffer += chunk.toString();
       // Chunks arrive split at arbitrary points; only complete lines are events.
@@ -244,11 +255,22 @@ export function listenForStreams(registry, socketPath = streamSocketPath()) {
         buffer = buffer.slice(newline + 1);
         if (!line.trim()) continue;
         try {
-          registry.apply(JSON.parse(line));
+          const event = JSON.parse(line);
+          if (event.type === 'start') open.add(event.id);
+          else if (event.type === 'end') open.delete(event.id);
+          registry.apply(event);
         } catch { /* partial or malformed: drop the line, keep the stream */ }
       }
     });
     socket.on('error', () => { /* engine went away mid-command */ });
+    // The engine went away before it said how the command ended (its client was
+    // closed, the process was killed). Nothing else would ever end the entry: the
+    // page would show it as running until this control plane restarted. End it
+    // here, with no exit code to give (-1).
+    socket.on('close', () => {
+      for (const id of open) registry.apply({ type: 'end', id, code: -1, ts: new Date().toISOString() });
+      open.clear();
+    });
   });
 
   return new Promise((resolve, reject) => {

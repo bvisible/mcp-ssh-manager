@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A command that did not finish no longer stays "running" on the Live page**
+  (#159, thanks to @TillNano, who traced it to the line). When an `ssh_execute`
+  call threw instead of returning, a timeout or a dropped connection, the engine
+  never told the control plane the command had ended: the entry read "running"
+  until the control plane restarted, and the stream's socket stayed open, one of
+  each per failed command for as long as the application ran. The engine now
+  closes the stream however the call ends, reporting `exit -1` (the code the
+  reply to the agent already carries) when there is no exit code, and the control
+  plane ends an entry itself when its connection closes without an end event, as
+  when the engine is killed or its client is closed mid-command. The command, its
+  result, the audit log and the approval were never affected.
+
 ## [4.3.1] - 2026-11-20
 
 **A security release: upgrade.** An `ssh_deploy` request showed no command on the

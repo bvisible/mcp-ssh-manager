@@ -831,17 +831,25 @@ registerToolConditional(
       // watching. openStream returns null otherwise, and every call below is
       // optional-chained — so this costs one stat() when nobody is looking.
       const live = openStream(serverName, fullCommand);
-      const result = await execCommandWithTimeout(
-        ssh,
-        fullCommand,
-        {
-          platform,
-          onStdout: live ? chunk => live.write('stdout', chunk) : undefined,
-          onStderr: live ? chunk => live.write('stderr', chunk) : undefined,
-        },
-        cappedTimeout
-      );
-      live?.end(result.code ?? null);
+      let result;
+      try {
+        result = await execCommandWithTimeout(
+          ssh,
+          fullCommand,
+          {
+            platform,
+            onStdout: live ? chunk => live.write('stdout', chunk) : undefined,
+            onStderr: live ? chunk => live.write('stderr', chunk) : undefined,
+          },
+          cappedTimeout
+        );
+      } finally {
+        // However the attempt ends, the window is told. A timeout or a dropped
+        // connection throws, and without this the Live page kept the command on
+        // "running" forever and the stream's socket stayed open. With no result
+        // there is no exit code: end() reports -1, as the reply to the agent does.
+        live?.end(result?.code);
+      }
 
       // Log command result
       logger.logCommandResult(serverName, fullCommand, startTime, result);

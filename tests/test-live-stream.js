@@ -83,6 +83,38 @@ async function testStreamReachesTheRegistry() {
   ok('the exit code is recorded when the command ends');
 }
 
+async function testEndAlwaysReportsACodeAndOnlyOnce() {
+  // The page reads "running" for as long as a stream's code is null, so the end
+  // of a command whose call threw (a timeout, a dropped connection) has no exit
+  // code to give and must still never leave null behind.
+  const registry = new StreamRegistry();
+  const server = await listenForStreams(registry);
+  servers.push(server);
+  const ends = [];
+  registry.subscribe(event => { if (event.type === 'end') ends.push(event); });
+
+  for (const [command, code, reported] of [['a', undefined, -1], ['b', null, -1], ['c', 'x', -1], ['d', 0, 0], ['e', 3, 3]]) {
+    const stream = openStream('prod', `ends ${command}`);
+    await until(() => [...registry.streams.values()].some(s => s.command === `ends ${command}`));
+    stream.end(code);
+    await until(() => [...registry.streams.values()].find(s => s.command === `ends ${command}`)?.code !== null);
+    assert.strictEqual([...registry.streams.values()].find(s => s.command === `ends ${command}`).code, reported,
+      `end(${String(code)}) must be recorded as ${reported}, never as "still running"`);
+  }
+  ok('a command that ends without an exit code is recorded as -1, never left running');
+
+  const twice = openStream('prod', 'ends twice');
+  await until(() => [...registry.streams.values()].some(s => s.command === 'ends twice'));
+  const before = ends.length;
+  twice.end(0);
+  twice.end(1);
+  await until(() => ends.length > before);
+  await wait(100);
+  assert.strictEqual(ends.length, before + 1, 'a second end must send nothing');
+  assert.strictEqual([...registry.streams.values()].find(s => s.command === 'ends twice').code, 0, 'the first answer stands');
+  ok('ending a stream twice reports it once');
+}
+
 async function testScrollbackIsBounded() {
   const registry = new StreamRegistry();
   // A command that prints for an hour must not grow the buffer without limit.
@@ -167,6 +199,7 @@ async function main() {
   try {
     await testNobodyWatchingCostsNothing();
     await testStreamReachesTheRegistry();
+    await testEndAlwaysReportsACodeAndOnlyOnce();
     await testScrollbackIsBounded();
     await testFinishedStreamsAreTrimmed();
     await testAWatcherCannotBreakACommand();
