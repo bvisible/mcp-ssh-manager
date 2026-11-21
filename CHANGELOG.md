@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`restricted` mode no longer lets a command hide from the allowlist**
+  (GHSA-86xm-rv3h-r4f2, reported by @Fastyyy123). The allowlist is checked against
+  each command the line runs, found by reading the line, and the reader did not
+  recognise comments: a quote or a trailing backslash in one made it see fewer
+  commands than the shell ran, so `echo x # it's` followed by a line with `touch`
+  and a second apostrophe ran `touch` on a server that allowed only `^echo`. Looking
+  for the same thing in other places found four more ways, fixed together: a
+  here-document body that opens a quote; an ANSI-C quote (`$'a\'b'`, which ends
+  at a different place in dash than in bash, ksh and zsh); a `${…}` that is more than
+  a plain name, which includes `${ command; }` of ksh and bash 5.3; and parentheses,
+  which zsh and fish read as commands (`echo =(touch x)`), reachable when the login
+  shell reads the line, that is with `timeout: 300000` or in a session. Comments are
+  now read as comments and left out of the command they follow (so an apostrophe or
+  a `;` in a comment is no longer a refusal), and the other four are refused with a
+  reason. Unquoted parentheses, here-documents, `$'…'` and `${x:-word}` in a command
+  that `restricted` mode allows were never reliable, and are now refused. `readonly`
+  mode is not affected: it also tests the whole line. A new test runs random lines
+  through the policy and the shells of the machine (sh, dash, bash, zsh) and fails if
+  one the policy allows runs a command it never checked.
+
 ## [4.3.2] - 2026-11-21
 
 **A fix to the Live page.** A command that did not finish, because its call timed

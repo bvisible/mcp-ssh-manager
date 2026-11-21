@@ -40,11 +40,22 @@ Also refused, because they run or change things the patterns never see:
 - command substitution: `$(…)`, backticks, `<(…)`, `>(…)`, even inside double quotes;
 - redirections that write a file: `>`, `>>`, `>|`, `&>`, `<>` — except to
   `/dev/null`, `/dev/stdout`, `/dev/stderr` and descriptor copies such as `2>&1`;
-- a line that cannot be read with confidence (an unterminated quote, for example).
+- a line that cannot be read with confidence (an unterminated quote, for example):
+  the constructs that shells read in their own way, so that a command could be
+  hidden from the allowlist in one of them. These are here-documents (`<<`;
+  `<<<` is fine), ANSI-C quotes (`$'…'`), a `${…}` that is more than a plain name
+  (`${HOME}` and `${#HOME}` are fine, `${x:-word}` and `${ command; }` are not),
+  and parentheses that are not quoted or escaped (a subshell to `sh`, a command
+  to zsh and fish; `\(` and `'('` are fine).
 
-Comments are not recognised: `ls # a; b` is checked as `ls # a` and ` b`, which
-refuses it rather than missing a command. `readonly` mode also checks the commands
-inside `$(…)` and backticks against its built-in list.
+A comment is a `#` that starts a word, up to the end of its line. It is not part of
+the command it follows, so `ls -l # list; all` is one command, `ls -l`, and an
+apostrophe or a backslash in a comment changes nothing. Up to 4.3.2 comments were
+not recognised, and a quote or a trailing backslash in one made the reader see
+fewer commands than the shell ran
+([GHSA-86xm-rv3h-r4f2](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-86xm-rv3h-r4f2)).
+`readonly` mode also checks the commands inside `$(…)` and backticks against its
+built-in list.
 
 ## Configuration
 

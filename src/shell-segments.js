@@ -10,13 +10,36 @@
  *
  * This is a conservative reader, not a shell. Whatever it cannot place with
  * confidence is reported so the caller can refuse it: command substitution
- * (`$(…)`, backticks), process substitution, and redirections that write to a
- * file. It does not recognise comments, so `ls # a; b` yields a second segment
- * ` b` that a caller will refuse: a false refusal, never a missed command.
+ * (`$(…)`, backticks), process substitution, redirections that write to a
+ * file, and the constructs below.
+ *
+ * What makes a reader like this unsafe is not what it refuses but where it
+ * and the shell disagree about which text is quoted or a comment: whatever the
+ * reader thinks is hidden, it does not check, and whatever it thinks is live
+ * but the shell has hidden, it can swallow a real command into a quote
+ * (GHSA-86xm-rv3h-r4f2). So:
+ *
+ *   - a `#` at the start of a word is a comment, to the end of its line, and
+ *     the text of it is dropped: an apostrophe or a backslash in a comment must
+ *     not open a quote or join two lines. `\<newline>` is a line continuation, which
+ *     the shell removes before it looks for a comment, so it changes nothing here;
+ *   - a `#` the shells read differently (next to `<>(){}`) is refused;
+ *   - an unquoted `(` or `)` is refused: it is a subshell to sh, and a command to
+ *     zsh (`=(cmd)`, `*(e:cmd:)`) and fish (`(cmd)`);
+ *   - what hides text from this reader and that shells read in their own way is
+ *     refused rather than guessed: here-documents (`<<`), ANSI-C quotes
+ *     (`$'…'`, where `\'` does not end the string in bash, ksh and zsh but does
+ *     in dash), and a `${…}` that is more than a plain name (`${x:-word}`,
+ *     `${x#pattern}`, ksh's and bash's `${ command; }`).
+ *
+ * Each of those sets `problem` and the reading goes on as before, so a caller
+ * that only wants the segments (readonly mode) still gets them.
  */
 
 const CONTROL_OPERATORS = /^(;;|;&|&&|\|\||\|&)/;
 const HARMLESS_WRITE_TARGETS = new Set(['/dev/null', '/dev/stdout', '/dev/stderr']);
+/** `${name}`, `${#name}`, `${1}`, `${@}`: a parameter, and nothing the shell reads further. */
+const PLAIN_EXPANSION = /^\$\{(?:#?[A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])\}/;
 
 /**
  * Index of the `)` closing the `(` at `open`, skipping quoted text and nested
@@ -80,6 +103,10 @@ export function splitShellCommand(command) {
   const result = { segments: [], substitutions: [], writes: [], problem: null };
   const text = String(command);
   let current = '';
+  // True where a word could start: the start of the line, after unescaped blanks
+  // and after ; & | or a newline. A `#` there is a comment; anywhere else it is
+  // part of a word (`a#b`, `$#`, `16#ff`).
+  let wordStart = true;
 
   const endSegment = () => {
     if (current.trim()) result.segments.push(current.trim());
@@ -98,19 +125,40 @@ export function splitShellCommand(command) {
     result.problem = reason;
     return result;
   };
+  /**
+   * Something this reader will not guess at. The line is not fit to be allowed,
+   * but reading goes on, so the segments found are still reported.
+   * @param {string} reason
+   */
+  const refuse = reason => {
+    result.problem ||= reason;
+  };
 
   for (let i = 0; i < text.length;) {
     const ch = text[i];
 
     if (ch === '\\') {
+      // A backslash and a newline are removed by the shell before it reads
+      // anything else: they leave the state of the word as it was.
       current += text.slice(i, i + 2);
+      if (text[i + 1] !== '\n') wordStart = false;
       i += 2;
       continue;
+    }
+    if (ch === '#') {
+      if (wordStart) {
+        // A comment: to the end of the line, and nothing in it is read.
+        const newline = text.indexOf('\n', i);
+        i = newline < 0 ? text.length : newline;
+        continue;
+      }
+      if ('<>(){}'.includes(text[i - 1] ?? '')) refuse('a # next to a bracket or a redirection, which shells read differently');
     }
     if (ch === '\'') {
       const end = text.indexOf('\'', i + 1);
       if (end < 0) return fail('an unterminated single quote');
       current += text.slice(i, end + 1);
+      wordStart = false;
       i = end + 1;
       continue;
     }
@@ -119,6 +167,11 @@ export function splitShellCommand(command) {
       let j = i + 1;
       while (j < text.length && text[j] !== '"') {
         if (text[j] === '\\') { j += 2; continue; }
+        if (text[j] === '$' && text[j + 1] === '{') {
+          const plain = PLAIN_EXPANSION.exec(text.slice(j));
+          if (plain) { j += plain[0].length; continue; }
+          refuse('a ${…} with an operator or a word in it, which shells read in their own way');
+        }
         if (text[j] === '$' && text[j + 1] === '(') {
           const end = closingParen(text, j + 1);
           if (end < 0) return fail('an unterminated $(');
@@ -137,8 +190,32 @@ export function splitShellCommand(command) {
       }
       if (j >= text.length) return fail('an unterminated double quote');
       current += text.slice(i, j + 1);
+      wordStart = false;
       i = j + 1;
       continue;
+    }
+    if (ch === '$' && text[i + 1] === '\'') {
+      refuse('ANSI-C quoting ($\'…\'), where shells disagree on where the string ends');
+    }
+    if (ch === '$' && text[i + 1] === '{') {
+      const plain = PLAIN_EXPANSION.exec(text.slice(i));
+      if (plain) {
+        current += plain[0];
+        wordStart = false;
+        i += plain[0].length;
+        continue;
+      }
+      refuse('a ${…} with an operator or a word in it, which shells read in their own way');
+    }
+    if (ch === '<' && text[i + 1] === '<') {
+      if (text[i + 2] === '<') {
+        // <<< is a here-string: one word, no body.
+        current += '<<<';
+        wordStart = false;
+        i += 3;
+        continue;
+      }
+      refuse('a here-document (<<), whose body is not a list of commands');
     }
     if ((ch === '$' || ch === '<' || ch === '>') && text[i + 1] === '(') {
       // $(…) command substitution, <(…) and >(…) process substitution.
@@ -146,6 +223,7 @@ export function splitShellCommand(command) {
       if (end < 0) return fail(`an unterminated ${ch}(`);
       addSubstitution(text.slice(i + 2, end));
       current += text.slice(i, end + 1);
+      wordStart = false;
       i = end + 1;
       continue;
     }
@@ -154,6 +232,7 @@ export function splitShellCommand(command) {
       if (end < 0) return fail('an unterminated backtick');
       addSubstitution(text.slice(i + 1, end));
       current += text.slice(i, end + 1);
+      wordStart = false;
       i = end + 1;
       continue;
     }
@@ -171,16 +250,31 @@ export function splitShellCommand(command) {
         || (ch !== '<' && HARMLESS_WRITE_TARGETS.has(target));
       if (!harmless) result.writes.push(target || '(no target)');
       current += text.slice(i, k);
+      wordStart = false;
       i = k;
+      continue;
+    }
+    if (ch === '(' || ch === ')') {
+      // sh reads these as a subshell or a function body, never inside an argument; other shells
+      // run commands from them: zsh's =(cmd) and glob qualifiers *(e:cmd:), fish's (cmd).
+      // The login shell reads the line when it is not wrapped in `sh -c` (a timeout of
+      // 300000, a session), so it is not enough to be right about sh.
+      refuse('an unquoted parenthesis, which zsh and fish read as a command');
+      current += ch;
+      wordStart = false;
+      i++;
       continue;
     }
     if (ch === ';' || ch === '\n' || ch === '|' || ch === '&') {
       endSegment();
+      wordStart = true;
       const operator = CONTROL_OPERATORS.exec(text.slice(i));
       i += operator ? operator[0].length : 1;
       continue;
     }
     current += ch;
+    // Only a space or a tab is a blank to the shells; a form feed or a carriage return is part of a word.
+    wordStart = ch === ' ' || ch === '\t';
     i++;
   }
 
