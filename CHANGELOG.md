@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.3] - 2026-11-21
+
+**A security release: upgrade if you use `restricted` mode.** On a server in
+`restricted` mode, a command could be hidden from the allowlist and still run
+([GHSA-86xm-rv3h-r4f2](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-86xm-rv3h-r4f2),
+high, reported by @Fastyyy123). Every release from 3.8.6 is affected. Servers in
+`readonly` mode and servers without a mode are not (nothing else changes; the
+release pipeline upgrades 3.8.5, 3.8.6, 3.8.7, every 4.0.x, 4.1.0, 4.2.0, 4.3.0,
+4.3.1 and 4.3.2 from the registry to this version and back).
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Security
 
 - **`restricted` mode no longer lets a command hide from the allowlist**
