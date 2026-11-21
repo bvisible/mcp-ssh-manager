@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-11-21
+
+**A fix to the Live page.** A command that did not finish, because its call timed
+out or its connection dropped, stayed on "running" until the control plane was
+restarted ([#159](https://github.com/bvisible/mcp-ssh-manager/issues/159), thanks to
+@TillNano). It is a display problem only: the commands, their results, the audit
+log and approvals were never affected. Nothing else changes (the release pipeline
+upgrades 3.8.5, 3.8.6, 3.8.7, every 4.0.x, 4.1.0, 4.2.0, 4.3.0 and 4.3.1 from the
+registry to this version and back).
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Fixed
 
 - **A command that did not finish no longer stays "running" on the Live page**
