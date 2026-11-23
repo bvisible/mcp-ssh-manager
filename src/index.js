@@ -10,6 +10,7 @@ import { connectSSH, connectServer } from './ssh-connection.js';
 import * as dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { isDeepStrictEqual } from 'node:util';
 import { envFileChoice, envFileProblem, expandHomePath } from './config-paths.js';
@@ -158,6 +159,7 @@ import { buildBackgroundCommand, parseBackgroundStart } from './background-job.j
 import { needsApproval, isControlPlaneListening, requestDecision, buildRequest, isApprovalExempt, isReadOnlyAction, HANDLER_GATED_TOOLS } from './approval.js';
 import { shellQuote, shellPath, safeInteger, withRemoteTimeout } from './shell-quote.js';
 import { openStream } from './live-stream.js';
+import { transferPolicy, confineLocalPath } from './transfer-paths.js';
 import { auditLog, sanitize } from './audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -918,7 +920,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_upload',
   {
-    description: 'Uploads one local file to a remote destination path over SFTP on the named server, overwriting any existing remote file at that path. Mutates remote state and is not idempotent beyond replacing the target. Creates no backup. Requires the local file to exist. Does not use sudo, so the remote path must be writable by the configured SSH user. This tool is blocked entirely on servers set to readonly or restricted security mode. For directory trees use ssh_sync instead.',
+    description: 'Uploads one local file to a remote destination path over SFTP on the named server, overwriting any existing remote file at that path. Mutates remote state and is not idempotent beyond replacing the target. Creates no backup. Requires the local file to exist. Does not use sudo, so the remote path must be writable by the configured SSH user. This tool is blocked entirely on servers set to readonly or restricted security mode. On a server with a transferRoot the local file must be inside that folder. For directory trees use ssh_sync instead.',
     inputSchema: {
       server: z.string().describe('Server name'),
       localPath: z.string().describe('Local file path'),
@@ -928,14 +930,18 @@ registerToolConditional(
   async ({ server: serverName, localPath, remotePath }) => {
 
     try {
+      // With a transferRoot on the server, the local file must be inside it (readonly
+      // and restricted servers never get here: the tool is refused for them).
+      const policy = transferPolicy(await getServerConfig(serverName), 'ssh_upload');
+      const source = policy ? confineLocalPath(policy, localPath, { direction: 'read' }) : localPath;
       const ssh = await getConnection(serverName);
 
       logger.logTransfer('upload', serverName, localPath, remotePath);
       const startTime = Date.now();
 
-      await ssh.putFile(localPath, remotePath);
+      await ssh.putFile(source, remotePath);
 
-      const fileStats = fs.statSync(localPath);
+      const fileStats = fs.statSync(source);
       logger.logTransfer('upload', serverName, localPath, remotePath, {
         success: true,
         size: fileStats.size,
@@ -977,7 +983,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_download',
   {
-    description: 'Downloads one remote file from the named server to a local destination path over SFTP, overwriting any existing local file at that path. Affects only the local filesystem and is read-only on the remote side, so it stays allowed even on servers in readonly or restricted security mode. Reads the remote file using the configured SSH user, which must have permission to read it. Handles single files only; use ssh_sync for directories.',
+    description: 'Downloads one remote file from the named server to a local destination path over SFTP, overwriting any existing local file at that path. Affects only the local filesystem and is read-only on the remote side, so it stays allowed even on servers in readonly or restricted security mode, where the local path must be inside the transfer folder (~/.ssh-manager/transfers, or the transferRoot set on the server): a relative path is read from it, and anything outside it, or reached through a link, is refused. On other servers the local path is unrestricted unless a transferRoot is set. Reads the remote file using the configured SSH user, which must have permission to read it. Handles single files only; use ssh_sync for directories.',
     inputSchema: {
       server: z.string().describe('Server name'),
       remotePath: z.string().describe('Remote file path'),
@@ -986,15 +992,32 @@ registerToolConditional(
   },
   async ({ server: serverName, remotePath, localPath }) => {
     try {
+      // A server in readonly or restricted mode, or with a transferRoot, writes only
+      // inside that folder: the file is received beside its place and moved there, so a
+      // failed transfer never leaves half a file, and a link put there meanwhile is
+      // replaced, not followed.
+      const policy = transferPolicy(await getServerConfig(serverName), 'ssh_download');
+      const target = policy ? confineLocalPath(policy, localPath, { direction: 'write' }) : localPath;
       const ssh = await getConnection(serverName);
 
-      logger.logTransfer('download', serverName, remotePath, localPath);
+      logger.logTransfer('download', serverName, remotePath, target);
       const startTime = Date.now();
 
-      await ssh.getFile(localPath, remotePath);
+      if (policy) {
+        const partial = `${target}.part-${crypto.randomBytes(4).toString('hex')}`;
+        try {
+          await ssh.getFile(partial, remotePath);
+          fs.renameSync(partial, target);
+        } catch (error) {
+          fs.rmSync(partial, { force: true });
+          throw error;
+        }
+      } else {
+        await ssh.getFile(target, remotePath);
+      }
 
-      const fileStats = fs.statSync(localPath);
-      logger.logTransfer('download', serverName, remotePath, localPath, {
+      const fileStats = fs.statSync(target);
+      logger.logTransfer('download', serverName, remotePath, target, {
         success: true,
         size: fileStats.size,
         duration: `${Date.now() - startTime}ms`
@@ -1006,7 +1029,7 @@ registerToolConditional(
         content: [
           {
             type: 'text',
-            text: `✅ File downloaded successfully\nServer: ${serverName}\nRemote: ${remotePath}\nLocal: ${localPath}`,
+            text: `✅ File downloaded successfully\nServer: ${serverName}\nRemote: ${remotePath}\nLocal: ${target}`,
           },
         ],
       };
@@ -1035,7 +1058,7 @@ registerToolConditional(
 registerToolConditional(
   'ssh_sync',
   {
-    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. On Windows MCP hosts, provide native Windows local paths such as C:\\project or .\\project; the tool converts drive-letter and UNC paths to MSYS2 format before spawning rsync. Do not pre-convert a local path to /c/project because Node performs local filesystem checks using Windows path semantics. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. Timeout defaults to 30000 ms.',
+    description: 'Synchronizes files or directories between local and remote using rsync over SSH on the named server. Each of source and destination must carry a local: or remote: prefix and one side must be local and the other remote; with no prefix it assumes a push from local to remote. On Windows MCP hosts, provide native Windows local paths such as C:\\project or .\\project; the tool converts drive-letter and UNC paths to MSYS2 format before spawning rsync. Do not pre-convert a local path to /c/project because Node performs local filesystem checks using Windows path semantics. Mutates the destination. Setting delete true removes destination files absent from source, which is destructive; dryRun true previews without changing anything. Compression is on by default. Password authentication requires sshpass installed locally. Blocked on readonly or restricted servers. On a server with a transferRoot the local side must be inside that folder. Timeout defaults to 30000 ms.',
     inputSchema: {
       server: z.string().describe('Server name from configuration'),
       source: z.string().describe('Source path with a "local:" or "remote:" prefix. On Windows, use a native local path such as "local:C:\\project" or "local:.\\project"; do not pre-convert it to MSYS2 /c/... syntax.'),
@@ -1123,8 +1146,11 @@ registerToolConditional(
       let localPath;
       let remotePath;
 
+      // With a transferRoot on the server, the local side stays inside it. (readonly
+      // and restricted servers never get here: the tool is refused for them.)
+      const syncPolicy = transferPolicy(serverConfig, 'ssh_sync');
       if (direction === 'push') {
-        localPath = cleanSource;
+        localPath = syncPolicy ? confineLocalPath(syncPolicy, cleanSource, { direction: 'read', allowRoot: true }) : cleanSource;
         remotePath = cleanDest;
 
         // Check if local path exists
@@ -1132,7 +1158,7 @@ registerToolConditional(
           throw new Error(`Local path does not exist: ${localPath}`);
         }
       } else {
-        localPath = cleanDest;
+        localPath = syncPolicy ? confineLocalPath(syncPolicy, cleanDest, { direction: 'write', allowRoot: true }) : cleanDest;
         remotePath = cleanSource;
       }
 

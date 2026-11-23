@@ -193,6 +193,7 @@ SSH_SERVER_[NAME]_PLATFORM=windows         # Optional: "linux" (default) or "win
 SSH_SERVER_[NAME]_PROXYJUMP=bastion        # Optional: name of another server to use as jump host
 SSH_SERVER_[NAME]_PROXYCOMMAND=command      # Optional: custom proxy command (ncat, ssh -W, etc.)
 SSH_SERVER_[NAME]_FORWARD_AGENT=true       # Optional: forward local ssh-agent to remote (needs SSH_AUTH_SOCK; security risk)
+SSH_SERVER_[NAME]_TRANSFER_ROOT=~/transfers # Optional: the only local folder the file tools may use (readonly/restricted servers default to ~/.ssh-manager/transfers for downloads)
 SSH_SERVER_[NAME]_ANNOUNCE_AGENT=true      # Optional: send AI_AGENT=mcp-ssh-manager to this host (off by default; SSH_MANAGER_ANNOUNCE_AGENT=true for all)
 ```
 
@@ -213,6 +214,7 @@ proxy_jump = "bastion"                     # Optional: name of another server to
 proxy_command = "command"                   # Optional: custom proxy command (ncat, ssh -W, etc.)
 forward_agent = true                       # Optional: forward local ssh-agent to remote (needs SSH_AUTH_SOCK; security risk)
 announce_agent = true                      # Optional: send AI_AGENT=mcp-ssh-manager to this host (off by default; false keeps it silent under the global switch)
+transfer_root = "~/transfers"                # Optional: the only local folder the file tools may use (see docs/SECURITY_MODES.md)
 ```
 
 ### Selecting an SSH agent key

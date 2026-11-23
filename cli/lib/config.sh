@@ -123,7 +123,7 @@ load_servers() {
 # The settings of a server, as the engine reads them (src/config-loader.js; a test
 # keeps the two lists in step). A server's lines are found by these names and never
 # by the bare prefix: removing "prod" used to remove the lines of "prod_eu" too.
-SERVER_ENV_FIELDS="HOST USER PASSWORD KEYPATH CERTPATH AGENT_PUBLIC_KEY_PATH PASSPHRASE PORT DEFAULT_DIR SUDO_PASSWORD DESCRIPTION GROUP PLATFORM PROXYJUMP PROXYCOMMAND FORWARD_AGENT ANNOUNCE_AGENT MODE ALLOW_PATTERNS DENY_PATTERNS AUDIT_LOG APPROVAL"
+SERVER_ENV_FIELDS="HOST USER PASSWORD KEYPATH CERTPATH AGENT_PUBLIC_KEY_PATH PASSPHRASE PORT DEFAULT_DIR SUDO_PASSWORD DESCRIPTION GROUP PLATFORM PROXYJUMP PROXYCOMMAND FORWARD_AGENT ANNOUNCE_AGENT TRANSFER_ROOT MODE ALLOW_PATTERNS DENY_PATTERNS AUDIT_LOG APPROVAL"
 
 # Copy stdin to stdout without the lines of server $1 (upper case) whose setting is
 # in $2 (space separated). With a file as $3, its lines take the place of the first

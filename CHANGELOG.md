@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A server in `readonly` or `restricted` mode can no longer have a download written
+  anywhere on this machine.** `ssh_download` writes a local file and never looked at
+  the path, in any mode, and is not blocked in `readonly` or `restricted` because it
+  changes nothing on the server. An agent that cannot run a command on such a server
+  could still create a file there (a redirect to `/tmp` is allowed in `readonly`) and
+  download it over `~/.zshrc`, or into `~/.ssh/authorized_keys`, which a later shell
+  or login then ran. The local side of a transfer now has a **transfer root**: a
+  `readonly` or `restricted` server downloads into `~/.ssh-manager/transfers` (made
+  the first time, private to you; a relative local path is read from it), and any
+  server can name its own folder with `SSH_SERVER_<NAME>_TRANSFER_ROOT` (TOML:
+  `transfer_root`), which then also holds `ssh_upload` and `ssh_sync` to it. A path is
+  judged by where it really is after following links, a link as the file is refused,
+  and a download is received beside its place and moved there, so a failed one leaves
+  no half file. Servers in `unrestricted` mode with no root are not filtered, as
+  before. **If you download from a `readonly` or `restricted` server to a folder of
+  your own, set `TRANSFER_ROOT` to it**: a download elsewhere is refused with a message
+  that names the folder. Found while comparing this project with another SSH server
+  for MCP that confines its transfers the same way.
+
 ## [4.3.3] - 2026-11-21
 
 **A security release: upgrade if you use `restricted` mode.** On a server in

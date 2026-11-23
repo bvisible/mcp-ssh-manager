@@ -38,6 +38,7 @@ import { resolveConfigOptions } from './config-paths.js';
  * @property {string} [proxyJump] Name of another configured server to jump through.
  * @property {string} [proxyCommand] Custom proxy command (`%h` / `%p` placeholders).
  * @property {boolean} [forwardAgent] Forward the local ssh-agent to this server.
+ * @property {string} [transferRoot] The only folder the local side of ssh_download, ssh_upload and ssh_sync may use. Unset: no limit in unrestricted mode, and ~/.ssh-manager/transfers for ssh_download in readonly and restricted mode.
  * @property {boolean} [announceAgent] Send AI_AGENT=mcp-ssh-manager on each command channel. Unset defers to SSH_MANAGER_ANNOUNCE_AGENT (off by default); false keeps a host silent even when that is on.
  * @property {string} [mode] Security mode: `unrestricted`, `readonly` or `restricted`.
  * @property {string} [approval] Human approval mode: `never`, `destructive` or `always`.
@@ -280,6 +281,7 @@ export class ConfigLoader {
           proxyCommand: serverConfig.proxy_command || serverConfig.proxycommand,
           forwardAgent: parseBool(serverConfig.forward_agent),
           announceAgent: parseOptionalBool(serverConfig.announce_agent),
+          transferRoot: serverConfig.transfer_root,
           mode,
           // approval is deliberately NOT read here — see loadEnvConfig below.
 
@@ -359,6 +361,7 @@ export class ConfigLoader {
           proxyCommand: env[`SSH_SERVER_${match[1]}_PROXYCOMMAND`],
           forwardAgent: parseBool(env[`SSH_SERVER_${match[1]}_FORWARD_AGENT`]),
           announceAgent: parseOptionalBool(env[`SSH_SERVER_${match[1]}_ANNOUNCE_AGENT`]),
+          transferRoot: env[`SSH_SERVER_${match[1]}_TRANSFER_ROOT`],
           mode,
           // approval is deliberately NOT read from files. It is the switch
           // that makes an agent stop and wait for a human, and a switch that
@@ -447,6 +450,7 @@ export class ConfigLoader {
       // Either explicit value is a decision worth keeping; unset is not written,
       // so the global switch still applies after a round trip.
       if (typeof server.announceAgent === 'boolean') serverConfig.announce_agent = server.announceAgent;
+      if (server.transferRoot) serverConfig.transfer_root = server.transferRoot;
       // Only emit security fields if they diverge from defaults — keeps generated
       // TOML files clean for users who never opted in.
       if (server.mode && server.mode !== 'unrestricted') serverConfig.mode = server.mode;
@@ -493,6 +497,7 @@ export class ConfigLoader {
       // Written whenever it was set, true or false: an explicit false has to
       // survive a round trip, or a global switch would re-enable that host.
       if (typeof server.announceAgent === 'boolean') lines.push(`SSH_SERVER_${upperName}_ANNOUNCE_AGENT=${server.announceAgent}`);
+      if (server.transferRoot) lines.push(`SSH_SERVER_${upperName}_TRANSFER_ROOT=${server.transferRoot}`);
       if (server.proxyJump) lines.push(`SSH_SERVER_${upperName}_PROXYJUMP=${server.proxyJump}`);
       if (server.proxyCommand) lines.push(`SSH_SERVER_${upperName}_PROXYCOMMAND=${server.proxyCommand}`);
       // Security fields — only emit when non-default to avoid clutter in

@@ -95,6 +95,39 @@ audit_log = "/var/log/mcp-ssh-prod.jsonl"
 TOML arrays are preferred. A `;`-separated string is also accepted for
 parity with the `.env` form.
 
+### Where the file tools may write on this machine: the transfer root
+
+`ssh_download` writes a file on the machine that runs the engine, and `ssh_upload`
+and `ssh_sync` read from it. `readonly` and `restricted` are about what runs on the
+*server*, and an agent that cannot run a command there could still put a file of its
+choosing on the server (a redirect to `/tmp` is allowed in `readonly`) and have it
+downloaded over `~/.zshrc` or into `~/.ssh/authorized_keys` here. Up to 4.3.3 nothing
+looked at the local path. A **transfer root** is the one folder the local side of a
+transfer may use:
+
+```bash
+SSH_SERVER_PROD_TRANSFER_ROOT=~/transfers/prod        # TOML: transfer_root = "~/transfers/prod"
+```
+
+- A server with a `TRANSFER_ROOT` is held to it in every mode, by all three tools.
+- A server in `readonly` or `restricted` mode with none is held to
+  `~/.ssh-manager/transfers` for `ssh_download` (`ssh_upload` and `ssh_sync` are refused
+  there already). The folder is made, private to you, the first time a download needs it.
+- A server in `unrestricted` mode with none is not filtered, as before.
+
+A relative local path is read from the root, so `ssh_download` with the local path
+`logs/app.log` writes `~/.ssh-manager/transfers/logs/app.log`. A path is accepted when
+its real location, after following every link, is inside the root; `..`, a sibling
+folder that starts like the root, and a folder link that leads out are refused, and so
+is a link as the file itself. A download is received beside its place and moved there,
+so a transfer that fails leaves no half file, and a link put there meanwhile is replaced,
+not followed. The check runs just before the transfer: it does not stop someone who can
+already change files inside the root while it runs, and for `ssh_sync` it covers the
+folder named, not what rsync does inside it.
+
+If you download to a folder of your own from a `readonly` or `restricted` server, set
+`TRANSFER_ROOT` to that folder.
+
 ## Audit log
 
 When `AUDIT_LOG` (`.env`) or `audit_log` (TOML) is set to a file path, every
@@ -186,7 +219,8 @@ SSH_SERVER_CLIENT_PROD_AUDIT_LOG=~/.ssh-manager/audit/client-prod.jsonl
 `ssh_key_manage` (only `accept` / `remove`), `ssh_alert_setup` (only `set`),
 `ssh_process_manager` (only `kill`).
 
-**Not gated** (pure reads or local-only state — no remote effect to block):
+**Not gated** (pure reads or local-only state — no remote effect to block; the
+local side of `ssh_download` is held to the transfer root, see above):
 `ssh_list_servers`, `ssh_download`, `ssh_tail`, `ssh_monitor`, `ssh_history`,
 `ssh_health_check`, `ssh_service_status`, `ssh_db_list`, `ssh_db_query`
 (one SELECT run in a read-only transaction; for MongoDB a filter document,
