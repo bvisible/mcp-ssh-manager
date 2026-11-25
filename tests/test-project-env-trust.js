@@ -21,6 +21,14 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-project-env-')));
+// The engine under test runs from a copy of the sources. The checkout's own `.env` is the
+// install directory's file, which is read on purpose, and CI writes one there with a test server.
+const engine = path.join(scratch, 'engine');
+fs.mkdirSync(engine);
+fs.cpSync(path.join(repo, 'src'), path.join(engine, 'src'), { recursive: true });
+fs.copyFileSync(path.join(repo, 'package.json'), path.join(engine, 'package.json'));
+fs.symlinkSync(path.join(repo, 'node_modules'), path.join(engine, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+
 let passed = 0;
 const ok = label => { passed++; console.log(`\x1b[32m✓\x1b[0m ${passed}. ${label}`); };
 let counter = 0;
@@ -53,7 +61,7 @@ function engineEnv({ home, managerHome }, extra = {}) {
 async function withEngine(cwd, env, body) {
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [path.join(repo, 'src', 'index.js')],
+    args: [path.join(engine, 'src', 'index.js')],
     cwd,
     env,
     stderr: 'pipe'
