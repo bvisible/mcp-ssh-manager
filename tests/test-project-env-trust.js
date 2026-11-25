@@ -43,6 +43,9 @@ function engineEnv({ home, managerHome }, extra = {}) {
   for (const name of ['SSH_ENV_PATH', 'SSH_MANAGER_ENV', 'SSH_CONFIG_PATH', 'PREFER_TOML_CONFIG', 'SSH_MANAGER_TRUST_PROJECT_ENV']) {
     if (!(name in extra)) delete env[name];
   }
+  // CI defines servers of its own in the environment (SSH_SERVER_TEST_*): they would load
+  // beside the ones under test, and the lists below are meant to be empty.
+  for (const name of Object.keys(env)) if (name.startsWith('SSH_SERVER_') && !(name in extra)) delete env[name];
   return env;
 }
 
