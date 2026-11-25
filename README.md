@@ -25,7 +25,7 @@
 [![Desktop app downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdesktop.json&style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/bvisible/mcp-ssh-manager?style=flat-square&color=c04500)](https://github.com/bvisible/mcp-ssh-manager/stargazers)
 [![MCP Toplist](https://mcptoplist.com/badge/io.github.bvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/io.github.bvisible%2Fmcp-ssh-manager)
-[![Version](https://img.shields.io/badge/release-4.3.5-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.5)
+[![Version](https://img.shields.io/badge/release-4.3.6-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.6)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -58,9 +58,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application (`4.3.5`):** one installation with its own runtime,
+**Desktop application (`4.3.6`):** one installation with its own runtime,
 terminal, file browser and server settings. No separate Node.js or npm
-installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.5):
+installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.6):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -68,7 +68,7 @@ installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases
 | Windows x64 / arm64 | `…-setup.exe` | **Not code-signed yet.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
 | Linux x64 | `.deb`, `.AppImage` | Unsigned, as Linux packages usually are |
 
-**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.3.5,
+**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.3.6,
 and the V4 engine runs without an interface, from your existing `.env`, TOML or
 process variables — no automatic import, no forced wizard, no approval prompt
 unless you enable one per server. The one behaviour that tightens is **SSH
@@ -722,7 +722,11 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 
 ## What's new
 
-**[4.3.4](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.5) — a security fix: `ssh_download` could write any file on your machine, even from a `readonly` server.** An agent that could not run a command on a `readonly` or `restricted` server could still have a file it had put on the server downloaded over `~/.zshrc` or into `~/.ssh/authorized_keys`. The local side of a transfer now has a transfer root: `readonly` and `restricted` servers download into `~/.ssh-manager/transfers`, and any server can name its own folder with `TRANSFER_ROOT`. If you download from such a server to a folder of your own, set `TRANSFER_ROOT` to it. (GHSA-2v9g-gm8g-mxgj) See the [CHANGELOG](CHANGELOG.md#434---2026-11-23).
+**[4.3.6](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.6) — a security fix: a project folder's `.env` could run a command on your machine.** The `.env` of the folder an MCP client was started in could define a server whose `PROXYCOMMAND` ran when a tool connected to it, before any SSH login and whatever the server's mode. That `.env` is no longer read unless you placed it (`~/.ssh-manager/.env`, your home's, the install folder's) or set `SSH_MANAGER_TRUST_PROJECT_ENV=1` in the environment of the engine; the engine says which file it left unread. If your servers were in a `.env` next to the project, move it to `~/.ssh-manager/.env` or name it with `SSH_ENV_PATH`. Reported by @Pythame (GHSA-wxcj-q5hp-wjrw). See the [CHANGELOG](CHANGELOG.md#436---2026-11-25).
+
+**[4.3.5](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.5) — a security fix: `restricted` and `readonly` modes could be made to run a command their patterns deny.** A shell rewrites a word before it runs it (`r""m`, `r\m` and `r${x}m` are all `rm`), and the patterns were tested on the text as typed, so a denied command could ride behind an allowed launcher such as `find -exec` or `xargs`. Every command is now also tested as the shell reads it. If you use `restricted` or `readonly` mode, upgrade. Reported by @Pythame (GHSA-4fp4-fggm-cf5c). See the [CHANGELOG](CHANGELOG.md#435---2026-11-25).
+
+**[4.3.4](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.4) — a security fix: `ssh_download` could write any file on your machine, even from a `readonly` server.** An agent that could not run a command on a `readonly` or `restricted` server could still have a file it had put on the server downloaded over `~/.zshrc` or into `~/.ssh/authorized_keys`. The local side of a transfer now has a transfer root: `readonly` and `restricted` servers download into `~/.ssh-manager/transfers`, and any server can name its own folder with `TRANSFER_ROOT`. If you download from such a server to a folder of your own, set `TRANSFER_ROOT` to it. (GHSA-2v9g-gm8g-mxgj) See the [CHANGELOG](CHANGELOG.md#434---2026-11-23).
 
 **[4.3.3](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.3) — a security fix: `restricted` mode could be made to run a command its allowlist never saw.** A comment, a here-document, an ANSI-C quote (`$'…'`) or a parenthesis could hide a command from the check while the shell ran it. The allowlist now reads comments as comments and refuses those constructs, with a reason. Servers in `readonly` mode and servers without a mode are unaffected; if you use `restricted` mode, upgrade. Reported by @Fastyyy123 (GHSA-86xm-rv3h-r4f2). See the [CHANGELOG](CHANGELOG.md#433---2026-11-21).
 

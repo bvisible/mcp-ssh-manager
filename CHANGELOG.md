@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.6] - 2026-11-25
+
+**A security release: upgrade if an agent runs in a project folder you did not write.**
+The `.env` of the folder an MCP client was started in could define a server whose
+`PROXYCOMMAND` runs a command on your machine when a tool connects to it
+([GHSA-wxcj-q5hp-wjrw](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-wxcj-q5hp-wjrw),
+high). Every release from 3.3.0, where `PROXYCOMMAND` was added, is affected.
+**One thing behaves differently on purpose:** that `.env` is no longer read unless you
+placed it or set `SSH_MANAGER_TRUST_PROJECT_ENV=1` (details below). Servers in
+`~/.ssh-manager/.env`, in a file named by `SSH_ENV_PATH` or `SSH_MANAGER_ENV`, in the
+vault or in the process environment are not affected. Nothing else changes (the release
+pipeline upgrades 3.8.5, 3.8.6, 3.8.7, every 4.0.x, 4.1.0, 4.2.0, 4.3.0, 4.3.1, 4.3.2, 4.3.3,
+4.3.4 and 4.3.5 from the registry to this version and back).
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Security
 
 - **A project's `.env` could run a command on this machine**

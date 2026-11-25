@@ -1,6 +1,6 @@
 # Upgrading from 3.8 to 4.0
 
-**4.0 is released, on npm and as a desktop application**; the latest is 4.3.5 ([release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.5)).
+**4.0 is released, on npm and as a desktop application**; the latest is 4.3.6 ([release](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.6)).
 The last 3.8 release is 3.8.7, for anyone who pins the 3.8 line.
 
 The upgrade path preserves headless npm/CLI use. The application, vault import
