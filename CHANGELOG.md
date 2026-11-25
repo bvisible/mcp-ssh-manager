@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A command a `DENY_PATTERNS` entry names could still run, behind an allowed
+  launcher** ([GHSA-4fp4-fggm-cf5c](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-4fp4-fggm-cf5c),
+  reported by Pythame). The patterns, and the built-in list of `readonly`, were
+  tested on the text as typed, and a shell does not run that text: `r\<newline>m`,
+  `r${x}m` (x unset), `r""m`, `r\m` and `"r"m` are all `rm`. With `^find` allowed and
+  `\brm\b` denied, `find . -exec r""m -rf x {} +` was allowed and deleted the target.
+  Every command is now also tested as the shell reads it: quotes, backslashes and
+  line continuations removed, variables read as unset and as blanks, `${x:-word}` as
+  its word, braces expanded, and the name of the command without its directory.
+  Found with a differential check against sh, dash, bash, ksh and zsh (1,500 random
+  spellings of `rm` behind `find`, `xargs` and `env`), which is now part of the tests.
+- **Fixed alongside:** `/usr/bin/rm` and `find -exec /bin/rm` were not seen by the
+  `readonly` list; a command name written with a quote or a variable (`ls""x`) matched
+  an allow pattern for another name than the one the shell ran.
+
+### Changed
+
+- **`restricted` mode now refuses what a line can use to spell a name:** `$_`,
+  brace expansions (`{a,b}`, `{1..3}`) and a command whose own name has a quote,
+  a backslash, a variable or a glob (`"ls" -l`, `\ls`). Arguments are not affected
+  (`ls "/var/log"`, `echo $HOME`, `find . -name "*.log"`).
+- **`readonly` mode refuses `$_`, and reads a name after `/bin/` or `/sbin/`:**
+  `ls -l /usr/bin/su` is now refused. A quoted argument is still an argument
+  (`grep "kill -9" /var/log/syslog` runs); a quoted command name is not (`"rm" -rf x`).
+- **A glob or an interpreter is still out of reach of a deny pattern.** The security
+  modes document lists what an allow pattern should not admit.
+
 ## [4.3.4] - 2026-11-23
 
 **A security release: upgrade.** `ssh_download` wrote any local path it was given,

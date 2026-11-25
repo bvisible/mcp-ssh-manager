@@ -18,7 +18,7 @@
  */
 
 import { logger } from './logger.js';
-import { splitShellCommand } from './shell-segments.js';
+import { commandWordProblem, readSegments, splitShellCommand } from './shell-segments.js';
 
 const MODE_UNRESTRICTED = 'unrestricted';
 const MODE_READONLY = 'readonly';
@@ -61,34 +61,39 @@ export const COMMAND_BEARING_TOOLS = new Set([
 //
 // The user can layer their own DENY_PATTERNS on top via restricted mode for
 // finer control.
+//
+// A command name is also read after `/bin/` and `/sbin/` (so `/usr/bin/rm`, and
+// `./bin/rm` behind `find -exec`, are `rm`). They are the folders programs live
+// in; a directory of any other name is not read as one, or `cat /etc/pam.d/su`
+// would be a `su`.
 const READONLY_DENY_REGEX = [
-  /(^|[\s;&|])rm(\s|$)/,
-  /(^|[\s;&|])rmdir(\s|$)/,
-  /(^|[\s;&|])mv(\s|$)/,
-  /(^|[\s;&|])dd(\s|$)/,
-  /(^|[\s;&|])mkfs(\.|\s|$)/,
-  /(^|[\s;&|])chmod(\s|$)/,
-  /(^|[\s;&|])chown(\s|$)/,
-  /(^|[\s;&|])truncate(\s|$)/,
-  /(^|[\s;&|])tee(\s|$)/,
-  /(^|[\s;&|])sudo(\s|$)/,
-  /(^|[\s;&|])su(\s|$)/,
-  /(^|[\s;&|])kill(\s|$)/,
-  /(^|[\s;&|])pkill(\s|$)/,
-  /(^|[\s;&|])killall(\s|$)/,
-  /(^|[\s;&|])shutdown(\s|$)/,
-  /(^|[\s;&|])reboot(\s|$)/,
-  /(^|[\s;&|])halt(\s|$)/,
-  /(^|[\s;&|])poweroff(\s|$)/,
-  /(^|[\s;&|])systemctl\s+(restart|stop|reload|start|enable|disable|mask)/,
-  /(^|[\s;&|])service\s+\S+\s+(restart|stop|reload|start)/,
-  /(^|[\s;&|])docker\s+(rm|stop|restart|kill|prune|system)/,
-  /(^|[\s;&|])apt(-get)?\s+(install|remove|purge|upgrade|update)/,
-  /(^|[\s;&|])yum\s+(install|remove|update|upgrade)/,
-  /(^|[\s;&|])dnf\s+(install|remove|update|upgrade)/,
-  /(^|[\s;&|])pip\s+(install|uninstall)/,
-  /(^|[\s;&|])npm\s+(install|uninstall|publish)/,
-  /(^|[\s;&|])git\s+(reset\s+--hard|push\s+.*--force|clean\s+-fd?)/,
+  /(^|[\s;&|]|\/s?bin\/)rm(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)rmdir(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)mv(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)dd(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)mkfs(\.|\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)chmod(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)chown(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)truncate(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)tee(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)sudo(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)su(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)kill(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)pkill(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)killall(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)shutdown(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)reboot(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)halt(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)poweroff(\s|$)/,
+  /(^|[\s;&|]|\/s?bin\/)systemctl\s+(restart|stop|reload|start|enable|disable|mask)/,
+  /(^|[\s;&|]|\/s?bin\/)service\s+\S+\s+(restart|stop|reload|start)/,
+  /(^|[\s;&|]|\/s?bin\/)docker\s+(rm|stop|restart|kill|prune|system)/,
+  /(^|[\s;&|]|\/s?bin\/)apt(-get)?\s+(install|remove|purge|upgrade|update)/,
+  /(^|[\s;&|]|\/s?bin\/)yum\s+(install|remove|update|upgrade)/,
+  /(^|[\s;&|]|\/s?bin\/)dnf\s+(install|remove|update|upgrade)/,
+  /(^|[\s;&|]|\/s?bin\/)pip\s+(install|uninstall)/,
+  /(^|[\s;&|]|\/s?bin\/)npm\s+(install|uninstall|publish)/,
+  /(^|[\s;&|]|\/s?bin\/)git\s+(reset\s+--hard|push\s+.*--force|clean\s+-fd?)/,
   />\s*\/(?!dev\/null|dev\/stdout|dev\/stderr|tmp)/, // redirect to non-tmp/non-devnull file
   />>\s*\/(?!dev\/null|tmp)/,                          // append-redirect to non-tmp file
   /\|\s*sh(\s|$)/,
@@ -177,8 +182,16 @@ export function evaluatePolicy(serverConfig, toolName, command) {
     if (COMMAND_BEARING_TOOLS.has(toolName) && typeof command === 'string') {
       // The whole line, then each command in it, including those inside $(…)
       // and backticks: `echo $(rm -rf x)` has no space before its `rm`.
+      // Each of them as the shell reads it too: `r\<newline>m`, `r""m` and `r${x}m` are `rm`.
       const { segments, substitutions } = splitShellCommand(command);
-      for (const text of [command, ...segments, ...substitutions]) {
+      const { texts, unreadable } = readSegments([...segments, ...substitutions]);
+      if (unreadable) {
+        return {
+          allowed: false,
+          reason: `Command refused on server "${serverConfig.name}" (mode: readonly): it uses ${unreadable}, which the destructive patterns cannot follow.`,
+        };
+      }
+      for (const text of [command, ...texts]) {
         for (const re of READONLY_DENY_REGEX) {
           if (re.test(text)) {
             return {
@@ -226,8 +239,12 @@ export function evaluatePolicy(serverConfig, toolName, command) {
     // started, and `docker ps; id` passed (GHSA-rfxw-26h6-7w42).
     const { segments, substitutions, writes, problem } = splitShellCommand(command);
 
+    // A DENY pattern is tested on what each command is as typed and on what the
+    // shell makes of it: `r""m`, `r\m`, `r${x}m` and a backslash-newline inside the
+    // name all run `rm` (GHSA-4fp4-fggm-cf5c). The ALLOW patterns stay on the text as typed.
+    const { texts: readings, unreadable, guessed } = readSegments(segments);
     for (const re of deny) {
-      for (const text of [command, ...segments]) {
+      for (const text of [command, ...readings]) {
         if (re.test(text)) return refuse(`matches DENY pattern ${re}`);
       }
     }
@@ -237,6 +254,7 @@ export function evaluatePolicy(serverConfig, toolName, command) {
     }
 
     if (problem) return refuse(`the command could not be checked (${problem})`);
+    if (unreadable || guessed) return refuse(`the command could not be checked (${unreadable ?? guessed})`);
     if (substitutions.length) {
       return refuse('command substitution ($(…), backticks, <(…)) runs commands the allowlist cannot check');
     }
@@ -246,6 +264,8 @@ export function evaluatePolicy(serverConfig, toolName, command) {
     if (!segments.length) return refuse('empty command');
 
     for (const segment of segments) {
+      const unsafeName = commandWordProblem(segment);
+      if (unsafeName) return refuse(`the command could not be checked (${unsafeName})`);
       if (!allow.some(re => re.test(segment))) {
         return refuse(segments.length > 1
           ? `"${segment}" does not match any ALLOW_PATTERNS (every command in a list or pipeline must)`

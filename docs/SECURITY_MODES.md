@@ -57,6 +57,35 @@ fewer commands than the shell ran
 `readonly` mode also checks the commands inside `$(…)` and backticks against its
 built-in list.
 
+### What the shell does to a command before it runs it
+
+A shell does not run the text it was given: it removes quotes and backslashes, joins
+a line at a backslash and a newline, replaces a variable that is not set with
+nothing, and expands braces. `r""m`, `r\m`, `r${x}m` and a backslash and a
+newline between the `r` and the `m` are all `rm`. Up to 4.3.4 a `DENY_PATTERNS`
+entry such as `\brm\b`, and the built-in list of `readonly`, were tested on the text
+as typed, so an allowed command that starts another one (`find -exec`, `xargs`)
+could start the command they deny
+([GHSA-4fp4-fggm-cf5c](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-4fp4-fggm-cf5c)).
+Since 4.3.5 each command is tested on the text as typed **and** on what the shell
+makes of it: with quotes, backslashes and line continuations removed, with every
+variable read as unset and as holding blanks, with `${x:-word}` read as its word,
+with brace expansions carried out, and, for the name of the command, without its
+directory (`/usr/bin/rm`). `ALLOW_PATTERNS` are still matched on the text as typed.
+
+`restricted` mode refuses what a line can use to spell a name on purpose, because
+no reading can follow it: `$_` (the last argument of the command before it:
+`echo m; r$_`), `${x:-word}`, and brace expansions (`{r,}m`, `{1..3}`; `sh` does
+not expand them and bash, ksh and zsh do). It also refuses a command whose own
+name is written with a quote, a backslash, a variable or a glob (`ls""x`, `\ls`,
+`/bin/r?`): the allow pattern was matched against another name than the one the
+shell runs. Arguments may use all of them: `ls "/var/log"`, `echo $HOME`,
+`find . -name "*.log"` are fine. `readonly` mode refuses `$_` and reads the rest.
+A name read after `/bin/` or `/sbin/` is the command in `readonly` (`/usr/bin/rm`),
+so `ls -l /usr/bin/su` is refused there. A word that is only a quoted string is
+read as typed unless it can be the command (the first word, or the one after
+`-exec`, `xargs`, `env` and the like), so `grep "kill -9" /var/log/syslog` still runs.
+
 ## Configuration
 
 ### Environment variables / `.env`
@@ -240,6 +269,14 @@ never code), `ssh_backup_list`, `ssh_session_start`,
   not as an unbreakable shell escape. `restricted` is the stronger of the two:
   every command must be one you allowed, so keep its patterns narrow — an
   allowed interpreter (`^python`, `^bash`, `^sh`) allows everything.
+- **A deny pattern cannot follow what only the remote machine knows.** A glob
+  (`find -exec /bin/r? {} +` runs `rm`), the value of a variable the line does not
+  set, and the text an interpreter runs (`sh -c`, `python -c`, `awk 'BEGIN{system(…)}'`)
+  are out of its reach. So is anything an allowed command can start: `find -exec`,
+  `xargs`, `env`, `nice`, `timeout`, `sed`, `awk`, `tar`, `git`, `make`, an editor.
+  **If an allow pattern admits one of them, a deny pattern is a guard rail, not a
+  boundary:** allow it only with the arguments you mean (`^find [^ ]+ -name [^ ]+$`),
+  or not at all.
 - **Aliases are expanded before policy evaluation** — you can't bypass a DENY
   by hiding `rm` behind an alias defined via `ssh_command_alias`.
 - **No transport-level / per-client policies.** All clients see the same
