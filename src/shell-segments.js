@@ -302,7 +302,7 @@ export function splitShellCommand(command) {
 // variable the line does not set, the text an interpreter runs (`sh -c`, `python -c`).
 // A deny pattern is a guard rail against those, never a boundary around them.
 
-const BRACE_GROUP = /^(?:\{[^{}\s]*(?:,[^{}\s]*)+\}|\{[^{}\s,]*\.\.[^{}\s,]*\})/;
+const BRACE_GROUP = /^(?:\{[^{}\s,]*(?:,[^{}\s,]*)+\}|\{[^{}\s,]*\.\.[^{}\s,]*\})/;
 /** A word before the command: `NAME=value`, or a redirection. */
 const ASSIGNMENT_OR_REDIRECTION = /^(?:[A-Za-z_][A-Za-z0-9_]*=|\d*[<>]|&>)/;
 const NAME_EXPANSION = /^\$([A-Za-z_][A-Za-z0-9_]*)/;
@@ -513,7 +513,7 @@ function expandBraces(text) {
     const next = [];
     let changed = false;
     for (const current of results) {
-      const group = /\{([^{}\s]*(?:,[^{}\s]*)+)\}/.exec(current);
+      const group = /\{([^{}\s,]*(?:,[^{}\s,]*)+)\}/.exec(current);
       if (!group) { next.push(current); continue; }
       changed = true;
       for (const alternative of group[1].split(',')) {

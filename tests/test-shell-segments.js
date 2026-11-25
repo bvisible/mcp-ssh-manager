@@ -259,6 +259,13 @@ assert.ok(readSegments(['{r,}m x']).texts.includes('rm x'));
 assert.ok(readSegments(['r$\\\n{x}m']).texts.includes('rm'), 'a continuation inside ${name} is joined first');
 assert.ok(readSegments(['/usr/bin/rm x']).texts.includes('rm x'));
 assert.ok(!readSegments(['cat /etc/pam.d/su']).texts.includes('cat su'), 'only the command is read without its directory');
+// A line made to make a regular expression back off must not hold the policy up.
+for (const hostile of ['echo {' + 'a,'.repeat(40000), 'echo ' + '{a,'.repeat(20000), 'echo ' + '${x:-'.repeat(8000), 'echo ' + '$('.repeat(4000)]) {
+  const started = Date.now();
+  readSegments(splitShellCommand(hostile).segments);
+  evaluatePolicy(guarded, 'ssh_execute', hostile);
+  assert.ok(Date.now() - started < 3000, `a hostile line took ${Date.now() - started} ms`);
+}
 ok('readSegments gives the typed text first, then what the shell makes of it');
 
 if (shells.length) {
