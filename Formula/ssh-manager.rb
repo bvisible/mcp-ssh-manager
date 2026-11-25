@@ -13,8 +13,8 @@
 class SshManager < Formula
   desc "SSH server management for AI agents, with approval and audit"
   homepage "https://github.com/bvisible/mcp-ssh-manager"
-  url "https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-4.3.4.tgz"
-  sha256 "1704646ab3a16cb315bb9402f3eae21366d8a6c4f2323cff67665e7efc23d4db"
+  url "https://registry.npmjs.org/mcp-ssh-manager/-/mcp-ssh-manager-4.3.5.tgz"
+  sha256 "43c0c08251bf15ebb3407e5371f26a065641c820eb9347f972408c03f8508aa7"
   license "MIT"
 
   depends_on "node"
