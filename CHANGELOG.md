@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.5] - 2026-11-25
+
+**A security release: upgrade if a server uses `restricted` or `readonly` mode.** A
+command a `DENY_PATTERNS` entry (or the `readonly` list) names could still run behind an
+allowed launcher such as `find -exec` or `xargs`, because the shell rewrites a word
+before it runs it
+([GHSA-4fp4-fggm-cf5c](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-4fp4-fggm-cf5c),
+high). Every release from 3.5.0, where the security modes were added, is affected.
+**Two things behave differently on purpose:** `restricted` mode now refuses `$_`,
+brace expansions and a command whose own name has a quote, a backslash, a variable
+or a glob; `readonly` mode refuses `$_` and reads a name after `/bin/` or `/sbin/`, so
+`ls -l /usr/bin/su` is refused there (details below). Nothing else changes (the release pipeline upgrades 3.8.5,
+3.8.6, 3.8.7, every 4.0.x, 4.1.0, 4.2.0, 4.3.0, 4.3.1, 4.3.2, 4.3.3 and 4.3.4 from the
+registry to this version and back).
+
+The Windows installer is still **not Authenticode-signed**, for the same reason
+as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Security
 
 - **A command a `DENY_PATTERNS` entry names could still run, behind an allowed
