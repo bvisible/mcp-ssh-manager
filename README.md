@@ -526,6 +526,8 @@ file people email each other and commit by accident.
 
 Two interchangeable formats, read by the same loader: `.env` is the usual choice with Claude Code, TOML with Codex (from `SSH_CONFIG_PATH`, or `~/.codex/ssh-config.toml`). Both can coexist — the loader merges them.
 
+The `.env` is `~/.ssh-manager/.env`, or the file `SSH_ENV_PATH` names. One that only sits in the project folder your agent was started in is **not** read (a server entry can run a command on your machine): move it, name it, or set `SSH_MANAGER_TRUST_PROJECT_ENV=1` — see [docs/MIGRATION.md](docs/MIGRATION.md#which-env-is-read).
+
 ```env
 SSH_SERVER_[NAME]_HOST=hostname_or_ip
 SSH_SERVER_[NAME]_USER=username

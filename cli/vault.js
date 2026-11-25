@@ -19,7 +19,7 @@ import { writeRecoveryFile, readRecoveryFile, describeRecoveryFile } from '../sr
 import { SecretStore, defaultVaultPath, SECRET_FIELDS } from '../src/secret-store.js';
 import { defaultSocketPath, isControlPlaneListening, VALID_APPROVAL_MODES } from '../src/approval.js';
 import { ConfigLoader } from '../src/config-loader.js';
-import { resolveEnvFilePath } from '../src/config-paths.js';
+import { envFileChoice } from '../src/config-paths.js';
 import { GREEN, YELLOW, RED, DIM, RESET } from './style.js';
 
 /**
@@ -282,7 +282,8 @@ async function cmdRemove(store, name) {
 }
 
 async function cmdImport(store, fromPath) {
-  const envPath = fromPath || resolveEnvFilePath();
+  const choice = fromPath ? null : envFileChoice();
+  const envPath = fromPath || choice.path;
   if (fromPath && !fs.existsSync(fromPath)) {
     console.error(`${RED}No configuration found at ${fromPath}${RESET}`);
     process.exit(1);
@@ -298,6 +299,8 @@ async function cmdImport(store, fromPath) {
 
   if (servers.size === 0) {
     console.log(`${YELLOW}No servers found in the configuration.${RESET}`);
+    // A .env in this folder is read only when named: a project file is not trusted by default.
+    if (choice?.skippedProject) console.log(`${YELLOW}${choice.skippedProject} was not read; to import it, name it.${RESET}`);
     console.log(`${DIM}Point at a file with: ssh-manager vault import --from /path/to/.env (or .toml)${RESET}`);
     return;
   }

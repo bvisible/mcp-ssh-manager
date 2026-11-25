@@ -316,9 +316,27 @@ it; the engine never starts one.
 `SSH_MANAGER_ENV` — the CLI's variable, which 3.8.x's engine never read. A
 profile that still exports `SSH_MANAGER_ENV` towards a file that no longer
 exists is skipped with a warning, so the usual discovery (`~/.ssh-manager/.env`,
-then the working directory, then your home) applies as it did in 3.8.x. A missing
+then your home, then the install directory) applies. A missing
 file named by `SSH_ENV_PATH` stays the choice and is reported at startup, in
 `ssh_list_servers` and in "server not found".
+
+Up to 4.3.5 the discovery also read the `.env` of the working directory, second
+in the list. That is the project the MCP client was started in, and a server
+entry can carry a command that runs on your machine when it connects
+(`PROXYCOMMAND`, or a `proxy_command` in a TOML), so it is no longer read unless
+it is a file you placed or you say so
+([GHSA-wxcj-q5hp-wjrw](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-wxcj-q5hp-wjrw)).
+If your servers were in a `.env` next to the project, do one of:
+
+- move it to `~/.ssh-manager/.env` (the place `llms-install.md` and the CLI use);
+- name it: `SSH_ENV_PATH=/path/to/.env` in the `env` block of the MCP client;
+- trust the project's file: `SSH_MANAGER_TRUST_PROJECT_ENV=1` in the same block.
+  It is read from the environment of the engine only; a `.env` cannot set it.
+
+The engine says which file it left unread: in the log at startup, in
+`ssh_list_servers` and in "server not found". The `.env` of the install
+directory, which is what runs from a checkout read, and your home's, are read
+as before.
 
 ## Rolling back to 3.8.7
 

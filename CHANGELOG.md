@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A project's `.env` could run a command on this machine**
+  ([GHSA-wxcj-q5hp-wjrw](https://github.com/bvisible/mcp-ssh-manager/security/advisories/GHSA-wxcj-q5hp-wjrw),
+  reported by Pythame). The engine read the `.env` of its working directory, which is
+  whatever project the MCP client was started in, when `~/.ssh-manager/.env` did not
+  exist. That file can define a server with `SSH_SERVER_<NAME>_PROXYCOMMAND`, or point
+  `SSH_CONFIG_PATH` at a TOML with a `proxy_command`, and the engine runs that command
+  through the shell when a tool connects to the server: before any SSH banner, whatever
+  the server's mode or approval, and even when the connection then fails. A repository
+  with such a file was enough. Every release from 3.3.0, where `PROXYCOMMAND` was
+  added, is affected.
+  **One thing behaves differently on purpose:** the `.env` of the working directory is
+  no longer read, unless it is also a file you placed (`~/.ssh-manager/.env`, your
+  home's `.env`, or the install directory's, which is what a run from a checkout
+  reads) or the environment of the MCP server says `SSH_MANAGER_TRUST_PROJECT_ENV=1`.
+  A project file cannot grant that itself, and a file it names through
+  `SSH_CONFIG_PATH` is not read either. When a project `.env` that defines servers is
+  left unread, the engine says so at startup, in `ssh_list_servers` and in "server not
+  found", with the three ways to have it read: move it to `~/.ssh-manager/.env`, name
+  it with `SSH_ENV_PATH`, or set the variable (in the `env` block of the MCP client's
+  configuration, where the client's own approval of a project server applies). With a
+  file in `~/.ssh-manager/.env`, `SSH_ENV_PATH` or `SSH_MANAGER_ENV`, nothing changes.
+  Two details that come with it: a project `.env` no longer hides your home `.env`, and
+  a `.env` written into the project while the engine runs is not picked up.
+
 ## [4.3.5] - 2026-11-25
 
 **A security release: upgrade if a server uses `restricted` or `readonly` mode.** A

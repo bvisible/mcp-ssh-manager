@@ -13,7 +13,7 @@ import path from 'path';
 import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { isDeepStrictEqual } from 'node:util';
-import { envFileChoice, envFileProblem, expandHomePath } from './config-paths.js';
+import { envFileChoice, envFileProblem, expandHomePath, projectEnvNotice } from './config-paths.js';
 import { fileURLToPath } from 'url';
 import { ServerConfigManager } from './server-config-manager.js';
 import {
@@ -272,7 +272,8 @@ async function getServerConfig(serverName) {
   const servers = await loadServerConfig();
   const name = serverName && resolveServerName(String(serverName), servers);
   if (!name) {
-    throw new Error(`Server "${serverName}" not found${envProblem && !Object.keys(servers).length ? ` (${envProblem})` : ''}`);
+    // A project .env left unread is named even when other servers loaded: the one asked for may be in it.
+    throw new Error(`Server "${serverName}" not found${envProblem && (!Object.keys(servers).length || envChoice.skippedProject) ? ` (${envProblem})` : ''}`);
   }
   return servers[name];
 }
@@ -2419,6 +2420,7 @@ registerToolConditional(
     ];
     // The list stays the first item, unchanged, for anything that parses it.
     if (envProblem && !serverInfo.length) content.push({ type: 'text', text: `No server loaded: ${envProblem}.` });
+    else if (envChoice.skippedProject) content.push({ type: 'text', text: `Note: ${projectEnvNotice(envChoice.skippedProject)}.` });
     return { content };
   }
 );
