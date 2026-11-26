@@ -40,4 +40,37 @@ test.describe('the terminal', () => {
       .toBeGreaterThanOrEqual(typed.length + 1);
     expect(await fs.readFile(received, 'utf8')).toBe(`${typed}\r`);
   });
+
+  // A program asking the terminal for one of its modes (DECRQM) gets an answer,
+  // and the terminal keeps drawing afterwards.
+  //
+  // vim asks `ESC [ ? 12 $ p` (is the cursor blinking?) as soon as it has drawn
+  // its first screen. When xterm threw on that query, the reply never left and
+  // nothing after it was drawn: keystrokes still reached vim, but the screen
+  // stayed frozen on its first frame. See `build.target` in vite.config.ts for
+  // why it threw. The stand-in shell echoes what it is sent, so typing the
+  // query makes it come back as output, exactly as vim's would.
+  test('answers a mode query and keeps drawing', async ({ page, app }) => {
+    await page.goto(app.url);
+    await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('button', { name: 'Terminal', exact: true }).click();
+    await page.getByRole('button', { name: /This machine/ }).click();
+    const screen = page.locator('.xterm');
+    await expect(screen).toContainText('fixture %');
+    await screen.click();
+
+    await page.keyboard.press('Escape');
+    await page.keyboard.type('[?12$p');
+
+    // What the shell received: the query it echoed, then xterm's answer to it
+    // (DECRPM, `ESC [ ? 12 ; <state> $ y`). The state is 1 (set) only because
+    // ShellPage creates the terminal with `cursorBlink: true`; with it off,
+    // xterm answers 2.
+    const received = path.join(app.home, 'typed.txt');
+    await expect.poll(async () => fs.readFile(received, 'utf8').catch(() => ''), { timeout: 10_000 })
+      .toBe('\x1b[?12$p\x1b[?12;1$y');
+
+    await page.keyboard.type('still drawing');
+    await expect(screen).toContainText('still drawing');
+  });
 });

@@ -14,6 +14,13 @@ export default defineConfig({
   build: {
     outDir: resolve(import.meta.dirname, '..', 'dist', 'ui'),
     emptyOutDir: true,
+    // ES2021 keeps `||=` as written. Vite's default target (es2020) makes
+    // esbuild lower it, and esbuild 0.25 lowers xterm's `let r; …(r ||= {})`
+    // into an assignment to an undeclared variable (an esbuild bug, fixed by
+    // 0.28): the terminal threw "ReferenceError: i is not defined" on the first
+    // DECRQM query (vim asks one as soon as it starts) and stopped drawing.
+    // Guarded by tests/terminal-input.spec.ts.
+    target: 'es2021',
     // One file each: the control plane serves them from an allowlist, and an
     // allowlist of two beats a directory walk it has to sanitise.
     rollupOptions: {
