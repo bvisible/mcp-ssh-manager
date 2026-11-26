@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-11-26
+
+**A feature release with two interface fixes.** Nothing changes unless you turn the new
+switch on; the interface fixes only affect the desktop app and the browser interface.
+Contributed by @AnA-0823 (the tray switch, the dropdown colours) and @congzhou09 (the
+terminal fix). The Windows installer is still **not Authenticode-signed**, for the same
+reason as 4.0.0: Windows shows *"Windows protected your PC"*, *More info → Run anyway*,
+and `ssh-manager app` checks the installer against the SHA-256 in
+`release-manifest-win32.json`. macOS builds are signed and notarized.
+
 ### Added
 
 - **Keep the desktop application running when its window is closed** (*Options → Appearance*, inside the desktop application). On Windows and Linux, turning this on leaves SSH Manager in the system tray so approval notifications still arrive after closing the window; each platform's default behaviour (staying in the menu bar on macOS, quitting on Windows and Linux) is unchanged.
@@ -14,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Native `<select>` menus were light text on a white background in dark mode on Windows and Linux.** Transparent backgrounds on `<select>` and `<option>` exposed Chromium's white popup surface while inheriting dark-mode text colour; all five dropdowns now carry opaque theme colours.
+- **`vim` froze the terminal of the interface on its first screen** (#175, @congzhou09). vim asks the terminal for one of its modes as soon as it has drawn; xterm answered with code that the interface's build target made esbuild lower into an assignment to an undeclared variable, so the answer threw and nothing after it was drawn. The interface is now built for ES2021, which keeps the code as written; a test sends that query and expects the answer.
+
+### Changed
+
+- **Interface dependency:** `i18next` 25 to 27 (#168). The interface's languages and the language tool are unchanged.
 
 ## [4.3.6] - 2026-11-25
 

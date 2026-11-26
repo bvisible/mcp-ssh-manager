@@ -25,7 +25,7 @@
 [![Desktop app downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdesktop.json&style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/bvisible/mcp-ssh-manager?style=flat-square&color=c04500)](https://github.com/bvisible/mcp-ssh-manager/stargazers)
 [![MCP Toplist](https://mcptoplist.com/badge/io.github.bvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/io.github.bvisible%2Fmcp-ssh-manager)
-[![Version](https://img.shields.io/badge/release-4.3.6-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.6)
+[![Version](https://img.shields.io/badge/release-4.4.0-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.0)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -58,9 +58,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application (`4.3.6`):** one installation with its own runtime,
+**Desktop application (`4.4.0`):** one installation with its own runtime,
 terminal, file browser and server settings. No separate Node.js or npm
-installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.6):
+installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.0):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -68,7 +68,7 @@ installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases
 | Windows x64 / arm64 | `…-setup.exe` | **Not code-signed yet.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
 | Linux x64 | `.deb`, `.AppImage` | Unsigned, as Linux packages usually are |
 
-**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.3.6,
+**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.4.0,
 and the V4 engine runs without an interface, from your existing `.env`, TOML or
 process variables — no automatic import, no forced wizard, no approval prompt
 unless you enable one per server. The one behaviour that tightens is **SSH
@@ -721,6 +721,8 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 ---
 
 ## What's new
+
+**[4.4.0](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.0) — keep the desktop app running when you close its window, readable dropdowns in dark mode, and `vim` works in the terminal.** *Options → Appearance* has a new, opt-in switch: with it on, closing the window leaves SSH Manager in the system tray (Windows, Linux) or the menu bar (macOS), so approval requests still reach you; nothing changes until you turn it on. Native `<select>` menus are no longer light text on a white menu in dark mode on Windows and Linux, and vim no longer freezes the interface's terminal on its first screen. From @AnA-0823 (#173, #174) and @congzhou09 (#175). See the [CHANGELOG](CHANGELOG.md#440---2026-11-26).
 
 **[4.3.6](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.3.6) — a security fix: a project folder's `.env` could run a command on your machine.** The `.env` of the folder an MCP client was started in could define a server whose `PROXYCOMMAND` ran when a tool connected to it, before any SSH login and whatever the server's mode. That `.env` is no longer read unless you placed it (`~/.ssh-manager/.env`, your home's, the install folder's) or set `SSH_MANAGER_TRUST_PROJECT_ENV=1` in the environment of the engine; the engine says which file it left unread. If your servers were in a `.env` next to the project, move it to `~/.ssh-manager/.env` or name it with `SSH_ENV_PATH`. Reported by @Pythame (GHSA-wxcj-q5hp-wjrw). See the [CHANGELOG](CHANGELOG.md#436---2026-11-25).
 
