@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Native `<select>` menus were light text on a white background in dark mode on Windows and Linux.** Transparent backgrounds on `<select>` and `<option>` exposed Chromium's white popup surface while inheriting dark-mode text colour; all five dropdowns now carry opaque theme colours.
+
 ## [4.3.6] - 2026-11-25
 
 **A security release: upgrade if an agent runs in a project folder you did not write.**

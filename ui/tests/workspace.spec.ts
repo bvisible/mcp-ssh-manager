@@ -121,3 +121,108 @@ test.describe('existing CLI users adopting the interface', () => {
     expect(await fs.readFile(path.join(app.home, '.env'), 'utf8')).toBe(legacyConfig);
   });
 });
+
+test('every native select and option carries an opaque surface and readable contrast in light and dark themes', async ({ page, app }) => {
+  await page.goto(app.url);
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+
+  const inspectSelects = (scopeSelector: string) => page.locator(`${scopeSelector} select`).evaluateAll(selects => {
+    const parseColor = (raw: string) => {
+      const nums = raw.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 0];
+      const [r = 0, g = 0, b = 0] = nums;
+      const a = nums.length >= 4 ? nums[3] : 1;
+      return { r, g, b, a };
+    };
+    const luminance = ({ r, g, b }: { r: number; g: number; b: number }) => {
+      const channel = (v: number) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+    const contrast = (fg: { r: number; g: number; b: number }, bg: { r: number; g: number; b: number }) => {
+      const l1 = luminance(fg);
+      const l2 = luminance(bg);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    };
+
+    return selects.map(select => {
+      const selStyle = getComputedStyle(select);
+      const selBg = parseColor(selStyle.backgroundColor);
+      const selFg = parseColor(selStyle.color);
+      const options = [...select.querySelectorAll('option')].map(option => {
+        const optStyle = getComputedStyle(option);
+        const optBg = parseColor(optStyle.backgroundColor);
+        const optFg = parseColor(optStyle.color);
+        return {
+          background: optStyle.backgroundColor,
+          alpha: optBg.a,
+          bgLum: luminance(optBg),
+          contrast: contrast(optFg, optBg),
+        };
+      });
+      return {
+        background: selStyle.backgroundColor,
+        alpha: selBg.a,
+        bgLum: luminance(selBg),
+        contrast: contrast(selFg, selBg),
+        options,
+      };
+    });
+  });
+
+  const assertReadable = (
+    items: Awaited<ReturnType<typeof inspectSelects>>,
+    expectedCount: number,
+    theme: 'light' | 'dark'
+  ) => {
+    expect(items).toHaveLength(expectedCount);
+    for (const item of items) {
+      expect(item.alpha, `<select> background (${item.background}) in ${theme}`).toBe(1);
+      expect(item.contrast, `<select> contrast in ${theme}`).toBeGreaterThanOrEqual(4.5);
+      if (theme === 'dark') expect(item.bgLum).toBeLessThan(0.05);
+      else expect(item.bgLum).toBeGreaterThan(0.8);
+
+      expect(item.options.length).toBeGreaterThan(0);
+      for (const opt of item.options) {
+        expect(opt.alpha, `<option> background (${opt.background}) in ${theme}`).toBe(1);
+        expect(opt.contrast, `<option> contrast in ${theme}`).toBeGreaterThanOrEqual(4.5);
+        if (theme === 'dark') expect(opt.bgLum).toBeLessThan(0.05);
+        else expect(opt.bgLum).toBeGreaterThan(0.8);
+      }
+    }
+  };
+
+  for (const [theme, buttonName] of [
+    ['dark', 'Dark always dark'],
+    ['light', 'Light always light, whatever the system does'],
+  ] as const) {
+    await page.getByRole('button', { name: 'Options', exact: true }).click();
+    await page.getByRole('tab', { name: 'Appearance' }).click();
+    await page.getByRole('button', { name: buttonName, exact: true }).click();
+    if (theme === 'dark') await expect(page.locator('html')).toHaveClass(/dark/);
+    else await expect(page.locator('html')).not.toHaveClass(/dark/);
+
+    // 1. Options → Appearance language <select>
+    assertReadable(await inspectSelects('[role="tabpanel"]'), 1, theme);
+
+    // 2. Options → Groups → New group dialog <select>
+    await page.getByRole('tab', { name: 'Groups' }).click();
+    await page.getByRole('button', { name: 'New group', exact: true }).click();
+    const groupDialog = page.getByRole('dialog', { name: 'New group' });
+    await expect(groupDialog).toBeVisible();
+    assertReadable(await inspectSelects('[role="dialog"]'), 1, theme);
+    await groupDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(groupDialog).toBeHidden();
+
+    // 3. Servers → Add a server dialog (Mode, Approval, and Remote platform <select>s)
+    await page.getByRole('button', { name: 'Servers', exact: true }).click();
+    await page.getByRole('button', { name: 'Add a server', exact: true }).first().click();
+    const serverDialog = page.getByRole('dialog', { name: 'Add a server' });
+    await expect(serverDialog).toBeVisible();
+    await serverDialog.locator('summary').click();
+    assertReadable(await inspectSelects('[role="dialog"]'), 3, theme);
+    await serverDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(serverDialog).toBeHidden();
+  }
+});

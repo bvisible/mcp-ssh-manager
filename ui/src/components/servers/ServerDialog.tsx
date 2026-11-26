@@ -8,6 +8,7 @@ import { tr, useLocale } from '@/lib/i18n';
 
 const BLANK: ServerConfig = { id: '', name: '', host: '', port: 22, username: '', mode: 'unrestricted', approval: 'never' };
 const inputClass = 'w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring';
+const selectClass = 'w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-card-foreground shadow-xs focus-visible:outline-2 focus-visible:outline-ring';
 
 export function ServerDialog({ server, prefill, onClose, onSaved }: {
   server: ServerConfig | null;
@@ -80,10 +81,10 @@ export function ServerDialog({ server, prefill, onClose, onSaved }: {
           <fieldset className="grid gap-3 rounded-lg border border-border bg-sidebar p-3">
             <legend className="flex items-center gap-1.5 px-1 text-sm font-medium"><ShieldCheck className="h-4 w-4" /> {tr("Agent permissions")}</legend>
             <div className="grid grid-cols-2 gap-3">
-              <Field label={tr("Mode")}><select className={inputClass} value={draft.mode ?? 'unrestricted'} onChange={e => set('mode', e.target.value as ServerConfig['mode'])}>
+              <Field label={tr("Mode")}><select className={selectClass} value={draft.mode ?? 'unrestricted'} onChange={e => set('mode', e.target.value as ServerConfig['mode'])}>
                 <option value="unrestricted">{tr("Unrestricted")}</option><option value="readonly">{tr("Read only")}</option><option value="restricted">{tr("Restricted")}</option>
               </select></Field>
-              <Field label={tr("Approval")}><select className={inputClass} value={draft.approval ?? 'never'} onChange={e => set('approval', e.target.value as ServerConfig['approval'])}>
+              <Field label={tr("Approval")}><select className={selectClass} value={draft.approval ?? 'never'} onChange={e => set('approval', e.target.value as ServerConfig['approval'])}>
                 <option value="never">{tr("Off")}</option><option value="destructive">{tr("Destructive requests")}</option><option value="always">{tr("Every request")}</option>
               </select></Field>
             </div>
@@ -104,7 +105,7 @@ export function ServerDialog({ server, prefill, onClose, onSaved }: {
               <Field label={tr("Description")}><Input value={draft.description ?? ''} onChange={e => set('description', e.target.value)} /></Field>
               <Field label={tr("Jump server")} hint={tr("Name of another configured server to connect through.")}><Input value={draft.proxyJump ?? ''} placeholder="bastion" onChange={e => set('proxyJump', e.target.value)} /></Field>
               <Field label={tr("Proxy command")}><Input value={draft.proxyCommand ?? ''} placeholder="ssh -W %h:%p bastion" onChange={e => set('proxyCommand', e.target.value)} /></Field>
-              <Field label={tr("Remote platform")}><select className={inputClass} value={draft.platform ?? 'linux'} onChange={e => set('platform', e.target.value)}>
+              <Field label={tr("Remote platform")}><select className={selectClass} value={draft.platform ?? 'linux'} onChange={e => set('platform', e.target.value)}>
                 <option value="linux">Linux / Unix</option><option value="windows">Windows</option><option value="darwin">macOS</option>
               </select></Field>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={usesAgentKey ? false : draft.forwardAgent ?? false} disabled={usesAgentKey} onChange={e => set('forwardAgent', e.target.checked)} /> {tr("Forward the SSH agent")}</label>
