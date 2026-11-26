@@ -140,8 +140,13 @@
   --color-term-fg: oklch(0.14 0 0);
 }
 
+:root {
+  color-scheme: light;
+}
+
 /* Dark theme */
 .dark {
+  color-scheme: dark;
   --color-background: #121211;
   --color-foreground: #edebe6;
 
@@ -218,6 +223,20 @@
 @layer base {
   *, ::before, ::after, ::backdrop {
     border-color: var(--color-border);
+  }
+
+  /* Chromium on Windows and Linux copies <select> and <option> colours into
+     its popup menu, whose backing surface is white when their background is
+     transparent — leaving light text on a white menu in dark mode. */
+  select {
+    background-color: var(--color-card);
+    color: var(--color-card-foreground);
+  }
+
+  select option,
+  select optgroup {
+    background-color: var(--color-popover);
+    color: var(--color-popover-foreground);
   }
 }
 

@@ -105,7 +105,7 @@ export function GroupDialog({
               <select
                 value={strategy}
                 onChange={e => setStrategy(e.target.value as 'parallel' | 'sequential')}
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="h-9 rounded-md border border-input bg-card px-3 text-sm text-card-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
               >
                 <option value="parallel">{tr("all at once")}</option>
                 <option value="sequential">{tr("one after another")}</option>

@@ -292,7 +292,7 @@ export function OptionsPage() {
               id="interface-language"
               value={language}
               onChange={event => void setLanguage(event.target.value as Language)}
-              className="w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring"
+              className="w-full max-w-xs rounded-md border border-input bg-card px-3 py-2 text-sm text-card-foreground shadow-xs focus-visible:outline-2 focus-visible:outline-ring"
             >
               {languages.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
             </select>

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Keep the desktop application running when its window is closed** (*Options → Appearance*, inside the desktop application). On Windows and Linux, turning this on leaves SSH Manager in the system tray so approval notifications still arrive after closing the window; each platform's default behaviour (staying in the menu bar on macOS, quitting on Windows and Linux) is unchanged.
 
+### Fixed
+
+- **Native `<select>` menus were light text on a white background in dark mode on Windows and Linux.** Transparent backgrounds on `<select>` and `<option>` exposed Chromium's white popup surface while inheriting dark-mode text colour; all five dropdowns now carry opaque theme colours.
+
 ## [4.3.6] - 2026-11-25
 
 **A security release: upgrade if an agent runs in a project folder you did not write.**
