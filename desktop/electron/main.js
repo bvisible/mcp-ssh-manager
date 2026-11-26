@@ -32,6 +32,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { localShellLaunch, localShellName } from './local-shell.mjs';
 import { nativeLanguage, nativeText } from './locale.mjs';
 import { applicationMenuTemplate } from './native-menu.mjs';
+import { shouldQuitOnWindowAllClosed } from './window-close.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -646,8 +647,13 @@ function createTray() {
   // to raise the window, and the menu is on right-click.
   if (process.platform !== 'darwin') {
     tray.on('click', () => {
-      if (mainWindow) mainWindow.show();
-      else if (plane) createWindow(plane.url);
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      } else if (plane) {
+        createWindow(plane.url);
+      }
     });
   }
   refreshTray();
@@ -766,20 +772,21 @@ app.whenReady().then(async () => {
   });
 });
 
-// On macOS, closing the window leaves the app in the menu bar. Everywhere else
-// it quits.
+// On macOS, closing the window leaves the app in the menu bar by default;
+// everywhere else it quits unless the user asked to keep it in the tray under
+// Options → Appearance.
 //
-// This used to quit on every platform, and the reason was sound at the time:
-// leaving the control plane running with no window means a process holding SSH
-// connections that nobody can see — and worse, holding the approval socket, so
-// agents block on an interface that is not on screen.
-//
-// The tray is exactly the thing that was missing. It shows the connections, it
-// shows what is waiting, and it carries a Quit. The invisible-process objection
-// no longer applies, and quitting a menu-bar app because its window closed is
-// not what a macOS user expects.
+// This used to quit unconditionally, and the reason was sound before the tray
+// and native notifications existed: leaving the control plane running with no
+// window meant holding SSH connections and the approval socket with nothing on
+// screen to tell you an agent was waiting. With the tray and notifications in
+// place on every platform, keeping it running is safe wherever a tray icon
+// actually came up.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  const home = plane ? path.dirname(plane.store.vaultPath) : undefined;
+  if (shouldQuitOnWindowAllClosed({ platform: process.platform, home, hasTray: Boolean(tray) })) {
+    app.quit();
+  }
 });
 
 app.on('before-quit', async event => {

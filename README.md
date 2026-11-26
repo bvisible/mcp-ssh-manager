@@ -203,7 +203,7 @@ files and one command (`npm run lang -- add <code>`): see [Adding a language](ui
 
 The desktop build adds the two things a browser tab cannot do:
 
-- **It lives in the menu bar.** The icon carries a count when something is waiting, and its menu lists what is blocked on you, which shells and commands are open right now, and your servers — so "is anything waiting on me?" costs a glance instead of a window switch. Closing the window leaves it there rather than quitting.
+- **It lives in the menu bar.** The icon carries a count when something is waiting, and its menu lists what is blocked on you, which shells and commands are open right now, and your servers — so "is anything waiting on me?" costs a glance instead of a window switch. On macOS, closing the window leaves it there by default; on Windows and Linux you can turn that on under *Options → Appearance*.
 - **It posts real system notifications**, with the application's own identity, so macOS and Windows show and route them properly. Destructive requests stay on screen instead of fading after four seconds. macOS asks your permission the first time it needs to.
 
 <p align="center">
