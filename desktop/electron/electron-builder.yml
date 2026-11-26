@@ -16,6 +16,7 @@ files:
   # One file per language, found by locale.mjs at start: a new language needs no change here.
   - native.*.json
   - local-shell.mjs
+  - window-close.mjs
   - smoke-test.mjs
   - package.json
   # The menu-bar glyph is loaded at runtime from __dirname/resources, so it has

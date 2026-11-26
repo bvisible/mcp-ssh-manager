@@ -23,7 +23,9 @@ import { AgentsPanel } from '@/components/AgentsPanel';
 import { UpdatesPanel } from '@/components/UpdatesPanel';
 import { useAppUpdate } from '@/stores/appUpdate.store';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { inDesktopApp, needsTitleBarRoom } from '@/lib/desktop';
 import { languages, setLanguage, useLocale, type Language, tr } from '@/lib/i18n';
+import { readPreference, writePreference } from '@/lib/preferences';
 
 
 /** A tab's own height, so a wrapped row keeps the size of the first. */
@@ -71,6 +73,50 @@ function ThemePicker() {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const CLOSE_TO_TRAY_KEY = 'ssh-manager.close-to-tray';
+
+function readCloseToTray(): boolean {
+  const saved = readPreference(CLOSE_TO_TRAY_KEY);
+  if (saved === 'true') return true;
+  if (saved === 'false') return false;
+  return needsTitleBarRoom;
+}
+
+/**
+ * Whether closing the desktop window leaves the control plane running in the
+ * tray or menu bar. Shown only inside the desktop application; until the user
+ * chooses, each platform keeps its own default without writing a preference.
+ */
+function WindowBehavior() {
+  useLocale();
+  const [keepInTray, setKeepInTray] = useState(readCloseToTray);
+
+  const toggle = (checked: boolean) => {
+    setKeepInTray(checked);
+    writePreference(CLOSE_TO_TRAY_KEY, String(checked));
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <label className="flex items-start gap-2.5 text-sm">
+        <input
+          type="checkbox"
+          checked={keepInTray}
+          onChange={event => toggle(event.target.checked)}
+          aria-describedby="close-to-tray-hint"
+          className="mt-0.5 h-3.5 w-3.5 shrink-0"
+        />
+        <span className="font-medium">
+          {tr("Keep running in the background when the window is closed")}
+        </span>
+      </label>
+      <p id="close-to-tray-hint" className="mt-1 pl-6 text-xs text-muted-foreground">
+        {tr("Leaves SSH Manager in the system tray or menu bar so approval requests still reach you. Use Quit to exit completely.")}
+      </p>
     </div>
   );
 }
@@ -252,6 +298,7 @@ export function OptionsPage() {
             </select>
           </div>
           <ThemePicker />
+          {inDesktopApp && <WindowBehavior />}
         </TabsContent>
 
         <TabsContent value="vault" className="mt-0"><VaultPanel /></TabsContent>
