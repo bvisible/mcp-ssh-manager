@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-11-27
+
+**Sessions: four fixes, reported and traced to the line by @nethinwei (#163).**
+They concern the session tools (start a session, send a command) and the Live page; `ssh_execute` is unchanged.
+The first was seen on a bastion that ignores the request to turn echo off; the other three
+show on any server.
+
+### Fixed
+
+- **Every command in a session came back as failed on a server that echoes its input.** The engine finds the end of a command by a marker it makes the shell print, and looked for it anywhere in the text: the echoed copy of the line that prints it was found first, so the exit status was unknown (`null`), the command was reported as failed and its output stopped at that line. The marker is now written as separate arguments, so no echo can contain it, and is read only as a whole line. A session also waits for the shell's own answer before it starts, not for the echo of the question, and asks the shell to stop echoing and to drop its prompt.
+- **`cd` and `export` did not update the session's context.** The engine read the working directory while the session was still busy, was refused ("not ready") and kept the old one. It now reads it before the session is ready again, and also after `pushd`, `popd`, `unset` and `source`.
+- **Prompts and terminal escape sequences were in the output, the working directory and the environment**, and `Working Directory` could stay `null`. The environment was also wrong on every server: `PATH`, `USER` and `HOME` were read by splitting on colons, which `PATH` contains. The output of a session command no longer carries colour codes, window titles, carriage returns or a fixed prompt the shell keeps printing. A prompt that changes with the directory, on a shell that ignores `PS1`, cannot be told from output and stays.
+- **A command sent into a session did not show on the Live page or in the history.** Only `ssh_execute` opened the stream the control plane mirrors, so a session command ran, was checked by the policy and audited, and could not be seen. The tool that sends a command into a session now opens it too: the command appears while it runs, its output as it is printed, and its exit status when it ends. With no control plane running, nothing changes.
+
 ## [4.4.0] - 2026-11-26
 
 **A feature release with two interface fixes.** Nothing changes unless you turn the new
