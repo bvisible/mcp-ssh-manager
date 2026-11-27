@@ -1871,7 +1871,21 @@ registerToolConditional(
       auditServer = session.serverName;
 
       const startTime = Date.now();
-      const result = await session.execute(command, { timeout });
+      // Mirror the command to the control plane while it runs, as ssh_execute
+      // does, so it shows on the Live page and in the history. Opened only for
+      // a command that will run: a busy or closed session refuses it first.
+      const live = session.isReady() ? openStream(session.serverName, command) : null;
+      let result;
+      try {
+        result = await session.execute(command, {
+          timeout,
+          onOutput: live ? text => live.write('stdout', text) : undefined
+        });
+      } finally {
+        // However the attempt ends the window is told; no result means no exit
+        // code, and end() then reports -1, as for ssh_execute.
+        live?.end(result?.exitCode);
+      }
       const duration = Date.now() - startTime;
 
       await auditOk(session.serverName, 'ssh_session_send', { session: sessionId, command }, {

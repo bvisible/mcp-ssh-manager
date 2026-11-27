@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import ssh2 from 'ssh2';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { answerSessionProtocol } from './helpers/session-protocol.js';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-audit-'));
@@ -52,10 +53,7 @@ const server = new ssh2.Server({ hostKeys: [privateKey] }, connection => {
       stream.on('data', data => {
         const input = data.toString();
         // Answer the session protocol's markers without executing its text.
-        const ready = input.match(/ready_[a-f0-9]+/);
-        const marker = input.match(/cmd_[a-f0-9]+/);
-        if (ready) stream.write(`${ready[0]}\n`);
-        if (marker) stream.write(`/fixture\n${marker[0]}:0\n`);
+        answerSessionProtocol(input, text => stream.write(text));
         if (input === 'exit\n') stream.end();
       });
     });

@@ -9,9 +9,67 @@ import { logger } from './logger.js';
 // Map to store active sessions
 const sessions = new Map();
 
-function generateMarker(prefix) {
-  return `${prefix}_${randomUUID().replace(/-/g, '')}`;
+function generateId() {
+  return randomUUID().replace(/-/g, '');
 }
+
+// Terminal escape sequences a pty shell may print around its output: colours,
+// cursor moves, bracketed-paste switches (CSI), window titles (OSC) and the
+// two-character forms. Built from strings so the source holds no raw control
+// character.
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+const ANSI_PATTERN = new RegExp(
+  [
+    `${ESC}\\[[0-?]*[ -/]*[@-~]`,
+    `${ESC}\\][^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)`,
+    `${ESC}[()][A-Za-z0-9]`,
+    `${ESC}[=>78DEHMNOZ\\\\^_c]`
+  ].join('|'),
+  'g'
+);
+
+/**
+ * What the shell printed, without the terminal's decoration: no escape
+ * sequences, LF line ends (a pty turns each LF into CRLF), and a carriage
+ * return keeps what a terminal would still show, the text after the last one.
+ * @param {string} text - Raw shell output
+ * @returns {string} Plain text
+ */
+function plainText(text) {
+  return text
+    .replace(ANSI_PATTERN, '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(line => (line.includes('\r') ? line.split('\r').filter(Boolean).pop() ?? '' : line))
+    .join('\n');
+}
+
+/**
+ * Find a marker that stands alone on a line.
+ *
+ * The marker is never written whole. The command line that prints it spells
+ * it as separate printf arguments, so a server that echoes what it is sent
+ * (it may ignore the request to turn echo off) gives back a line that does not
+ * contain the marker. Only the shell's real answer matches. Matching anywhere
+ * in the text, as this used to, found the echoed line first.
+ *
+ * @param {string} text - Plain text to search
+ * @param {string} marker - The marker, for example `cmd_<id>`
+ * @returns {{index: number, length: number, status: number|null}|null} Where the line is, and the status it carries
+ */
+function findMarkerLine(text, marker) {
+  const found = new RegExp(`^${marker}(?::(\\d+))?[ \\t]*$`, 'm').exec(text);
+  if (!found) return null;
+  return {
+    index: found.index,
+    length: found[0].length,
+    status: found[1] === undefined ? null : Number.parseInt(found[1], 10)
+  };
+}
+
+// Commands after which the working directory or the environment may differ.
+const CONTEXT_COMMAND = /^\s*(?:cd|pushd|popd|export|unset|source|\.)(?:\s|$)/;
 
 // Session states
 const SESSION_STATES = {
@@ -39,6 +97,10 @@ class SSHSession {
     this.shell = null;
     this.outputBuffer = '';
     this.errorBuffer = '';
+    // The prompt a server keeps printing when it will not stop (see initialize).
+    this.prompt = '';
+    /** @type {(() => void)|null} Called whenever the shell prints something */
+    this.onShellData = null;
   }
 
   /**
@@ -64,6 +126,7 @@ class SSHSession {
       this.shell.on('data', (data) => {
         this.outputBuffer += data.toString();
         this.lastActivity = new Date();
+        this.onShellData?.();
 
         // Log output in verbose mode
         if (logger.verbose) {
@@ -86,11 +149,32 @@ class SSHSession {
         });
       });
 
-      // Wait for an explicit readiness marker instead of a shell prompt
-      const readyMarker = generateMarker('ready');
-      const readyCommand = `printf '\\n${readyMarker}\\n'`;
-      this.shell.write(`${readyCommand}\n`);
-      await this.waitForMarker(readyMarker);
+      // The ECHO mode above is only a request, and a server may ignore it; a
+      // prompt also comes back after every line, and bash's line editing prints
+      // a newline and bracketed-paste codes around each line it reads. Ask the
+      // shell itself to stop all of it, and wait for an explicit readiness
+      // marker rather than a prompt. A shell that is not a shell (a bastion
+      // menu) answers none of it, and reading the output no longer depends on it.
+      const readyId = generateId();
+      this.shell.write([
+        'stty -echo 2>/dev/null',
+        'PS1=\'\'; PS2=\'\'; PROMPT_COMMAND=\'\'',
+        '[ -n "$ZSH_VERSION" ] && unsetopt zle',
+        'set +o emacs +o vi 2>/dev/null',
+        `printf '\\n%s%s\\n' ready_ ${readyId}`
+      ].join('\n') + '\n');
+      await this.waitUntil(
+        () => findMarkerLine(plainText(this.outputBuffer), `ready_${readyId}`),
+        5000,
+        `ready_${readyId}`
+      );
+
+      // What is left after the marker is the shell's prompt, when it still
+      // prints one. A fixed prompt is removed from the lines of every command's
+      // output; one that changes (the directory in it) cannot be, so a shell
+      // that ignores PS1 keeps its prompt in the output.
+      await new Promise(resolve => setTimeout(resolve, 150));
+      this.prompt = this.learnPrompt(readyId);
 
       // Allow context queries through standard execute flow
       this.state = SESSION_STATES.READY;
@@ -113,41 +197,164 @@ class SSHSession {
   }
 
   /**
+   * The prompt the shell printed after the readiness marker, if any.
+   * @param {string} readyId - Id of the readiness marker
+   * @returns {string} The prompt, or an empty string
+   */
+  learnPrompt(readyId) {
+    const text = plainText(this.outputBuffer);
+    const marker = findMarkerLine(text, `ready_${readyId}`);
+    if (!marker) return '';
+    const after = text.slice(marker.index + marker.length).replace(/^\n/, '');
+    // A prompt is one unfinished line; anything longer is output we do not know.
+    return after.includes('\n') ? '' : after;
+  }
+
+  /**
+   * Wait until `find` returns something, as the shell prints.
+   * @param {() => any} find - Returns a truthy value once what is awaited has arrived
+   * @param {number} timeout - Milliseconds to wait
+   * @param {string} label - What is awaited, for the error
+   * @returns {Promise<any>} Whatever `find` returned
+   */
+  waitUntil(find, timeout, label) {
+    return new Promise((resolve, reject) => {
+      const done = () => { clearTimeout(timer); this.onShellData = null; };
+      const timer = setTimeout(() => {
+        done();
+        reject(new Error(`Timeout waiting for marker: ${label}`));
+      }, timeout);
+      const check = () => {
+        const found = find();
+        if (!found) return;
+        done();
+        resolve(found);
+      };
+      this.onShellData = check;
+      check();
+    });
+  }
+
+  /**
    * Wait for a marker in shell output
    */
   async waitForMarker(marker, timeout = 5000) {
-    const startTime = Date.now();
+    await this.waitUntil(() => findMarkerLine(plainText(this.outputBuffer), marker), timeout, marker);
+    return true;
+  }
 
-    while (Date.now() - startTime < timeout) {
-      if (this.outputBuffer.includes(marker)) {
-        return true;
-      }
+  /**
+   * What a command printed so far, and how it ended.
+   *
+   * The text between the command's start marker and its end marker, without
+   * the terminal's escape sequences and without the prompt. Before the end
+   * marker has arrived, only complete lines count.
+   *
+   * @param {string} id - The command's id
+   * @returns {{text: string, done: boolean, exitCode: number|null}|null} Null until the start marker has arrived
+   */
+  readCommand(id) {
+    const text = plainText(this.outputBuffer);
+    const start = findMarkerLine(text, `start_${id}`);
+    if (!start) return null;
+    const from = start.index + start.length + (text[start.index + start.length] === '\n' ? 1 : 0);
+    const rest = text.slice(from);
+    const end = findMarkerLine(rest, `cmd_${id}`);
+    let body;
+    if (end) {
+      body = rest.slice(0, end.index);
+    } else {
+      body = rest.slice(0, rest.lastIndexOf('\n') + 1);
+    }
+    if (this.prompt) {
+      // The shell prints its prompt before reading each line it is sent, so
+      // several can pile up in front of the text that follows them.
+      const withoutPrompts = line => {
+        let rest = line;
+        while (rest.startsWith(this.prompt)) rest = rest.slice(this.prompt.length);
+        return rest;
+      };
+      body = body.split('\n').map(withoutPrompts).join('\n');
+    }
+    return { text: body, done: Boolean(end), exitCode: end ? end.status : null };
+  }
 
-      // Wait a bit
-      await new Promise(resolve => setTimeout(resolve, 100));
+  /**
+   * Send a command wrapped in markers and wait for it to finish.
+   * Does not touch the session state: callers do.
+   *
+   * @param {string} command - The command line
+   * @param {{timeout?: number, onOutput?: (text: string) => void}} [options] - `onOutput` receives the output as it arrives
+   * @returns {Promise<{output: string, exitCode: number|null}>} The output, and the status the shell reported
+   */
+  async run(command, options = {}) {
+    // Clear buffers
+    this.outputBuffer = '';
+    this.errorBuffer = '';
+
+    const id = generateId();
+
+    // Both markers are spelled as separate printf arguments (see findMarkerLine).
+    this.shell.write(
+      `set +e\nprintf '\\n%s%s\\n' start_ ${id}\n${command}\n__mcp_status=$?\nprintf '\\n%s%s:%s\\n' cmd_ ${id} "$__mcp_status"\n`
+    );
+
+    // Forward what the command prints while it runs. Only whole lines, and
+    // never the trailing blank lines: the next chunk may continue them.
+    let forwarded = '';
+    const forward = (text) => {
+      if (!options.onOutput) return;
+      const shown = text.replace(/\n+$/, '');
+      if (shown.length <= forwarded.length || !shown.startsWith(forwarded)) return;
+      options.onOutput(shown.slice(forwarded.length));
+      forwarded = shown;
+    };
+
+    const finished = await this.waitUntil(() => {
+      const seen = this.readCommand(id);
+      if (seen && !seen.done) forward(seen.text);
+      return seen?.done ? seen : null;
+    }, options.timeout || 30000, `cmd_${id}`);
+
+    const output = finished.text.replace(/\n+$/, '');
+    forward(output);
+    return { output, exitCode: finished.exitCode };
+  }
+
+  /**
+   * Read the working directory and a few variables back from the shell.
+   * Does not touch the session state: callers do.
+   */
+  async refreshContext() {
+    const pwdResult = await this.run('pwd');
+    if (pwdResult.exitCode === 0) {
+      this.context.cwd = pwdResult.output.trim();
     }
 
-    throw new Error(`Timeout waiting for marker: ${marker}`);
+    // One value per line: PATH holds colons, so they cannot separate the three.
+    const envResult = await this.run('printf \'%s\\n%s\\n%s\\n\' "$PATH" "$USER" "$HOME"');
+    if (envResult.exitCode === 0) {
+      const [PATH, USER, HOME] = envResult.output.split('\n');
+      this.context.env = { PATH, USER, HOME };
+    }
   }
 
   /**
    * Update session context (pwd, env)
    */
   async updateContext() {
+    if (this.state !== SESSION_STATES.READY) {
+      logger.warn(`Failed to update context for session ${this.id}`, {
+        error: `Session ${this.id} is not ready (state: ${this.state})`
+      });
+      return;
+    }
+    this.state = SESSION_STATES.BUSY;
     try {
-      // Get current directory
-      const pwdResult = await this.execute('pwd', { silent: true });
-      if (pwdResult.success) {
-        this.context.cwd = pwdResult.output.trim();
-      }
-
-      // Get environment variables (selective)
-      const envResult = await this.execute('echo $PATH:$USER:$HOME', { silent: true });
-      if (envResult.success) {
-        const [path, user, home] = envResult.output.trim().split(':');
-        this.context.env = { PATH: path, USER: user, HOME: home };
-      }
+      await this.refreshContext();
+      this.state = SESSION_STATES.READY;
     } catch (error) {
+      this.state = SESSION_STATES.ERROR;
       logger.warn(`Failed to update context for session ${this.id}`, {
         error: error.message
       });
@@ -156,6 +363,9 @@ class SSHSession {
 
   /**
    * Execute a command in the session
+   *
+   * @param {string} command - The command line
+   * @param {{timeout?: number, silent?: boolean, onOutput?: (text: string) => void}} [options] - `onOutput` receives the output as it arrives
    */
   async execute(command, options = {}) {
     if (this.state !== SESSION_STATES.READY) {
@@ -166,10 +376,6 @@ class SSHSession {
     this.lastActivity = new Date();
 
     try {
-      // Clear buffers
-      this.outputBuffer = '';
-      this.errorBuffer = '';
-
       // Add to history unless silent
       if (!options.silent) {
         this.context.history.push({
@@ -184,33 +390,26 @@ class SSHSession {
         });
       }
 
-      const endMarker = generateMarker('cmd');
+      const { output, exitCode } = await this.run(command, options);
 
-      // Send command wrapped in an explicit completion marker
-      this.shell.write(`set +e\n${command}\n__mcp_status=$?\nprintf '\\n${endMarker}:%s\\n' "$__mcp_status"\n`);
-
-      // Wait for command completion marker
-      await this.waitForMarker(endMarker, options.timeout || 30000);
-
-      const markerIndex = this.outputBuffer.indexOf(endMarker);
-      if (markerIndex < 0) {
-        throw new Error(`Command marker not found: ${endMarker}`);
-      }
-      const markerLine = this.outputBuffer.slice(markerIndex).split(/\r?\n/, 1)[0];
-      const statusMatch = markerLine.match(/:(\d+)$/);
-      const exitCode = statusMatch ? Number.parseInt(statusMatch[1], 10) : null;
-      const output = this.outputBuffer.slice(0, markerIndex).replace(/\r?\n+$/, '');
-      const success = exitCode === 0;
-
-      // Update context if command might have changed it
-      if (command.startsWith('cd ') || command.startsWith('export ')) {
-        await this.updateContext();
+      // Update context if command might have changed it. The session is still
+      // busy here, so this reads the shell directly: going through execute()
+      // was refused ("not ready") and the context stayed as it was.
+      if (CONTEXT_COMMAND.test(command)) {
+        try {
+          await this.refreshContext();
+        } catch (error) {
+          logger.warn(`Failed to update context for session ${this.id}`, {
+            error: error.message
+          });
+        }
       }
 
       this.state = SESSION_STATES.READY;
 
       return {
-        success,
+        success: exitCode === 0,
+        exitCode,
         output,
         error: this.errorBuffer,
         session: this.id
@@ -224,6 +423,14 @@ class SSHSession {
       });
       throw error;
     }
+  }
+
+  /**
+   * Can a command be sent now?
+   * @returns {boolean} True when the session is ready
+   */
+  isReady() {
+    return this.state === SESSION_STATES.READY;
   }
 
   /**
