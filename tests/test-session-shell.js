@@ -32,6 +32,11 @@ const shells = {
   'a shell that delivers its output three characters at a time': { chunkSize: 3 },
   'a real-looking shell: prompt kept, escapes on, echo off': {
     honorsPrompt: false, prompt: '$ ', escapes: true
+  },
+  // bash 4.2 on CentOS 7: the lines sent after `set +o emacs`, in the same
+  // write, never run.
+  'a shell that drops what it read ahead when line editing goes off': {
+    echo: true, prompt: '$ ', escapes: true, editingOffDropsUnread: true
   }
 };
 
@@ -102,6 +107,19 @@ async function testReadyMeansTheShellAnswered() {
   ok('a session is ready when the shell has answered, not when it echoed the question');
 }
 
+async function testShellThatTakesSecondsToStart() {
+  // A bastion reaching the host, or a heavy rc file, can take longer than five
+  // seconds, the time a session used to give its shell before giving up.
+  const started = Date.now();
+  const { session } = await open({ echo: true, prompt: '$ ', startupDelay: 5500 });
+  assert.ok(Date.now() - started >= 5500, 'the session waited for the shell');
+  assert.equal(session.context.cwd, '/home/user');
+  const result = await session.execute('echo hello', { timeout: TIMEOUT });
+  assert.equal(result.output, 'hello');
+  closeSession(session.id);
+  ok('a shell that takes more than five seconds to start still opens a session');
+}
+
 async function testOutputArrivesWhileTheCommandRuns() {
   const { session } = await open({});
   const pieces = [];
@@ -155,6 +173,7 @@ for (const [label, options] of Object.entries(shells)) {
   await checkShell(label, options);
 }
 await testReadyMeansTheShellAnswered();
+await testShellThatTakesSecondsToStart();
 await testOutputArrivesWhileTheCommandRuns();
 await testOutputIsForwardedFromAnEchoingShell();
 await testBusyAndFailures();

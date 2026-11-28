@@ -68,6 +68,10 @@ function findMarkerLine(text, marker) {
   };
 }
 
+// How long a new session waits for its shell to answer. A bastion can take
+// more than five seconds to reach the host.
+const READY_TIMEOUT = 30000;
+
 // Commands after which the working directory or the environment may differ.
 const CONTEXT_COMMAND = /^\s*(?:cd|pushd|popd|export|unset|source|\.)(?:\s|$)/;
 
@@ -155,6 +159,11 @@ class SSHSession {
       // shell itself to stop all of it, and wait for an explicit readiness
       // marker rather than a prompt. A shell that is not a shell (a bastion
       // menu) answers none of it, and reading the output no longer depends on it.
+      //
+      // All of it goes on one line. On bash 4.2 (CentOS 7) the lines sent
+      // after `set +o emacs` in the same write never run, so the marker never
+      // came; line editing seems to take what it had read ahead with it. On
+      // one line, the marker is read before editing goes off.
       const readyId = generateId();
       this.shell.write([
         'stty -echo 2>/dev/null',
@@ -162,10 +171,10 @@ class SSHSession {
         '[ -n "$ZSH_VERSION" ] && unsetopt zle',
         'set +o emacs +o vi 2>/dev/null',
         `printf '\\n%s%s\\n' ready_ ${readyId}`
-      ].join('\n') + '\n');
+      ].join('; ') + '\n');
       await this.waitUntil(
         () => findMarkerLine(plainText(this.outputBuffer), `ready_${readyId}`),
-        5000,
+        READY_TIMEOUT,
         `ready_${readyId}`
       );
 

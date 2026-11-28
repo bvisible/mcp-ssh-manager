@@ -18,6 +18,11 @@
 //                  marker can arrive split in two.
 //   startupDelay   runs nothing for this long, while still echoing: a shell
 //                  that is not ready yet.
+//   editingOffDropsUnread  `set +o emacs` drops the lines received but not
+//                  yet run, as bash 4.2 on CentOS 7 does: line editing had
+//                  read them ahead, and they go with it.
+//
+// Commands on one line may be separated by `; `.
 import { EventEmitter } from 'node:events';
 
 const ESC = String.fromCharCode(27);
@@ -30,6 +35,11 @@ function words(text) {
     found.push({ text: match[1] ?? match[2] ?? match[3], quoted: match[1] !== undefined });
   }
   return found;
+}
+
+/** Splits a command line on `;` outside quotes. */
+function commands(line) {
+  return line.match(/(?:'[^']*'|"[^"]*"|[^;'"])+/g) ?? [];
 }
 
 export class FakeShell {
@@ -46,6 +56,7 @@ export class FakeShell {
       escapes: false,
       chunkSize: 0,
       startupDelay: 0,
+      editingOffDropsUnread: false,
       ...options
     };
     this.emitRaw = emit;
@@ -76,8 +87,13 @@ export class FakeShell {
       const ready = this.started + this.options.startupDelay;
       if (Date.now() < ready) await wait(ready - Date.now());
       for (const line of lines) {
-        await this.run(line);
+        let dropUnread = false;
+        for (const command of commands(line)) {
+          await this.run(command);
+          if (this.options.editingOffDropsUnread && command.trim().startsWith('set +o emacs')) dropUnread = true;
+        }
         if (this.prompt) this.out(this.options.escapes ? `${ESC}[?2004h${ESC}[32m${this.prompt}${ESC}[0m` : this.prompt, true);
+        if (dropUnread) break;
       }
     });
   }
