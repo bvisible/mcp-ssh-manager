@@ -25,7 +25,7 @@
 [![Desktop app downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbvisible%2Fmcp-ssh-manager%2Fstats%2Fdesktop.json&style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/bvisible/mcp-ssh-manager?style=flat-square&color=c04500)](https://github.com/bvisible/mcp-ssh-manager/stargazers)
 [![MCP Toplist](https://mcptoplist.com/badge/io.github.bvisible%2Fmcp-ssh-manager.svg)](https://mcptoplist.com/server/io.github.bvisible%2Fmcp-ssh-manager)
-[![Version](https://img.shields.io/badge/release-4.4.1-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.1)
+[![Version](https://img.shields.io/badge/release-4.4.2-c04500?style=flat-square)](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.2)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-5A67D8?style=flat-square&logo=anthropic)](https://claude.ai/code)
 [![OpenAI Codex](https://img.shields.io/badge/OpenAI_Codex-Compatible-00A67E?style=flat-square&logo=openai)](https://openai.com/codex)
 [![MCP](https://img.shields.io/badge/MCP-Server-orange?style=flat-square)](https://modelcontextprotocol.io)
@@ -58,9 +58,9 @@ An MCP SSH server is the most dangerous tool you can hand an agent: a shell on m
 
 ## Choose your workspace
 
-**Desktop application (`4.4.1`):** one installation with its own runtime,
+**Desktop application (`4.4.2`):** one installation with its own runtime,
 terminal, file browser and server settings. No separate Node.js or npm
-installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.1):
+installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.2):
 
 | Platform | File | Signature |
 |---|---|---|
@@ -68,7 +68,7 @@ installation. [Download it](https://github.com/bvisible/mcp-ssh-manager/releases
 | Windows x64 / arm64 | `…-setup.exe` | **Not code-signed yet.** Windows shows *"Windows protected your PC"*: *More info → Run anyway*. Check the file against the SHA-256 in `release-manifest-win32.json` on the release (`ssh-manager app` does it for you). Signing comes in a later release. |
 | Linux x64 | `.deb`, `.AppImage` | Unsigned, as Linux packages usually are |
 
-**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.4.1,
+**Already using npm / the CLI?** `npm update -g mcp-ssh-manager` brings 4.4.2,
 and the V4 engine runs without an interface, from your existing `.env`, TOML or
 process variables — no automatic import, no forced wizard, no approval prompt
 unless you enable one per server. The one behaviour that tightens is **SSH
@@ -721,6 +721,8 @@ The hero animation ships twice, light and dark, swapped by `<picture>` on `prefe
 ---
 
 ## What's new
+
+**[4.4.2](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.2) — a session starts again on CentOS 7, and on a host that takes seconds to answer.** 4.4.1 sent a new session's set-up in a way bash 4.2 drops, so no session started on CentOS 7, and it gave the shell only five seconds to answer, too short behind a bastion. The set-up now goes on one line and the session waits up to thirty seconds. Found, traced and fixed by @nethinwei (#163, #180).
 
 **[4.4.1](https://github.com/bvisible/mcp-ssh-manager/releases/tag/v4.4.1) — sessions read what the shell answers, and a session command shows on the Live page.** Sending a command into a session reported it as failed on a server that echoes its input (a bastion that ignores the request to turn echo off), kept the old working directory after `cd` and `export`, and returned prompts and escape codes in the output. It now reads the shell's own answer, and the commands you send into a session appear on the Live page and in the history as `ssh_execute` ones do. Reported and traced to the line by @nethinwei (#163).
 
