@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A session could not start on CentOS 7, nor when the shell took more than five seconds to answer (4.4.1, #163).** A new session sends a few set-up lines (stop the echo, drop the prompt, turn line editing off), then a readiness marker, and gave the shell five seconds to print it. On bash 4.2 (CentOS 7) the lines sent after `set +o emacs` in the same write never run, so the marker never came; line editing seems to take the lines it had read ahead with it. Behind a bastion, or with a heavy rc file, the shell can also take more than five seconds to answer. The set-up lines now go on one line, and the session waits up to thirty seconds.
+
 ## [4.4.1] - 2026-11-27
 
 **Sessions: four fixes, reported and traced to the line by @nethinwei (#163).**
